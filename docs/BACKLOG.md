@@ -34,27 +34,20 @@ and things explicitly punted with a reason.
   Unblocked by: measured false-positive/false-negative rates from Stage 1 in real use.
 - **Revisit whether Blocked deserves its own screen** — D12 folded the decision queue into the
   Overview's Blocked band. Unblocked by: the band proving too crowded in daily use.
-- **Round-2 wireframes: the Overview** — brief is written (`docs/DESIGN-BRIEF.md` §5.5, §8
-  round 2); concepts not yet drafted. Unblocked by: a design agent run. **This blocks Stage 3
-  spec-writing, not Stage 1.**
-- **Fix the fabricated salla-apps drift card in `design/wireframes.pen`** — Concept C cites a
-  `docs/STATE.md` that does not exist; salla-apps is Router-only, as that same wireframe's
-  roster row correctly shows. It is `○ attention` (9 dirty files), not `⚠ drift`. Unblocked by:
-  the round-2 design pass (`docs/DESIGN-BRIEF.md` §5.1.1a).
-- **Decide what a Router-only project looks like on the Board** — four of six watched projects
-  have no state doc, so they cannot produce a claim-vs-fact drift at all. "Cannot verify — no
-  state doc" is a third thing, distinct from both in-sync and drift. Unblocked by: round-2
-  design (`docs/DESIGN-BRIEF.md` §9.5).
+- **Round-2 wireframes** — brief written and re-scoped 2026-07-27 (`docs/DESIGN-BRIEF.md` §8):
+  the Overview, the week view, and the fix-proposal gate. Concepts not yet drafted. Unblocked
+  by: a design agent run. **Blocks the Stage 3 spec only** — Stage 2 can build against §5.2.1.
 - **Concept C shows each project twice (feed + roster)** — the concept's own rationale names
-  this as its sacrifice. Unblocked by: round-2 design (`docs/DESIGN-BRIEF.md` §5.1.1b).
+  this as its sacrifice. *Partly solved in the build:* rostered projects with a card above carry
+  a left marker. Unblocked by: round-2 design, if it finds something better
+  (`docs/DESIGN-BRIEF.md` §5.1.1b).
 
 ### From the Stage 1 build (2026-07-27)
 
 - **"Mark verified" / `data/verified.json` is specified but not implemented** — the Board shows
   drift state but has no acknowledge control. Deferred because the write path and its approval
-  gate are the same problem, and that problem is Stage 2. Unblocked by: starting Stage 2
-  (PRD §6.2). Keyed by `(project, check, claim-hash)` when built, so acknowledging a stale claim
-  never suppresses a new one (spec §5.5).
+  gate are the same problem, and that problem is Stage 2. **Now scoped**: it is Stage 2's §1.5
+  and AC-9 (`docs/specs/stage-2-fix-proposals.spec.md`). Unblocked by: building Stage 2.
 - **AC-5 degrades both collectors instead of isolating `gh`** — the test strips `PATH`, which
   disables `git` too. It proves failures surface with readable reasons and no silent zeros, but
   does not prove a `gh`-only outage leaves git data intact. Unblocked by: a narrower fixture
@@ -85,3 +78,8 @@ and things explicitly punted with a reason.
 - **Install itqan into this project** — done 2026-07-27, `chore/itqan-install`. Had been
   *claimed* as complete in `docs/PRD.md` on 2026-07-26 while no role file existed; see
   `docs/LEARNINGS.md`.
+- **Fix the fabricated salla-apps drift card** — resolved 2026-07-27 in code rather than in the
+  wireframe: salla-apps renders `◌ unverifiable` (no state doc → no claim → no possible
+  claim-vs-fact drift). The `.pen` file still carries the fabricated card as round-1 record.
+- **Decide what a Router-only project looks like on the Board** — resolved 2026-07-27 by the
+  fourth severity level, `◌ unverifiable` (spec §3.4). Distinct from both in-sync and drift.
