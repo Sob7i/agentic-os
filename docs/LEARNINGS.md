@@ -20,6 +20,13 @@ belongs in `docs/DECISIONS.md` instead.
   Router-only. Plausible-looking placeholder content passes review precisely because it looks
   right. **When a brief says "use real data", every string is a claim — check the ones that are
   convenient.**
+- (2026-07-27) **Our own reference table drifted within 24 hours, twice over.** `docs/PRD.md` §4
+  recorded salla-apps as "Router only" — it actually has a 467-line `CLAUDE.md`, 13 specs,
+  `MISTAKES.md` + `KNOWLEDGE.md`, and a 309-line `CHANGELOG.md`: a *full*-profile install missing
+  only its State role. Cause: the survey checked lite-profile paths only. Separately,
+  fractal-code's branch and commit age changed the next day. **Two rules from one finding:**
+  role detection must check full-profile alternates, and **live facts (branch, dirty count, age)
+  must never be hardcoded in a document** — compute them or omit them.
 - (2026-07-26) A doc that references a sibling section by number (`"the brief for §6.1–6.4"`)
   goes stale the moment a section is added. Prefer naming the thing over numbering it, or
   accept that the pair must be re-read on every edit.

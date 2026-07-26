@@ -114,16 +114,30 @@ across five heterogeneous repos without per-repo configuration.
 
 **Current adoption is partial, and the dashboard must tolerate that.** Measured 2026-07-26:
 
-| Project | Branch | Router | State | Decisions | Behaviour | Profile |
-|---|---|---|---|---|---|---|
-| salla-apps (`hadaya/`) | `develop` | ✅ | — | — | — | full (partial install) |
-| nadim | `feat/desk-4a-prototype` | ✅ | ✅ HANDOFF | ✅ | — | lite |
-| itqan | `docs/changelog` | — | — | — | — | self (framework repo) |
-| fractal-code | `develop` | ✅ | — | — | — | partial |
-| my-personal-website | `feature/phase-5-polish` | ✅ | — | — | — | partial |
-| **agentic-os** | `develop` | ✅ | ✅ HANDOFF | ✅ | ✅ | lite + `docs/specs/` (2026-07-27) |
+**Corrected 2026-07-27** — an earlier version of this table checked only lite-profile paths and
+under-reported salla-apps as "Router only". Role detection must check full-profile alternates
+(`MISTAKES.md`/`KNOWLEDGE.md` for Lessons, `docs/specs/` for Queue, `COMPASS.md` for State) —
+see `docs/specs/stage-1-reconciliation.spec.md` §3.3.
 
-**Consequence for the design:** only nadim and this project are meaningfully instantiated. A dashboard that
+| Project | Router | State | Queue | Decisions | Lessons | Behaviour | Record | Profile |
+|---|---|---|---|---|---|---|---|---|
+| salla-apps (`hadaya/`) | ✅ | — | ✅ 13 specs | — | ✅ split | — | ✅ | full, **missing State** |
+| nadim | ✅ | ✅ HANDOFF | ✅ | ✅ | ✅ | — | git | lite |
+| itqan | — | — | — | — | — | — | ✅ | framework repo (not an instance) |
+| fractal-code | ✅ | — | — | — | — | — | git | router only |
+| my-personal-website | ✅ | — | — | — | — | — | git | router only |
+| **agentic-os** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | git | lite + `docs/specs/` (2026-07-27) |
+
+**Consequence for the design:** only nadim and this project fill the State role — and **State is
+the primary drift subject.** A project without it cannot produce a claim-vs-fact drift at all,
+which makes `unverifiable` a required fourth result state, distinct from in-sync (spec §3.4).
+salla-apps is the sharpest case: 13 specs and a 516-line knowledge base, and no document saying
+where it stands.
+
+**Branch and dirty-count data is deliberately not in this table.** It changed materially within
+24 hours of first being recorded (fractal-code moved branch; salla-apps' commit age shifted).
+Live facts belong on the Board, computed; a document that hardcodes them is drift waiting to
+happen — as this table already demonstrated. A dashboard that
 requires the full spine would show one row and four blanks. So role coverage is itself a
 first-class metric — the **Adoption** column (§6.1) shows which roles each project fills, making
 the gaps visible and turning the dashboard into an install driver rather than an install
