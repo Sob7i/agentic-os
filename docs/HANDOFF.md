@@ -38,12 +38,14 @@
 
 ## Next up
 
-1. **Stage 2 — gated fix proposals** (PRD §6.2). The Board detects drift but cannot yet offer
-   the correction. This is where `data/verified.json` and "mark verified" get built, together
-   with the write path and its approval gate — they are one problem, which is why Stage 1
-   deliberately shipped without the acknowledge control (`docs/BACKLOG.md`).
-2. **Round-2 wireframes — the Overview** (`docs/DESIGN-BRIEF.md` §5.5). Blocks the Stage 3 spec,
-   nothing else. Can run in parallel with Stage 2.
+1. **Build Stage 2 — gated fix proposals.** Spec written and decision-closed:
+   `docs/specs/stage-2-fix-proposals.spec.md`. **This is the first slice that writes outside this
+   repo**, so build order matters: `lib/fix/propose.ts` → `lib/fix/apply.ts` → the fixture-based
+   acceptance suite (AC-1…AC-11) → *then* the UI. Prove the writes headless first.
+   **D15 gets promoted to `docs/DECISIONS.md` when this builds** — corrections are deterministic
+   string edits, never model-generated, because egress is forbidden by invariant (spec §5.1).
+2. **Round-2 wireframes** (`docs/DESIGN-BRIEF.md` §8) — the Overview, the week view, and the fix
+   proposal gate. Runs in parallel; the Overview blocks only the Stage 3 spec.
 3. **Stage 3 — the Overview** (PRD §6.8), once its wireframes exist and a spec closes.
 
 **Later** (PRD §10): Stage 4 transcripts and cost · Stage 5 folded into the Overview (D12) ·

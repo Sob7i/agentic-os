@@ -1,7 +1,7 @@
 # Agentic OS — Design Brief
 
 > **For:** the design agent drafting wireframe concepts
-> **Status:** brief · written 2026-07-26 · **round 1 complete, round 2 open** · not a design system yet
+> **Status:** brief · written 2026-07-26 · **round 2 open, updated 2026-07-27** · not a design system yet
 > **Reads with:** [`PRD.md`](PRD.md) (the what and why — read §1, §6.1, §6.2, §6.8 first)
 > **Round 1 output:** [`../design/wireframes.pen`](../design/wireframes.pen)
 
@@ -10,13 +10,39 @@
 **Round 1 — delivered.** Three Board concepts (A Ledger, B Triage, C Feed + Roster), degraded
 states, fix proposal, usage panel, decision queue, dark mode.
 
-**✅ Chosen: Concept C — "Feed + Roster"** (node `V1YpOq`), owner pick 2026-07-26. Drift is a
-first-class object: a feed of full drift cards on top (CLAIMED vs VERIFIED as two labelled,
-differently-styled blocks), an ambient role-coverage matrix below. Concepts A and B are retired
-— keep them in the file as record, do not develop them further.
+**✅ Chosen: Concept C — "Feed + Roster"** (node `V1YpOq`), owner pick 2026-07-26. Concepts A and
+B are retired — keep them in the file as record, do not develop them further.
 
-**Round 2 — this brief now asks for:** (a) the Overview (§5.5, new — the second pillar), and
-(b) two corrections to Concept C (§5.1.1). Everything in §§1–4 and 6–7 still governs.
+### ⚠ Read this before starting round 2 — the Board is now BUILT
+
+**Concept C shipped as working software on 2026-07-27** (Stage 1). This changes what round 2 is
+for. You are no longer designing the Board from a blank page; you are designing **around a
+running implementation**, and one of round 1's asks is already resolved in code.
+
+| Round-1 item | Status now |
+|---|---|
+| Concept C layout | **Built.** Feed of drift cards over a role-coverage roster. |
+| §5.1.1a fabricated salla-apps card | **Fixed in code.** salla-apps renders `◌ unverifiable` — it has no state doc, so it can make no claim. |
+| §5.1.1b feed/roster duplication | **Partly solved in code** — rostered projects with a card above carry a left marker. Worth improving, not re-solving. |
+| Fourth severity level `◌ unverifiable` | **Built.** Forced by the data (§4). |
+
+**What the built Board actually looks like** (real data, 2026-07-27):
+
+- **Drift feed:** one card — nadim. `docs/HANDOFF.md`, headline *"2 PRs unaccounted for · doc
+  unchanged 12d"*, then **Claimed** (quoted italic sans, neutral rule) *"PRs #1 through #22
+  merged"* and **Verified** (mono, green rule) *"#23 is merged (1 past the claim); unclaimed
+  open: #24"*, footed with `DC1 · confidence 0.95`.
+- **Roster:** 6 rows — nadim `⚠ drift` · agentic-os `○ attention` · fractal-code,
+  my-personal-website, salla-apps `◌ unverifiable` · itqan `✓ in sync`.
+- Fits 1440×900 without scrolling, in both colour schemes.
+
+**One card is the honest steady state.** Most days there will be zero or one drift, not five.
+Design the Overview knowing the Board next to it is usually quiet — an instrument at rest, not a
+wall of alerts.
+
+**Round 2 now asks for:** (a) **the Overview** (§5.5 — the main effort, unchanged), (b) **the fix
+proposal / approval gate** (§5.2, now sharpened — it is the next thing to be built), and (c)
+optional polish on the shipped Board (§5.1.1). Everything in §§1–4 and 6–7 still governs.
 >
 > This brief specifies **what the screens must do and the constraints they must respect.**
 > It deliberately does *not* specify layout — that is the deliverable being asked for.
@@ -196,16 +222,58 @@ them. Show how the two zones relate — a visual link on hover, a roster row tha
 detail, disproportionate effect on whether the screen reads as one instrument or two stacked
 widgets.
 
-### 5.2 · Fix proposal *(the gated action — PRD §6.2)*
+### 5.2 · Fix proposal *(the gated action — PRD §6.2 · **promoted for round 2**)*
 
-When drift is detected, the dashboard drafts the corrected markdown and **waits for approval.**
-Wireframe: the proposed diff (before/after on the state doc), the `LEARNINGS.md` line that ships
-with it, and an unmistakable approve/reject gate.
+**This is being built next.** Spec: `docs/specs/stage-2-fix-proposals.spec.md`, decision-closed
+2026-07-27. Round 1 sketched this; round 2 needs it right, because **this is the first thing the
+product ever writes outside its own repo.**
 
-**The gate must feel like a gate.** This writes to the user's repo. It must not be
-mistakable for a passive "OK" — but it also must not be so heavy that the fix never happens.
-That tension is the design problem here. Modal, inline expansion, or side panel — your call,
-with reasoning.
+When drift is detected, the dashboard proposes a correction and **waits for approval.**
+Wireframe: the diff (before/after on the state doc), the paired `LEARNINGS.md` line, and an
+unmistakable approve/reject gate.
+
+**The gate must feel like a gate** — it writes to the user's repo — without being so heavy the
+fix never happens. That tension is the design problem. Modal, inline expansion, or side panel:
+your call, with reasoning.
+
+#### 5.2.1 · Four constraints the spec settled — design within them
+
+1. **The edit is tiny. The context is not.** The actual correction for nadim is *one character*:
+   `#22` → `#23`. Design a diff view where a one-character change is legible and its
+   significance is clear — a red/green line diff would be visual overkill for one digit, and a
+   bare inline highlight may under-sell that a file is being written.
+
+2. **The surrounding line must be visible, and this is the whole point.** Verified in the spec
+   prototype: the real line reads
+   `**PRs #1 through #22 merged** (verified 2026-07-13 via gh pr list)`. Fixing the number
+   leaves *"verified 2026-07-13"* sitting beside a fact verified today — **the mechanical fix
+   introduces a new small inaccuracy in prose it never read.** The tool cannot see that; a human
+   reading the line can.
+   **So the diff shows the full line in context, never the changed token alone**, and the design
+   should actively invite reading the neighbourhood. This is the argument for the gate made
+   concrete: the machine proposes a minimal edit, the human catches what it cannot see.
+
+3. **Two files, one approval.** The correction and its dated `LEARNINGS.md` line are approved
+   together (itqan's ritual: found staleness produces a lesson). Show both in one review without
+   making the second feel like fine print — and handle the case where a project has no lessons
+   file, where it is skipped and said so.
+
+4. **Most drift has no fix at all.** Only DC1 is mechanically fixable. DC3 ("doc older than last
+   commit") and DC4–DC8 have no textual correction — the fix is authorship or action, not a
+   substitution. **Design the "no automatic fix" state as a real state**, not a greyed-out
+   button: it must say *why* there is nothing to click. This state will be more common than the
+   fixable one.
+
+#### 5.2.2 · What happens after approval — set expectations honestly
+
+The write lands as an **unstaged working-tree change.** Nothing is committed, staged, or pushed;
+undo is `git checkout -- <file>`. The UI should say that plainly rather than implying a
+transaction.
+
+And **approving does not mark the drift resolved** — the next reconciliation re-reads the file
+and decides for itself (spec §5.6: *the dashboard does not get to grade its own work*). So there
+is no satisfying green "fixed!" moment, and designing one would be a lie. What is the honest
+post-approval state? That is a genuine design question — see §9.11.
 
 ### 5.3 · Usage & cost *(secondary — PRD §6.3)*
 
@@ -422,21 +490,27 @@ the page's visual tone.
 Three Board concepts + degraded states + fix proposal + usage panel + decision queue + dark mode,
 delivered in `design/wireframes.pen`. Concept C chosen.
 
-### Round 2 — requested now
+### Round 2 — requested now *(re-scoped 2026-07-27, after Stage 1 shipped)*
 
-1. **The Overview — 2–3 distinct concepts** (§5.5). The main effort this round. Each must take a
-   position on: its relationship to the Board (tabs / zones / modes), how **provenance** is
-   expressed (§5.5.1), and how the five bands are arranged. Use the real content in §5.5.2.
-2. **The week view** (§5.5.3) — movement + age-ordered queue. May be part of an Overview
-   concept or a separate zone; say which and why. **Must not read as a sprint burndown.**
-3. **Concept C, corrected** (§5.1.1) — fabricated salla-apps card replaced, feed/roster
-   duplication addressed.
+1. **The Overview — 2–3 distinct concepts** (§5.5). **The main effort.** Each must take a
+   position on: its relationship to the now-built Board (tabs / zones / modes), how
+   **provenance** is expressed (§5.5.1), and how the five bands are arranged. Use the real
+   content in §5.5.2.
+2. **The week view** (§5.5.3) — movement + age-ordered queue. May be part of an Overview concept
+   or a separate zone; say which and why. **Must not read as a sprint burndown.**
+3. **The fix proposal and its gate** (§5.2, **promoted**) — one strong concept, respecting the
+   four constraints in §5.2.1 and the honest post-approval state in §5.2.2. This is being built
+   next, so it is the most immediately useful thing you can deliver after the Overview.
 4. **Overview dark mode** — the chosen direction, designed rather than inverted.
-5. **A short rationale per Overview concept** — what it optimizes, what it sacrifices. The
-   round-1 rationale notes were genuinely useful; keep that habit.
+5. **A short rationale per concept** — what it optimizes, what it sacrifices. The round-1
+   rationale notes were genuinely useful; keep that habit.
 
-**Not requested:** further Board concepts (C is chosen), and no revisions to the fix proposal,
-usage panel, or decision queue unless the Overview forces a change — in which case note it.
+**Optional, low priority:** polish on the shipped Board (§5.1.1) — the fabricated card and the
+fourth severity level are already fixed in code, and the feed/roster link is partly solved. Only
+revisit if you see something better.
+
+**Not requested:** further Board concepts (C is chosen and built), the usage panel, or the
+decision queue (folded into the Overview's *Blocked* band by decision D12).
 
 **Fidelity: wireframe.** Structure, hierarchy, density, and states. Use the real palette and type
 where they carry meaning (§6.2–6.3), but do not polish — this round decides *layout and
@@ -473,6 +547,16 @@ These are genuinely undecided. **Take a position and show it** rather than askin
    primary, or is it a toggle?
 10. **Where does "blocked on Sobhi" live?** It is the system's declared bottleneck and appears
     literally in `Unblocked by:` strings. Its own band, a filter, or a marker?
+11. **What is the honest post-approval state** (§5.2.2)? Approving a fix does not mark the drift
+    resolved — the next reconciliation decides. So there is no "fixed!" moment to design, and
+    faking one would make the dashboard lie about its own work. What does the card become
+    between approval and re-check?
+12. **How does a one-character diff carry appropriate weight** (§5.2.1)? The change is `#22` →
+    `#23`. The consequence is a write into another repo. Those two facts are wildly mismatched
+    in visual scale.
+13. **What does the Board look like on a quiet day?** The real steady state is zero or one drift
+    card, not five. A screen designed for a busy feed will look broken when empty — and empty is
+    the goal state, since the tool should be opened *less* as things improve.
 
 ---
 
@@ -498,3 +582,14 @@ A concept succeeds if:
 9. **The week view is not mistakable for a sprint board.** No burndown, no velocity, no
    fabricated deadlines — only real movement and honest age.
 10. **The Board keeps its primacy.** Adding the Overview must not slow the 3-second drift scan.
+
+**For the fix proposal (§5.2):**
+
+11. **Nobody approves a write by accident.** The gate reads as consequential on first encounter,
+    without a confirmation dialog stacked on a confirmation dialog.
+12. **The surrounding line gets read.** If a reviewer approves without noticing the stale
+    `(verified 2026-07-13)` beside the corrected number, the design has failed its one job
+    (§5.2.1.2).
+13. **"No automatic fix" reads as information, not breakage.** It is the more common case.
+14. **Nothing implies the write is permanent or transactional.** It is an unstaged file change;
+    the design says so.
