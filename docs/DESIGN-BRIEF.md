@@ -85,13 +85,18 @@ Every value below was measured on 2026-07-26. **Use these exact projects and sta
 wireframes.** Realistic content exposes layout problems that placeholder text hides — especially
 the long drift sentences, which are the hardest thing on the screen to typeset.
 
-| Project | Branch | Dirty | Last commit | Open PRs | itqan roles filled | Status |
+**Corrected 2026-07-27.** Role data below is re-verified; the round-1 version under-reported
+salla-apps. Branch/dirty/age are a **snapshot** — they moved within 24 hours (fractal-code
+changed branch), which is itself the point: these are computed live, never hardcoded. Design
+against the *shape*, and treat the volatile columns as illustrative.
+
+| Project | Branch (snapshot) | Dirty | Last commit | Open PRs | itqan roles filled | Status |
 |---|---|---|---|---|---|---|
 | **nadim** | `feat/desk-4a-prototype` | 1 | 12 days | 1 (#24) | Router, State, Queue, Decisions, Lessons | ⚠ **drift** |
-| **salla-apps** | `develop` | 9 | 21 hours | 1 | Router only | ⚠ **drift** |
-| **my-personal-website** | `feature/phase-5-polish` | 7 | 3 weeks | 1 | Router only | ○ attention |
-| **fractal-code** | `develop` | 5 | 2 days | 1 | Router only | ○ attention |
-| **itqan** | `docs/changelog` | 1 | 5 days | 0 | (framework repo) | ✓ in sync |
+| **salla-apps** | `develop` | 9 | ~1 day | 1 | Router, **Queue (13 specs)**, Lessons, Record — **no State** | ◌ **unverifiable** |
+| **my-personal-website** | `feature/phase-5-polish` | 7 | 3 weeks | 1 | Router only | ◌ unverifiable |
+| **fractal-code** | `copy/arabic-wordmark…` | 3 | hours | 1 | Router only | ◌ unverifiable |
+| **itqan** | `docs/changelog` | 1 | 5 days | 0 | (framework repo, not an instance) | ✓ in sync |
 | **agentic-os** | `develop` | 0 | today | 0 | all seven (self-installed 2026-07-27) | ✓ in sync |
 
 **The headline drift, verbatim — design for this exact string:**
@@ -103,11 +108,23 @@ the long drift sentences, which are the hardest thing on the screen to typeset.
 Note the shape: a **quoted claim**, a **verified reality**, and an **age**. Nearly every drift
 row will have those three parts. That is your core component.
 
-**Severity has exactly three levels** (never more — see §7):
+**Severity has exactly four levels** (never more — see §7). Round 1 was briefed with three; the
+fourth was forced by the data and is now specified in
+`docs/specs/stage-1-reconciliation.spec.md` §3.4:
 
 - ⚠ **drift** — a document contradicts reality. Actionable now.
 - ○ **attention** — no contradiction, but something is aging or uncommitted. Informational.
 - ✓ **in sync** — verified true, with a timestamp.
+- ◌ **unverifiable** — **no state doc exists, so there was no claim to check.**
+
+**The fourth level is not a nicety — it is required for correctness.** Four of six projects have
+no state doc. Showing them green would assert a verification that never ran, breaking the
+product's own `verify-before-claim` invariant on its main screen. Showing them as drift would be
+worse: a contradiction with nothing to contradict.
+
+**Design ◌ and ✓ as clearly different things.** "Checked, and true" and "nothing to check" look
+alike if both are quiet, and conflating them is the single easiest way for this dashboard to
+start lying. ◌ also carries an implicit invitation — install the State role — which ✓ does not.
 
 **Design the ✓ state as carefully as the ⚠ state.** A verified-green row is the product's actual
 output — proof the check ran — not an empty state. If green reads as "nothing here," the
@@ -151,13 +168,19 @@ Two fixes before Concept C is developed further. The first is a content accuracy
 is a structural gap the concept's own rationale identified.
 
 **(a) The salla-apps drift card is fabricated — replace it.** The card cites `docs/STATE.md`
-claiming *"Working tree clean; ready to ship."* **No such file exists.** salla-apps is
-Router-only — its own roster row in the same wireframe correctly shows one filled dot and six
-empty. So the wireframe contradicts itself, and invents a document to do it.
+claiming *"Working tree clean; ready to ship."* **No such file exists**, so the wireframe invents
+a document in order to show a drift.
 
 This matters more than a normal content error: a dashboard whose purpose is catching unverified
-claims must not itself display one. Per §4, salla-apps has **no state doc**, so it cannot produce
-a claim-vs-fact drift at all — it is `○ attention` (9 uncommitted files, 21h), not `⚠ drift`.
+claims must not itself display one. salla-apps has **no state doc**, so it cannot produce a
+claim-vs-fact drift at all.
+
+*Corrected 2026-07-27:* the round-1 brief described salla-apps as "Router-only", and that was
+wrong too — it has a 467-line router, 13 specs, `MISTAKES.md` + `KNOWLEDGE.md`, and a changelog.
+It is a **full-profile install missing its State role**, which makes it a *more* interesting row,
+not a blank one: a project with 13 specs and a 516-line knowledge base and no document saying
+where it stands. Its correct state is the fourth one — **`unverifiable`** (see §4) — not `⚠
+drift` and not `✓ in sync`.
 
 *The correction is also a design opportunity.* With only one real drift, the feed shows a single
 card — which is the honest picture, and raises the question §9.5 asked: **what does the feed look
@@ -369,8 +392,10 @@ the page's visual tone.
 **Hard constraints**
 
 1. **No scrolling on the Board** at 1440×900 with 6 projects.
-2. **Three severity levels only.** A five-level scale would be more precise and strictly worse —
-   nothing is more precise if it can't be read in three seconds.
+2. **Four severity levels — and not a fifth.** ⚠ drift · ○ attention · ✓ in sync · ◌
+   unverifiable. The fourth is required for correctness (§4), not a refinement. A five-level
+   scale would be more precise and strictly worse — nothing is more precise if it can't be read
+   in three seconds.
 3. **Every fact shows its verification age.** No naked numbers.
 4. **No destructive action without an explicit gate** (§5.2).
 5. **Color never carries meaning alone** (§6.3).
