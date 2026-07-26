@@ -175,3 +175,28 @@ which was itself adopted after PRs merged sideways into each other's branches.
 **Consequence:** The three existing doc commits landed directly on `main` before this decision
 (2026-07-26). `develop` was branched from that point, so history is consistent — but that route
 is closed from here.
+
+## D14 — Uncommitted work needs a threshold before it is a finding (2026-07-27)
+
+**Decision:** DC4 (uncommitted work) reports `attention` only at or above a per-project
+`dirtyThreshold`, default **5**. Below it, the dirty count is still *displayed* as a fact, but it
+does not raise severity.
+
+**Rationale:** Surfaced mid-build, so the build stopped to close it (`CLAUDE.md` §Working style).
+Running the engine against real data, **every one of the six projects came back non-green** —
+itqan's sole "dirty" file is an untracked research note. With no threshold, `✓ in sync` can never
+render, which breaks the product's stated core value (PRD §3.1: *"a green row is worth as much as
+a red one… a dashboard that only shows problems makes you wonder whether it ran"*) and fails the
+Stage 1 gate AC-2.
+
+The threshold is not invented: the design brief's own reference data already implied one — itqan
+at 1 dirty was recorded `✓ in sync`, while fractal-code at 5 and my-personal-website at 7 were
+`○ attention`. This decision makes that implicit line explicit and configurable.
+
+**Rejected:** *No threshold* — makes green unreachable and trains the eye to ignore the board.
+*Dropping DC4* — a large uncommitted tree is genuinely worth seeing. *Treating untracked
+differently from modified* — a real distinction, but it splits one check into two and the
+threshold already handles the common case; revisit if the count proves noisy.
+
+**Consequence:** `stalledAfterDays` and `dirtyThreshold` both live in `projects.config.ts`, per
+spec §5.8 — thresholds are configuration, never hardcoded.

@@ -48,6 +48,24 @@ and things explicitly punted with a reason.
 - **Concept C shows each project twice (feed + roster)** — the concept's own rationale names
   this as its sacrifice. Unblocked by: round-2 design (`docs/DESIGN-BRIEF.md` §5.1.1b).
 
+### From the Stage 1 build (2026-07-27)
+
+- **"Mark verified" / `data/verified.json` is specified but not implemented** — the Board shows
+  drift state but has no acknowledge control. Deferred because the write path and its approval
+  gate are the same problem, and that problem is Stage 2. Unblocked by: starting Stage 2
+  (PRD §6.2). Keyed by `(project, check, claim-hash)` when built, so acknowledging a stale claim
+  never suppresses a new one (spec §5.5).
+- **AC-5 degrades both collectors instead of isolating `gh`** — the test strips `PATH`, which
+  disables `git` too. It proves failures surface with readable reasons and no silent zeros, but
+  does not prove a `gh`-only outage leaves git data intact. Unblocked by: a narrower fixture
+  (a stub `gh` on `PATH` that exits non-zero), worth building alongside Stage 2's tests.
+- **DC2 and DC5 have never fired on real data** — no watched project currently has a "Next up"
+  line naming a merged PR, nor a branch diverging from its upstream. Both are verified by
+  construction only. Unblocked by: real instances appearing, or a synthetic fixture repo.
+- **Multiple lockfiles warning from Next.js** — `~/Documents/sl/` has a sibling lockfile, so Next
+  warns about the inferred workspace root. Harmless. Unblocked by: setting
+  `outputFileTracingRoot` in `next.config.mjs` if it ever affects a build.
+
 ### Engineering, once code exists
 
 - **Borrow cost math from ccusage rather than hand-rolling it** — pricing tables and 5-hour

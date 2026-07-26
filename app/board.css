@@ -1,0 +1,307 @@
+/* Concept C — "Feed + Roster". Drift is a first-class object: a feed of full
+   drift cards on top, an ambient role-coverage roster below. */
+
+.page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 28px 32px 56px;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  margin-bottom: 26px;
+}
+.title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.tagline {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin: 3px 0 0;
+}
+
+/* Freshness is load-bearing: with no auto-refresh (D8) a page left open
+   overnight is stale and must visibly say so. */
+.freshness {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sync);
+  flex: none;
+}
+.freshness[data-stale="true"] .pulse {
+  background: var(--attention);
+}
+.freshness[data-stale="true"] {
+  color: var(--attention);
+}
+.refresh {
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.refresh:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+/* ── Section labels ─────────────────────────────────────────────────────── */
+.label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0 0 12px;
+}
+.label--drift {
+  color: var(--drift);
+}
+.label--roster {
+  color: var(--muted);
+}
+
+/* ── Drift feed ─────────────────────────────────────────────────────────── */
+/* Capped, not 1fr: with a single drift the card would otherwise stretch the full
+   1400px and strand its own content in whitespace. Reads as a card at any count. */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 660px));
+  gap: 16px;
+  margin-bottom: 34px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--drift);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.card__name {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+.card__src {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+.card__headline {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--drift);
+  margin: 0;
+}
+
+/* The epistemic split — the central design job (DESIGN-BRIEF §3).
+   CLAIMED is quoted, sans, recessive: a hypothesis written by a past session.
+   VERIFIED is mono, full-contrast: ground truth. */
+.block {
+  border-left: 2px solid var(--line);
+  padding-left: 11px;
+}
+.block__label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  margin: 0 0 3px;
+}
+.block--claim .block__label {
+  color: var(--muted);
+}
+.block--fact {
+  border-left-color: var(--sync);
+}
+.block--fact .block__label {
+  color: var(--sync);
+}
+.block__text {
+  margin: 0;
+  font-size: 13.5px;
+}
+.block--claim .block__text {
+  color: var(--muted);
+  font-style: italic;
+}
+.block--fact .block__text {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.card__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 1px;
+}
+.conf {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-family: var(--mono);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.conf[data-low="true"] {
+  color: var(--attention);
+  border-color: var(--attention);
+}
+.act {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 11px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+.act:hover {
+  border-color: var(--muted);
+}
+.act--primary {
+  color: var(--drift);
+  border-color: var(--drift);
+  background: var(--drift-soft);
+}
+
+/* ── Roster ─────────────────────────────────────────────────────────────── */
+.rosterWrap {
+  overflow-x: auto;
+}
+.roster {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.roster th {
+  text-align: left;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 10px 7px;
+  white-space: nowrap;
+}
+.roster td {
+  padding: 9px 10px;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+}
+.roster tr[data-has-card="true"] td:first-child {
+  /* Answers the concept's own admitted sacrifice: a project appearing twice.
+     The marker links the roster row back to its card above. */
+  box-shadow: inset 2px 0 0 var(--drift);
+}
+.r-name {
+  font-weight: 600;
+}
+.r-dim {
+  color: var(--muted);
+}
+.r-role {
+  text-align: center;
+  width: 30px;
+  padding-left: 0;
+  padding-right: 0;
+}
+.dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.dot[data-filled="true"] {
+  background: var(--sync);
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.status[data-s="drift"] {
+  color: var(--drift);
+}
+.status[data-s="attention"] {
+  color: var(--attention);
+}
+.status[data-s="in-sync"] {
+  color: var(--sync);
+}
+.status[data-s="unverifiable"] {
+  color: var(--muted);
+}
+.stamp {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+/* ── Degraded ───────────────────────────────────────────────────────────── */
+.degraded {
+  border: 1px solid var(--attention);
+  background: var(--attention-soft);
+  color: var(--attention);
+  border-radius: var(--radius);
+  padding: 9px 13px;
+  font-size: 12.5px;
+  margin-bottom: 18px;
+}
+.unavailable {
+  color: var(--attention);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.empty {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 34px;
+}
+.empty strong {
+  color: var(--sync);
+}
