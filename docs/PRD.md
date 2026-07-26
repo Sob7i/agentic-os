@@ -1,13 +1,15 @@
 # Agentic OS — Product Requirements
 
-> **Status:** draft for owner review · written 2026-07-26 · not decision-closed
-> **Owner:** Sobhi · **Harness:** [itqan](https://github.com/Sob7i/itqan) (both data model and installed framework)
+> **Status:** written 2026-07-26 · **decision-closed 2026-07-27** — every decision in §9 is
+> answered; nothing is blocked on one. Building may start.
+> **Owner:** Sobhi · **Harness:** [itqan](https://github.com/Sob7i/itqan) — data model **and**
+> installed framework (installed 2026-07-27; see [`DECISIONS.md`](DECISIONS.md) D1).
 > **Paired doc:** [`DESIGN-BRIEF.md`](DESIGN-BRIEF.md) — the wireframe brief for §6.1–6.4 and §6.8.
 > Changes to the feature set here update that brief in the same PR (`paired-docs-update-together`).
 > Round-1 wireframes: [`../design/wireframes.pen`](../design/wireframes.pen) — Concept C chosen.
 >
-> This document proposes. It does not authorize building. Per itqan's gate model, the
-> decisions in §9 close before code starts.
+> **Decision state lives in [`DECISIONS.md`](DECISIONS.md), not here.** §9 is a routing table
+> to it. This document holds the problem, the features, and the build order.
 
 ---
 
@@ -22,7 +24,7 @@ evidenced failure mode in the existing system:
 
 - nadim's `docs/HANDOFF.md` opens with a warning it wrote about itself: *"It was caught stale
   twice already."* Then a third catch is logged inside it.
-- itqan's `rituals/session-start.md` exists because *"a state doc claimed 'no remote' while
+- itqan's session-start ritual (in the itqan repo) exists because *"a state doc claimed 'no remote' while
   four PRs sat merged on GitHub."*
 - **Verified live while writing this PRD (2026-07-26):** nadim's HANDOFF states *"PRs #1
   through #22 merged"* and describes #22 as the frontier. Reality on GitHub: **#23 is merged
@@ -119,8 +121,9 @@ across five heterogeneous repos without per-repo configuration.
 | itqan | `docs/changelog` | — | — | — | — | self (framework repo) |
 | fractal-code | `develop` | ✅ | — | — | — | partial |
 | my-personal-website | `feature/phase-5-polish` | ✅ | — | — | — | partial |
+| **agentic-os** | `develop` | ✅ | ✅ HANDOFF | ✅ | ✅ | lite + `docs/specs/` (2026-07-27) |
 
-**Consequence for the design:** only nadim is meaningfully instantiated. A dashboard that
+**Consequence for the design:** only nadim and this project are meaningfully instantiated. A dashboard that
 requires the full spine would show one row and four blanks. So role coverage is itself a
 first-class metric — the **Adoption** column (§6.1) shows which roles each project fills, making
 the gaps visible and turning the dashboard into an install driver rather than an install
@@ -417,8 +420,9 @@ contain secrets and source; they never leave the machine. `data/` is gitignored.
 **As data model** — §4. The seven roles are the schema; the dashboard is a reader of itqan
 instances.
 
-**As installed framework** — agentic-os installs itqan on itself per `INSTALL.md`, filling all
-seven roles from day one. Three reasons this is not ceremony:
+**As installed framework** — agentic-os has itqan installed on itself per `INSTALL.md`
+(**done 2026-07-27**, lite profile + `docs/specs/`; see `docs/DECISIONS.md` D1). Three reasons
+this is not ceremony:
 
 1. **Dogfooding finds the gaps.** A tool that reads the spine, built by a project that fills
    the spine, will surface every ambiguity in the templates. itqan is at Stage 2 with one cold
@@ -439,24 +443,36 @@ proposal for itqan, gated on this project proving the value first.
 
 ---
 
-## §9 — Decisions to close before building
+## §9 — Decisions
 
-Per itqan's gate model, these close before code starts. **D1–D3 are answered** (owner,
-2026-07-26); D4–D9 are open.
+> **Superseded 2026-07-27.** Decision state now lives in [`DECISIONS.md`](DECISIONS.md), which
+> is authoritative. This section is a routing table only — it records where each PRD decision
+> went, so a reader of this document can follow the trail. **Do not record decision state here
+> again**; two files holding the same status is precisely the drift this product exists to
+> catch.
 
-| # | Decision | Status |
+**All decisions are closed.** D1–D3 answered by the owner 2026-07-26; D4–D11 answered
+2026-07-27. Nothing is blocked on a decision.
+
+| Was (PRD) | Decision | Now |
 |---|---|---|
-| **D1** | Primary job: drift reconciliation, usage secondary | ✅ **closed** — reconciler |
-| **D2** | Delivery: local Next.js app + collectors | ✅ **closed** — Next.js |
-| **D3** | itqan's role: data model **and** self-install | ✅ **closed** — both |
-| **D4** | Parse claims from prose, or require structured markers? Prose parsing is fragile; markers require editing 5 repos. *Recommendation: heuristics + confidence, with markers as an itqan proposal if heuristics prove too noisy.* | ⬜ open |
-| **D5** | Does "mark verified" write to the repo, or only to `data/verified.json`? *Recommendation: local-only, keeping the dashboard read-only until §6.2 is proven.* | ⬜ open |
-| **D6** | Cost basis: API-equivalent pricing (ccusage-style) or subscription-relative? The `$`/PR number means different things under each. | ⬜ open |
-| **D7** | Refresh model: on-load only, timer, or filesystem watch? | ⬜ open |
-| **D8** | Scope: the 5 named projects **plus agentic-os itself** (D9), or auto-discover from transcript `cwd`? *Recommendation: explicit config; auto-discovery would surface 14 stale repos as noise.* | ⬜ open |
-| **D9** | Does agentic-os get a remote and PRs, or stay local? Affects whether it appears in its own PR panel. | ✅ **closed** — remote `github.com:Sob7i/agentic-os`, `main` (owner, 2026-07-26). It appears in its own board as a sixth project. |
-| **D10** | Does the Overview (§6.8) stay strictly read-only, or eventually accept input (marking an item done, reordering)? *Recommendation: strictly read-only — §6.8.4. Any accepted input becomes a second source of truth that can drift, which is the problem this product exists to solve.* | ⬜ open |
-| **D11** | Does the *Decision queue* (§6.4) remain a separate screen or fold into the Overview's *Blocked* band? *Recommendation: defer until the Overview is in daily use; they may be the same screen.* | ⬜ open |
+| D1 | Primary job: drift reconciliation, usage secondary | [D2](DECISIONS.md) |
+| D2 | Delivery: local Next.js app + collectors | [D3](DECISIONS.md) |
+| D3 | itqan as data model **and** self-install | [D4](DECISIONS.md) |
+| D4 | Claim parsing: heuristics + confidence, not required markers | [D5](DECISIONS.md) |
+| D5 | "Mark verified" writes locally only | [D6](DECISIONS.md) |
+| D6 | Cost basis: compute both; API-equivalent is the headline | [D7](DECISIONS.md) |
+| D7 | Refresh: on-load only | [D8](DECISIONS.md) |
+| D8 | Scope: the named projects only | [D9](DECISIONS.md) |
+| D9 | Remote and PRs; agentic-os watches itself | [D10](DECISIONS.md) |
+| D10 | The Overview stays strictly read-only | [D11](DECISIONS.md) |
+| D11 | The decision queue folds into the Overview | [D12](DECISIONS.md) |
+| — | Profile: lite + `docs/specs/` *(install ADR)* | [D1](DECISIONS.md) |
+| — | Branch model: feature → develop → main | [D13](DECISIONS.md) |
+
+Two of these changed the product's shape rather than just settling a detail: **D7** (cost) now
+ships both bases with API-equivalent leading, and **D11** (decision queue) folds §6.4 into the
+Overview's *Blocked* band rather than being its own screen.
 
 ---
 
