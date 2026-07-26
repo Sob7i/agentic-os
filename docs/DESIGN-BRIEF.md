@@ -92,7 +92,7 @@ the long drift sentences, which are the hardest thing on the screen to typeset.
 | **my-personal-website** | `feature/phase-5-polish` | 7 | 3 weeks | 1 | Router only | ○ attention |
 | **fractal-code** | `develop` | 5 | 2 days | 1 | Router only | ○ attention |
 | **itqan** | `docs/changelog` | 1 | 5 days | 0 | (framework repo) | ✓ in sync |
-| **agentic-os** | `main` | 0 | today | 0 | all seven (self-installed) | ✓ in sync |
+| **agentic-os** | `develop` | 0 | today | 0 | all seven (self-installed 2026-07-27) | ✓ in sync |
 
 **The headline drift, verbatim — design for this exact string:**
 
