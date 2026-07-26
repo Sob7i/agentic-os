@@ -2,6 +2,8 @@
 
 > **Status:** draft for owner review · written 2026-07-26 · not decision-closed
 > **Owner:** Sobhi · **Harness:** [itqan](https://github.com/Sob7i/itqan) (both data model and installed framework)
+> **Paired doc:** [`DESIGN-BRIEF.md`](DESIGN-BRIEF.md) — the wireframe brief for §6.1–6.4.
+> Changes to the feature set here update that brief in the same PR (`paired-docs-update-together`).
 >
 > This document proposes. It does not authorize building. Per itqan's gate model, the
 > decisions in §9 close before code starts.
