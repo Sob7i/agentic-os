@@ -1,0 +1,73 @@
+/*
+ * Tokens inherited from itqan's docs/dashboard.html (surfaces, text, lines) so the
+ * two surfaces read as one family — DESIGN-BRIEF §6.2.
+ *
+ * Status colours are NOT inherited: itqan's accent trio failed the dataviz
+ * validator twice (light teal #0f766e sits below the chroma floor at 0.086 and
+ * reads gray; all three dark values fall outside the dark lightness band). The
+ * values below are the corrected set, passing all six checks in both modes.
+ * Do not substitute by eye — re-run scripts/validate_palette.js.
+ */
+:root {
+  --bg: #faf8f5;
+  --surface: #ffffff;
+  --surface-2: #f2eee8;
+  --line: #e0d9cf;
+  --text: #1c1a17;
+  --muted: #6b645c;
+
+  --sync: #007d64;
+  --attention: #a1620a;
+  --drift: #9f1239;
+  --sync-soft: #007d6414;
+  --attention-soft: #a1620a14;
+  --drift-soft: #9f123914;
+
+  --radius: 10px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131211;
+    --surface: #1b1917;
+    --surface-2: #232019;
+    --line: #322d27;
+    --text: #ece8e2;
+    --muted: #9a938a;
+
+    --sync: #0faaaa;
+    --attention: #c3871e;
+    --drift: #eb5f73;
+    --sync-soft: #0faaaa1a;
+    --attention-soft: #c3871e1a;
+    --drift-soft: #eb5f731a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Monospace is a semantic signal here, not decoration: it marks verified machine
+   truth. Claims are set in the sans face — the typographic split does the
+   epistemic work (DESIGN-BRIEF §6.2). */
+.mono {
+  font-family: var(--mono);
+}
