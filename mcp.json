@@ -1,0 +1,7 @@
+{
+  "name": "pencil",
+  "transport": "stdio",
+  "command": "/private/var/folders/dt/mn4vzspn4t3dvynwq3tftr9c0000gp/T/AppTranslocation/292C2967-0E38-4642-AF1F-B692CCF827A4/d/Pencil.app/Contents/Resources/app.asar.unpacked/out/mcp-server-darwin-arm64",
+  "args": ["--app", "desktop"],
+  "env": {}
+}

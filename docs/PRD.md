@@ -2,8 +2,9 @@
 
 > **Status:** draft for owner review · written 2026-07-26 · not decision-closed
 > **Owner:** Sobhi · **Harness:** [itqan](https://github.com/Sob7i/itqan) (both data model and installed framework)
-> **Paired doc:** [`DESIGN-BRIEF.md`](DESIGN-BRIEF.md) — the wireframe brief for §6.1–6.4.
+> **Paired doc:** [`DESIGN-BRIEF.md`](DESIGN-BRIEF.md) — the wireframe brief for §6.1–6.4 and §6.8.
 > Changes to the feature set here update that brief in the same PR (`paired-docs-update-together`).
+> Round-1 wireframes: [`../design/wireframes.pen`](../design/wireframes.pen) — Concept C chosen.
 >
 > This document proposes. It does not authorize building. Per itqan's gate model, the
 > decisions in §9 close before code starts.
@@ -58,6 +59,14 @@ documents *claim* (HANDOFF/COMPASS "next up", PR states, feature status, open de
 what git, GitHub, and the filesystem *say is true*, then ranks the gaps by how badly they would
 mislead the next agent to read them. Everything else it knows — spend, sessions, skills,
 velocity — sits behind that headline, because it is context, not a call to action.
+
+**It has two pillars, and the second depends on the first.** The **Board** (§6.1) *verifies* —
+it looks backward and asks "is what the docs say still true?" The **Overview** (§6.8) *plans* —
+it looks forward and asks "what do the docs say we're doing, and what's blocking it?" They read
+the same seven roles from the same files. The order matters: **a plan derived from a document
+that is twelve days stale is not a plan, it is a guess.** Which is why the Overview inherits its
+trustworthiness from the Board, and says so on every item — see §6.8.1, the one thing this
+product can do that a general-purpose planning tool structurally cannot.
 
 ---
 
@@ -275,6 +284,88 @@ For projects with `FEATURES.md`: compare the behaviour map's last update against
 that touched application code. Directly enforces itqan's highest-stakes paired-doc rule — the
 one the framework calls out by name.
 
+### 6.8 · P1 — The Overview *(the second pillar)*
+
+**The question it answers:** across all projects — what's in flight, what's ready to build,
+what's blocked on me, what shipped recently, and what does the coming week look like?
+
+Today that answer requires opening five repos and reading `HANDOFF.md`, `ROADMAP.md`,
+`BACKLOG.md`, `docs/specs/*.md`, and `CHANGELOG.md` in each. The information exists and is
+well-maintained; it is simply **scattered across 5 repos × 6 file types**, so the portfolio-level
+view — the one that decides what to work on next — exists nowhere.
+
+#### 6.8.1 · Verified provenance — why this belongs in *this* product
+
+Linear, Jira, and Notion all render a nicer board than this will. **None of them can do the one
+thing that matters here:** their board is a set of statuses a human remembered to update, and
+nothing checks them. This product already computes, per project, whether the source documents
+agree with git — so every item on the Overview can carry that provenance:
+
+| Provenance | Meaning | Presentation |
+|---|---|---|
+| **verified** | drawn from a doc the Board confirms is in sync | stated plainly |
+| **suspect** | drawn from a doc with active drift | shown, visibly qualified, with the drift linked |
+| **derived** | computed from git/GitHub directly, not a doc | stated plainly (strongest source) |
+
+**Consequence:** nadim's roadmap items are currently **suspect** — its HANDOFF is 12 days stale,
+so "next up" may already be done. The Overview must not launder that into a confident plan.
+Every other planning tool would show those items as fact. **This is the feature's entire reason
+to exist inside Agentic OS rather than as a separate tool.**
+
+#### 6.8.2 · Data sources ✅ verified to exist
+
+Measured across the real repos on 2026-07-26 — this is not a hypothetical schema:
+
+| Band | itqan role | Source | Evidence found |
+|---|---|---|---|
+| **In flight** | State / Record | open PRs; specs marked *build in progress* | 4 open PRs; `monorepo-step-1` = "build in progress" |
+| **Ready** | Queue | `docs/specs/*.md` with `☑` status | **8 of 13** hadaya specs are `☑` decision-closed |
+| **Blocked** | Decisions | `☐` specs + open decisions + human gates | **5 of 13** are `☐` design-closed-but-gated |
+| **Shipped** | Behaviour / Record | merged PRs, `CHANGELOG.md`, tags | hadaya `v0.5.2`, `v0.5.1`, `v0.5.0`; 309-line changelog |
+| **Deferred** | — | `BACKLOG.md`, each with `Unblocked by:` | nadim: 10 entries, all with explicit unblock conditions |
+| **Milestones** | Record | git tags + CHANGELOG headings | hadaya tagged; nadim deliberately untagged |
+
+**The status glyph is the machine-readable contract.** Hadaya's specs open with a `status:` line
+whose leading glyph is reliable — `☑` = decisions closed / buildable, `☐` = design closed but
+gated. The **prose after the glyph is not** reliable: observed variants include "decisions closed
+— build approved", "IMPLEMENTED & GREEN", "CLOSED (spec-closed)", and "DESIGN-CLOSED —
+build-GATED". So: **parse the glyph, display the prose verbatim, never parse the prose.** This is
+`external-API-fields-are-guilty-until-verified` applied to your own documents.
+
+`BACKLOG.md`'s `Unblocked by:` convention is similarly load-bearing — nadim uses it on all 10
+entries. It converts a backlog from a graveyard into a queue with entry conditions, and the
+Overview should surface it as *the* reason an item is not moving.
+
+#### 6.8.3 · The time axis — honest about the fact that you don't run sprints
+
+The ask was "what the week/sprint looks like." **There are no sprints in this system, and
+inventing them would be a lie the dashboard then has to maintain.** itqan is gate-driven: work
+moves when a decision closes or an owner approves, not when a fortnight elapses. Burndown charts,
+velocity points, and sprint boundaries would all be fabricated ceremony — and PRD §6.3 already
+commits to not shipping metrics nobody validated.
+
+**What is real and time-shaped**, and what the week view should therefore be built from:
+
+- **Movement** — PRs opened/merged, commits, specs that changed status, tags cut, in the last 7
+  days. All derived from git. Fully trustworthy.
+- **Age as pressure** — how long each blocked item has been blocked. nadim's HANDOFF has been
+  stale 12 days; some decisions are older. *Age is the honest substitute for a deadline* in a
+  system with no deadlines.
+- **Stated intent** — the "Next up" list in each state doc. Real, but only as trustworthy as the
+  doc (§6.8.1).
+
+So the week view is a **retrospective of what moved + a queue ordered by what's been waiting
+longest**, not a forecast. If a forecast is ever wanted, it must be gated on evidence that
+estimates would be accurate — and nothing in the current data suggests that.
+
+#### 6.8.4 · Scope boundary
+
+The Overview is **read-only, like the Board.** It does not create tasks, assign work, set due
+dates, or track effort. The moment it accepts input that lives nowhere else, it becomes a second
+source of truth that can itself drift — and this product exists because of drift. **Every item on
+the Overview traces to a file in a repo.** Editing happens in those files, by an agent or by you,
+through the normal ritual.
+
 ---
 
 ## §7 — Architecture
@@ -364,6 +455,8 @@ Per itqan's gate model, these close before code starts. **D1–D3 are answered**
 | **D7** | Refresh model: on-load only, timer, or filesystem watch? | ⬜ open |
 | **D8** | Scope: the 5 named projects **plus agentic-os itself** (D9), or auto-discover from transcript `cwd`? *Recommendation: explicit config; auto-discovery would surface 14 stale repos as noise.* | ⬜ open |
 | **D9** | Does agentic-os get a remote and PRs, or stay local? Affects whether it appears in its own PR panel. | ✅ **closed** — remote `github.com:Sob7i/agentic-os`, `main` (owner, 2026-07-26). It appears in its own board as a sixth project. |
+| **D10** | Does the Overview (§6.8) stay strictly read-only, or eventually accept input (marking an item done, reordering)? *Recommendation: strictly read-only — §6.8.4. Any accepted input becomes a second source of truth that can drift, which is the problem this product exists to solve.* | ⬜ open |
+| **D11** | Does the *Decision queue* (§6.4) remain a separate screen or fold into the Overview's *Blocked* band? *Recommendation: defer until the Overview is in daily use; they may be the same screen.* | ⬜ open |
 
 ---
 
@@ -381,14 +474,23 @@ in §1 — and shows itqan as green.
 *Acceptance:* one real drift is corrected through the dashboard, and the ritual is measurably
 cheaper than doing it by hand.
 
-**Stage 3 — Transcripts and cost.** Incremental parser, SQLite cache, usage panel (§6.3).
+**Stage 3 — The Overview** (§6.8). The second pillar. Deliberately placed *before* cost, because
+it answers "what do I work on next" while cost answers "what did last month cost" — and it
+reuses Stage 1's collectors rather than needing the transcript parser.
+*Acceptance:* it correctly shows hadaya's 8 `☑` ready specs and 5 `☐` gated ones, and it marks
+every nadim item **suspect** while nadim's HANDOFF is drifted (§6.8.1). The second half of that
+test is the one that matters — it is the whole differentiator.
+
+**Stage 4 — Transcripts and cost.** Incremental parser, SQLite cache, usage panel (§6.3).
 *Acceptance:* totals cross-check against `ccusage` within a stated tolerance; every derived
 metric exposes its formula.
 
-**Stage 4 — Decision queue** (§6.4). Ships when the drift board is in daily use and the
-question shifts from "what's stale" to "what's blocked on me."
+**Stage 5 — Decision queue** (§6.4). Ships when the drift board is in daily use and the
+question shifts from "what's stale" to "what's blocked on me." May well merge into the
+Overview's *Blocked* band rather than being a separate screen — decide once the Overview is
+in use.
 
-**Stage 5+ — Skills, sessions, behaviour drift** (§6.5–6.7). Each waits for its pain.
+**Stage 6+ — Skills, sessions, behaviour drift** (§6.5–6.7). Each waits for its pain.
 
 ---
 

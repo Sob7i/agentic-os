@@ -1,8 +1,22 @@
 # Agentic OS — Design Brief
 
-> **For:** the design agent drafting first wireframe concepts
-> **Status:** brief · written 2026-07-26 · not a design system yet
-> **Reads with:** [`PRD.md`](PRD.md) (the what and why — read §1, §6.1, §6.2 first)
+> **For:** the design agent drafting wireframe concepts
+> **Status:** brief · written 2026-07-26 · **round 1 complete, round 2 open** · not a design system yet
+> **Reads with:** [`PRD.md`](PRD.md) (the what and why — read §1, §6.1, §6.2, §6.8 first)
+> **Round 1 output:** [`../design/wireframes.pen`](../design/wireframes.pen)
+
+## Round status
+
+**Round 1 — delivered.** Three Board concepts (A Ledger, B Triage, C Feed + Roster), degraded
+states, fix proposal, usage panel, decision queue, dark mode.
+
+**✅ Chosen: Concept C — "Feed + Roster"** (node `V1YpOq`), owner pick 2026-07-26. Drift is a
+first-class object: a feed of full drift cards on top (CLAIMED vs VERIFIED as two labelled,
+differently-styled blocks), an ambient role-coverage matrix below. Concepts A and B are retired
+— keep them in the file as record, do not develop them further.
+
+**Round 2 — this brief now asks for:** (a) the Overview (§5.5, new — the second pillar), and
+(b) two corrections to Concept C (§5.1.1). Everything in §§1–4 and 6–7 still governs.
 >
 > This brief specifies **what the screens must do and the constraints they must respect.**
 > It deliberately does *not* specify layout — that is the deliverable being asked for.
@@ -131,6 +145,34 @@ The default and often only view. Requirements:
    to say. If every row reserves space for the maximum, five rows look broken; if rows size to
    content, the table loses its scan-line. **Solve this explicitly.**
 
+#### 5.1.1 · Round-2 corrections to Concept C
+
+Two fixes before Concept C is developed further. The first is a content accuracy bug; the second
+is a structural gap the concept's own rationale identified.
+
+**(a) The salla-apps drift card is fabricated — replace it.** The card cites `docs/STATE.md`
+claiming *"Working tree clean; ready to ship."* **No such file exists.** salla-apps is
+Router-only — its own roster row in the same wireframe correctly shows one filled dot and six
+empty. So the wireframe contradicts itself, and invents a document to do it.
+
+This matters more than a normal content error: a dashboard whose purpose is catching unverified
+claims must not itself display one. Per §4, salla-apps has **no state doc**, so it cannot produce
+a claim-vs-fact drift at all — it is `○ attention` (9 uncommitted files, 21h), not `⚠ drift`.
+
+*The correction is also a design opportunity.* With only one real drift, the feed shows a single
+card — which is the honest picture, and raises the question §9.5 asked: **what does the feed look
+like when a Router-only project has nothing to claim?** Answer it explicitly. Options: the feed
+holds only real drift (often one card), and Router-only projects appear solely in the roster
+with an "install state role" affordance; or the feed carries a distinct secondary card type for
+"cannot verify — no state doc," which is a different thing from "verified in sync."
+
+**(b) Solve the duplication the rationale admits.** Concept C's own note lists *"a project
+appears twice (feed + roster)"* as its sacrifice. With nadim in both, the eye must reconcile
+them. Show how the two zones relate — a visual link on hover, a roster row that reads as the
+"collapsed" form of its card, or a marker on rostered projects that have a card above. Small
+detail, disproportionate effect on whether the screen reads as one instrument or two stacked
+widgets.
+
 ### 5.2 · Fix proposal *(the gated action — PRD §6.2)*
 
 When drift is detected, the dashboard drafts the corrected markdown and **waits for approval.**
@@ -157,6 +199,90 @@ is a low-confidence number marked?
 
 Where the system waits on Sobhi: open decisions with age, specs not yet decision-closed, pending
 human gates. One concept sketch is enough at this stage.
+
+### 5.5 · The Overview *(NEW in round 2 — the second pillar · PRD §6.8)*
+
+**Give this roughly the effort of §5.1.** It is the other half of the product, not a subpanel.
+
+**The question it answers:** across all projects — what's in flight, what's ready to build,
+what's blocked on me, what shipped recently, and what does the coming week look like?
+
+**Its relationship to the Board is the design problem.** The Board *verifies* (backward: "is
+this doc still true?"). The Overview *plans* (forward: "what does this doc say we're doing?").
+Same seven roles, same files, opposite direction. Are they two tabs, two zones of one page, or
+two modes? Take a position. The Board is the more urgent surface and must not lose its
+primacy — but the Overview is where more total time will be spent.
+
+#### 5.5.1 · The thing that makes this not-Linear — design it first
+
+Every item shows **where it came from and whether that source is trustworthy**:
+
+| Provenance | Meaning | Frequency in real data |
+|---|---|---|
+| **derived** | computed from git/GitHub directly | strongest — most "shipped"/"in flight" items |
+| **verified** | from a doc the Board confirms in sync | e.g. all hadaya specs |
+| **suspect** | from a doc with active drift | **every nadim item today** — its HANDOFF is 12 days stale |
+
+A general planning tool renders all three identically, because it cannot tell them apart. **This
+one can, and the design must show it** — or the feature is a worse Linear.
+
+**Design constraint:** *suspect* must be visible without becoming alarming. These items are
+probably fine — just unconfirmed. If suspect items read as errors, the Overview becomes a wall
+of warnings and gets ignored; if they read as identical to verified, the differentiator is
+lost. Find the middle. Note the vocabulary problem too: `⚠ drift` on the Board is *"this is
+wrong."* Suspect is *"this may be out of date."* Reusing the drift red would overstate it.
+
+#### 5.5.2 · Content — real data, verified 2026-07-26
+
+Five bands. **Use these actual numbers.**
+
+| Band | Source | Real content |
+|---|---|---|
+| **In flight** | open PRs + specs "build in progress" | 4 open PRs (nadim #24, salla-apps, fractal-code, my-personal-website); `monorepo-step-1.spec.md` in progress |
+| **Ready** | specs with `☑` | **8 of 13** hadaya specs decision-closed, e.g. `hadaya-shell-adoption` ("build approved, owner 2026-07-16"), `umnia-import`, `widget-product-capture-and-currency` ("ready for a builder (Sonnet)") |
+| **Blocked** | specs with `☐` + open decisions + gates | **5 of 13**, e.g. `scheduled-loop-harness` ("DESIGN-CLOSED — build-GATED… may not build until §8 build-gates clear"); nadim's D15 dogfood gate blocking all features |
+| **Shipped** | merged PRs, CHANGELOG, tags | hadaya `v0.5.2` · `v0.5.1` · `v0.5.0`; nadim PRs #1–#23 merged, deliberately untagged |
+| **Deferred** | `BACKLOG.md`, each with `Unblocked by:` | nadim: **10 entries**, e.g. *"Exercise the live reflection round-trip — Unblocked by: Sobhi pasting a real key into `.env.local`"* |
+
+**Two content properties that should shape the layout:**
+
+1. **`Unblocked by:` is the most valuable string on the screen.** Every nadim backlog entry has
+   one, and it converts a graveyard into a queue with entry conditions. Many name *Sobhi* as the
+   unblocker — that is itqan's core thesis (decision availability is the bottleneck) appearing
+   as literal data. **Consider making "blocked on you" its own visual treatment**, distinct from
+   "blocked on a gate."
+2. **Status prose is long and inconsistent, and must be shown verbatim.** Real values range from
+   `☑ decisions closed — build approved (owner, 2026-07-16)` to `☐ DESIGN-CLOSED — build-GATED. §6
+   decisions closed 2026-07-23 (values inherited from AGENTIC_SYSTEM_PLAYBOOK.md §4 Stage 6)`.
+   Only the leading glyph is machine-readable; the prose is authored and may not be normalized
+   or truncated into a fake status chip. **Design for a variable-length authored string** — the
+   §5.1 density problem again, in a new place.
+
+#### 5.5.3 · The week view — no sprints, and don't invent them
+
+The ask was "what the week/sprint looks like." **This system has no sprints.** It is gate-driven:
+work moves when a decision closes or an owner approves, never because a fortnight ended. Sprint
+boundaries, burndowns, velocity, and story points would all be fabricated — and PRD §6.3 already
+forbids shipping metrics nobody validated.
+
+**Design instead from what is real and time-shaped:**
+
+- **Movement (last 7 days)** — PRs opened/merged, commits, specs that changed status, tags cut.
+  All git-derived, fully trustworthy, genuinely useful.
+- **Age as pressure** — how long each blocked item has waited. *Age is the honest substitute for
+  a deadline* in a system that has none. nadim's HANDOFF: 12 days. Some gates are older.
+- **Stated intent** — each state doc's "Next up," carrying its provenance per §5.5.1.
+
+So the week view is **a retrospective of what moved, plus a queue ordered by what has waited
+longest.** Not a forecast. If it reads as a burndown, it is wrong.
+
+#### 5.5.4 · Explicit non-goals for this screen
+
+No task creation, assignment, due dates, effort estimates, drag-to-reorder, or status toggles.
+It is **read-only** (PRD §6.8.4): anything editable here becomes a second source of truth that
+can drift, and drift is the problem this product exists to solve. Every item traces to a file in
+a repo; editing happens there. **If a wireframe includes a "+ New" button, it has misread the
+brief.**
 
 **Do not wireframe** skills inventory, session stream, or behaviour drift (PRD §6.5–6.7). They
 are gated behind felt pain and would be speculative now.
@@ -266,17 +392,26 @@ the page's visual tone.
 
 ## 8 · Deliverables
 
-1. **The Board — 2–3 distinct concepts.** The main event. Each must solve §5.1's two tensions
-   (row density vs. drift sentence; heterogeneous rows) and take a clear position on §3
-   (claim-vs-fact separation). Show all 6 real projects from §4. Annotate the reasoning.
-2. **The Board, degraded states** — one concept shown (a) all-green, (b) stale/unverified,
-   (c) a collector failed (`gh` offline: PR data unavailable while git data is fine — partial
-   truth must be visible as partial, never silently blank).
-3. **Fix proposal (§5.2)** — one concept, showing the diff and the gate.
-4. **Usage panel (§5.3)** — one concept, including the formula-on-hover affordance.
-5. **Decision queue (§5.4)** — one light sketch.
-6. **Dark mode** — at least the chosen Board concept, designed rather than inverted.
-7. **A short rationale** — for the Board concepts, what each optimizes and what it sacrifices.
+### Round 1 — ✅ complete
+
+Three Board concepts + degraded states + fix proposal + usage panel + decision queue + dark mode,
+delivered in `design/wireframes.pen`. Concept C chosen.
+
+### Round 2 — requested now
+
+1. **The Overview — 2–3 distinct concepts** (§5.5). The main effort this round. Each must take a
+   position on: its relationship to the Board (tabs / zones / modes), how **provenance** is
+   expressed (§5.5.1), and how the five bands are arranged. Use the real content in §5.5.2.
+2. **The week view** (§5.5.3) — movement + age-ordered queue. May be part of an Overview
+   concept or a separate zone; say which and why. **Must not read as a sprint burndown.**
+3. **Concept C, corrected** (§5.1.1) — fabricated salla-apps card replaced, feed/roster
+   duplication addressed.
+4. **Overview dark mode** — the chosen direction, designed rather than inverted.
+5. **A short rationale per Overview concept** — what it optimizes, what it sacrifices. The
+   round-1 rationale notes were genuinely useful; keep that habit.
+
+**Not requested:** further Board concepts (C is chosen), and no revisions to the fix proposal,
+usage panel, or decision queue unless the Overview forces a change — in which case note it.
 
 **Fidelity: wireframe.** Structure, hierarchy, density, and states. Use the real palette and type
 where they carry meaning (§6.2–6.3), but do not polish — this round decides *layout and
@@ -301,6 +436,19 @@ These are genuinely undecided. **Take a position and show it** rather than askin
 6. **Does the ambient glance (§2) deserve its own mode** — a zoomed, minimal variant readable
    across a room — or must the Board serve both?
 
+**Round 2 adds:**
+
+7. **Board and Overview — one surface or two?** Tabs, scroll zones, or modes. The Board owns the
+   3-second scan; the Overview owns the longer session. Whatever you choose must not cost the
+   Board its primacy.
+8. **How is *suspect* provenance shown** (§5.5.1) without reading as an error? It must be
+   distinct from the Board's `⚠ drift` red, which means something stronger.
+9. **Do the five bands (§5.5.2) group by band or by project?** By band answers "what's ready
+   anywhere"; by project answers "where does nadim stand." Both are real questions — is one
+   primary, or is it a toggle?
+10. **Where does "blocked on Sobhi" live?** It is the system's declared bottleneck and appears
+    literally in `Unblocked by:` strings. Its own band, a filter, or a marker?
+
 ---
 
 ## 10 · Success criteria
@@ -313,4 +461,15 @@ A concept succeeds if:
 4. The **usage panel cannot be mistaken for the headline**, even though it holds the biggest
    numbers.
 5. Nothing on screen makes a claim it hasn't verified — the dashboard obeys the same
-   `verify-before-claim` rule as the system it watches.
+   `verify-before-claim` rule as the system it watches. *(Round 1 failed this once: see
+   §5.1.1a.)*
+
+**For the Overview (§5.5):**
+
+6. **Provenance is legible at a glance** — a stranger can tell which items are git-derived and
+   which come from a document that may be stale. Fail this and it is a worse Linear.
+7. **"What should I work on next" is answerable in under 15 seconds**, across all six projects.
+8. **"What is blocked on me" is unmissable** — it is the system's declared bottleneck.
+9. **The week view is not mistakable for a sprint board.** No burndown, no velocity, no
+   fabricated deadlines — only real movement and honest age.
+10. **The Board keeps its primacy.** Adding the Overview must not slow the 3-second drift scan.
