@@ -1,6 +1,6 @@
 # Agentic OS — Session Handoff
 
-> Continuation notes for the next working session (human or agent). Updated 2026-07-27.
+> Continuation notes for the next working session (human or agent). Updated 2026-07-27 (Stage 2).
 > Read `CLAUDE.md` first (session ritual, conventions, doc map); this file is only "where we
 > are and what's next."
 >
@@ -12,9 +12,18 @@
 
 ## Where things stand
 
-- **Stage 1 ships: the reconciliation Board runs.** `pnpm install && pnpm dev` → the Board at
-  `localhost:3000`. `pnpm verify` runs the acceptance suite; **all 8 checks pass** (AC-1…AC-7
-  plus an extractor-trap guard).
+- **Stage 2 ships: the gate is live.** The Board now offers a correction on DC1 drift and writes
+  it only on an explicit click. `pnpm verify` runs **both** suites — 8 Stage 1 checks and 11
+  Stage 2 checks, **19 passing** as of this commit. Stage 2's tests run entirely against
+  generated fixture repos in a temp dir; no watched project is written to by a test.
+- **The write path, in order:** `lib/fix/propose.ts` (pure, reads only) → `lib/fix/apply.ts`
+  (four guards, all-or-nothing) → `app/actions.ts` (rebuilds the proposal server-side from the
+  claim hash — the browser never names a path or supplies bytes) → the card UI in `app/page.tsx`.
+- **Nothing has actually been approved yet.** All four UI states were rendered against live data,
+  but no watched repo has been corrected through the button — that is an owner gate. nadim's
+  `#22` → `#23` proposal is sitting on the Board waiting.
+- **Stage 1 still ships: the reconciliation Board runs.** `pnpm install && pnpm dev` → the Board
+  at `localhost:3000` (`:3001` if the port is busy).
 - **It found the drift it was built to find, unaided.** nadim's HANDOFF claims *"PRs #1 through
   #22 merged"*; the Board reports `#23 is merged (1 past the claim); unclaimed open: #24`, and
   cites `docs/HANDOFF.md` as the source.
@@ -25,38 +34,39 @@
 - **D14 closed mid-build** — DC4 (uncommitted work) needed a threshold. Without one every
   project was permanently non-green and `✓ in sync` could never render, failing AC-2. Default 5,
   configurable per project.
-- **Stage 2 is specified and ready to build** — `docs/specs/stage-2-fix-proposals.spec.md`, `☑`.
-  Nothing blocks it.
-- **Round-2 designs delivered and reviewed** (2026-07-27) in `design/wireframes.pen`: Overview A
-  and B (+dark), Board Quiet Day, and three fix-proposal states. Review outcome:
-  - **Overview direction chosen — D16**: Concept A (tabbed, by-band) **plus** Concept B's
-    dedicated "blocked on you" spotlight band. Reason: the Board is already by-project, so a
-    by-project Overview would duplicate it.
-  - **`Fix Proposal v2 — Fixable (DC1)` is the design to build.** The frame plainly named
-    `Fix Proposal` is a superseded round-1 sketch proposing a multi-line prose rewrite, which
-    **D15 forbids**. → `docs/BACKLOG.md`, rename it before building the UI.
-- **All product decisions closed** — `docs/DECISIONS.md` D1–D16.
+- **Building it found something the wireframe got wrong.** `Fix Proposal v2` draws nadim's claim
+  on `line 24` as a tidy snippet; it is really on **line 15**, inside a ~600-character bullet, so
+  the live diff wraps to a paragraph. The design's *structure* held — full line, amber-flagged
+  date — but its content was a reconstruction → `docs/BACKLOG.md`, `docs/LEARNINGS.md`.
+- **The superseded `Fix Proposal` frame is renamed** to `SUPERSEDED (round 1) — … do not build`,
+  closing the round-2 review's one blocking item.
+- **Round-2 designs delivered, reviewed, and now partly consumed.** Overview direction is closed
+  as **D16** (Concept A, tabbed/by-band, plus Concept B's "blocked on you" spotlight band).
+- **All product decisions closed** — `docs/DECISIONS.md` D1–D17. D17 is new: the gate's second
+  button acknowledges, it does not reject.
 
 ## How to pick up
 
 1. `git status && git log --oneline -5 && gh pr list` — verify this file against reality.
-2. `pnpm install && pnpm verify` — should print 8 passes. If AC-1 now fails, that is **good
-   news**: it means nadim's HANDOFF was fixed. Update the acceptance fixture rather than the
-   check.
-3. `pnpm dev` → read the Board. It includes itself.
+2. `pnpm install && pnpm verify` — should print **19 passes** (8 + 11). If Stage 1's AC-1 now
+   fails, that is **good news**: it means nadim's HANDOFF was fixed. Update the acceptance
+   fixture rather than the check.
+3. `pnpm dev` → read the Board. It includes itself, and nadim's card carries a live proposal.
 4. `pnpm type-check` and `pnpm build` both clean as of this commit.
 
 ## Next up
 
-1. **Build Stage 2 — gated fix proposals.** Spec written and decision-closed:
-   `docs/specs/stage-2-fix-proposals.spec.md`. **This is the first slice that writes outside this
-   repo**, so build order matters: `lib/fix/propose.ts` → `lib/fix/apply.ts` → the fixture-based
-   acceptance suite (AC-1…AC-11) → *then* the UI. Prove the writes headless first.
-   **D15 gets promoted to `docs/DECISIONS.md` when this builds** — corrections are deterministic
-   string edits, never model-generated, because egress is forbidden by invariant (spec §5.1).
-2. **Round-2 wireframes** (`docs/DESIGN-BRIEF.md` §8) — the Overview, the week view, and the fix
-   proposal gate. Runs in parallel; the Overview blocks only the Stage 3 spec.
-3. **Stage 3 — the Overview** (PRD §6.8), once its wireframes exist and a spec closes.
+1. **Approve nadim's proposal once, by hand** (owner gate). It is the only thing separating
+   "eleven fixture tests pass" from "this has corrected a real document". Afterwards the card
+   should read `✎ written · awaiting re-check` with git's own porcelain beneath it, and the next
+   reload should decide for itself whether the drift is gone. Undo is
+   `git checkout -- docs/HANDOFF.md docs/LEARNINGS.md` in nadim.
+2. **Write the Stage 3 spec — the Overview** (PRD §6.8), against **D16**, not against either
+   wireframe as drawn: Concept A's tabbed by-band layout **plus** Concept B's "blocked on you"
+   spotlight band. Nothing blocks it; the wireframes exist and the direction is closed.
+3. **Build Stage 3.** Provenance rendering (◆ derived / ✓ verified / ~ suspect) is the part that
+   earns the surface — and `~ suspect` must be sourced from *this* Board's drift state, not
+   re-derived, or the Overview becomes the second source of truth D11 forbids.
 
 **Later** (PRD §10): Stage 4 transcripts and cost · Stage 5 folded into the Overview (D12) ·
 Stage 6+ pain-gated.
@@ -72,4 +82,10 @@ None.
 - **2026-07-27** — Owner closed the open decisions (→ D5–D12). itqan installed (lite +
   `docs/specs/`), PR #1 merged. Stage 1 spec written and decision-closed, PR #2 merged. Stage 1
   built: all acceptance criteria pass, the Board runs in both colour schemes, and D14 was closed
-  mid-build when DC4's threshold surfaced.
+  mid-build when DC4's threshold surfaced. Stage 2 spec written (PR #4), round-2 designs reviewed
+  and D15/D16 recorded (PR #5).
+- **2026-07-27 (later)** — Stage 2 built: propose → apply → 11 fixture-based acceptance checks →
+  UI, in that order. Two defects were caught by *running* it rather than by review — a
+  path-confinement guard that derived its bounds from its own input, and the JSX-newline bug
+  recurring as "2 file s". The second one had already bitten once, so it was promoted from a
+  lesson to a rule in `CLAUDE.md`.

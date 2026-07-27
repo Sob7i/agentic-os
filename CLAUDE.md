@@ -75,13 +75,30 @@ These are the product's identity. A change that breaks one is a decision, not a 
 
 ## Commands
 
-**None yet — there is no `package.json`.** This section is a slot, not an omission: it gets
-filled with *verified* commands (run, not copied) when Stage 1 scaffolds the app. Planned stack
-is Next.js + TypeScript + SQLite (D3).
+Every command below was **run**, not copied from a template. Next.js 15 + TypeScript; no database
+yet (D3 plans SQLite for Stage 4's transcript index — nothing needs it before then).
+
+| Command | Does |
+|---|---|
+| `pnpm install` | Install. |
+| `pnpm dev` | The Board at `localhost:3000` (falls back to `:3001` if the port is taken). |
+| `pnpm verify` | **Both** acceptance suites — 8 Stage 1 checks, 11 Stage 2. Non-zero exit on any failure. |
+| `pnpm verify:stage1` | Stage 1 only. Runs against the **real** watched repos, read-only. |
+| `pnpm verify:stage2` | Stage 2 only. Runs against **generated fixture repos in a temp dir** — never a watched project. |
+| `pnpm type-check` | `tsc --noEmit`. |
+| `pnpm build` | Production build. |
+
+If `pnpm build` fails on a missing `pages-manifest.json`, the cause is a stale cache:
+`chmod -R u+w .next && rm -rf .next`.
 
 ## Conventions
 
-- **TypeScript**, Next.js App Router. Collectors are server-side under `lib/collectors/`.
+- **TypeScript**, Next.js App Router. Collectors are server-side under `lib/collectors/`;
+  the write path is `lib/fix/`.
+- **In JSX, interpolate complete strings.** Never let a line break fall between literal text and
+  an expression continuing the same word — JSX collapses the newline to a space, and
+  `write {n} file\n{n === 1 ? "" : "s"}` renders as *"2 file s"*. This has shipped twice
+  (`docs/LEARNINGS.md`); use a ternary returning whole phrases.
 - **Docs are prose, not bullets-only** — these files are read by models under time pressure;
   state the reason inline so it survives out of context.
 - Dates are absolute (`2026-07-27`), never "yesterday" or "last week".

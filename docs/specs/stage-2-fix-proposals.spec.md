@@ -1,8 +1,17 @@
 # Spec — Stage 2: gated fix proposals
 
-status: ☑ decisions closed — build approved. §5 answered 2026-07-27; the correction mechanism in
-§3.2 and its failure mode in §3.3 were **prototyped against nadim's real HANDOFF before this spec
-was closed**, not assumed.
+status: ☑ **built and verified 2026-07-27** — `pnpm verify:stage2` runs AC-1…AC-11 against
+generated fixture repos; all 11 pass. Decisions were closed before the build (§5); the correction
+mechanism in §3.2 and its failure mode in §3.3 were **prototyped against nadim's real HANDOFF**
+first, not assumed.
+
+Two things the build changed, both recorded rather than folded in silently:
+
+- **D17** — the gate's second button acknowledges ("Leave as is"); it is not the wireframe's
+  "Reject". A reject would either forget on reload or store a status, and D11 forbids the latter.
+- **§3.4's path confinement was wrong on the first pass** and the acceptance test did not catch
+  it, because a different guard refused the write. See `docs/LEARNINGS.md` — a guard must not take
+  its bounds from the thing it is guarding, and a test must assert *which* guard fired.
 
 > The first slice that **writes outside this repo.** Everything before it was read-only. Product
 > context: `docs/PRD.md` §6.2, §10 Stage 2. Depends on Stage 1

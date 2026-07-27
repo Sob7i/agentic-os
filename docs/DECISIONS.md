@@ -248,3 +248,23 @@ Board's by-project cut and compresses it).
 **Consequence:** The Stage 3 spec is written against this synthesis, not against either wireframe
 as drawn. Provenance rendering (◆ derived / ✓ verified / ~ suspect, suspect in amber and never
 the Board's drift red) carries over from both concepts unchanged.
+
+## D17 — The gate's second button acknowledges; it does not reject (2026-07-27)
+
+**Decision:** The fix proposal's secondary action is **"Leave as is"**, which writes a local
+acknowledgement (`data/verified.json`, D6). There is no "Reject" button, despite the round-2
+wireframe drawing one.
+
+**Rationale:** A reject that merely hides the card would be forgotten on reload, so the next
+session would see the same proposal and re-decide — the dashboard silently losing a decision the
+user made. A reject that *persisted* would be a status this product stores about a watched repo,
+which is the second source of truth D11 forbids. Acknowledging is the honest version of the same
+gesture: it records **that you looked**, never what is true, and it expires by construction when
+the claim changes, because the key is the claim hash.
+
+**Consequence:** Acknowledged drift stays on the Board, visibly acknowledged and muted, rather
+than disappearing. "Un-acknowledge" is one click. The `Fix Proposal v2` wireframe's Reject button
+is therefore *not* built as drawn — recorded here so the divergence is deliberate and findable.
+
+**Rejected:** *Reject = dismiss for this session* (loses a decision silently); *Reject = mark
+resolved* (the dashboard grading its own work, already refused in spec §5.6).
