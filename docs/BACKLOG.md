@@ -25,6 +25,19 @@ and things explicitly punted with a reason.
 - **Graduate to COMPASS + per-track handoffs** — lite uses a single `HANDOFF.md`. Unblocked by:
   a second genuinely parallel track of work appearing.
 
+### From the round-2 design review (2026-07-27)
+
+- **Rename or archive the superseded `Fix Proposal` frame** in `design/wireframes.pen` — it
+  proposes a multi-line prose rewrite that D15 forbids, and it holds the obvious name while the
+  correct design is `Fix Proposal v2 — Fixable (DC1)`. Unblocked by: a design-file edit. **Do
+  before building Stage 2's UI.** See `docs/LEARNINGS.md`.
+- **Two minor inaccuracies in `Fix Proposal v2`** — it cites `docs/HANDOFF.md · line 24`; the
+  real claim is on line 15. Its dates read `2026-07-26` where the review ran on `07-27`.
+  Cosmetic; fix on the next design pass.
+- **Stray `untitled.pen` (1 MB) at the repo root** — an untracked Pencil autosave, deliberately
+  not committed. Unblocked by: confirming it is disposable, then deleting it or gitignoring
+  `untitled*.pen`.
+
 ### Product / design
 
 - **Propose structured claim markers upstream to itqan** — D5 chose prose heuristics so the tool

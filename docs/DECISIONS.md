@@ -200,3 +200,51 @@ threshold already handles the common case; revisit if the count proves noisy.
 
 **Consequence:** `stalledAfterDays` and `dirtyThreshold` both live in `projects.config.ts`, per
 spec §5.8 — thresholds are configuration, never hardcoded.
+
+## D15 — Corrections are deterministic edits, never generated prose (2026-07-27)
+
+**Decision:** Any correction this product proposes to a watched repo is a **deterministic string
+edit** computed from a matched claim span. No model-drafted prose, ever — not for state docs, not
+for `LEARNINGS.md` entries (which are templated), not for future checks.
+
+**Rationale:** Forced by invariant before it is a preference. `CLAUDE.md` §Invariants 1 permits no
+network egress beyond `gh`, so a model-drafted rewrite is out of scope by rule. It is also the
+better engineering answer, verified against nadim's real HANDOFF: the deterministic fix changes
+one character inside the matched span, leaves the file at 23,074 bytes, and touches one line — a
+diff a human can actually review. A generated rewrite would also restyle the date, the branch
+note, and the tone, producing a larger and less reviewable diff.
+
+**Consequence — the known limitation is accepted, not hidden.** A mechanical edit can introduce a
+*new* inaccuracy in prose it never read: correcting `#22` → `#23` leaves the adjacent
+`(verified 2026-07-13 via gh pr list)` beside a fact re-verified today. The mitigation is the
+gate — the diff shows the **full line in context** and the UI flags the stale neighbour. This is
+the argument for human approval stated concretely, and it is why an auto-applied fix is refused.
+
+**Rejected:** Model-drafted corrections (breaks the egress invariant, unreviewable diffs);
+whole-line regeneration (same problem, smaller blast radius).
+
+*Promoted from `docs/specs/stage-2-fix-proposals.spec.md` §5.1.*
+
+## D16 — Overview direction: tabbed / by-band, plus a "blocked on you" spotlight (2026-07-27)
+
+**Decision:** Build the Overview as **Concept A** — a second tab beside the Board, arranged
+**by band** (In flight · Ready · Blocked · Shipped · Deferred) — **plus Concept B's dedicated
+"Blocked on you" spotlight band** lifted above the columns.
+
+**Rationale:** The deciding argument appears in neither concept's own rationale: **the Board is
+already a by-project view** — a roster of six rows. An Overview that is also by-project (B) makes
+the second pillar partly duplicate the first. By-band is a genuinely different cut of the same
+seven roles, which is what earns it a separate surface. The tab also keeps the Board on its own
+full surface; B's collapsed strip demotes it, in tension with the requirement that the Board keep
+its three-second scan (design brief §10.10).
+
+B's one clear win is carried over: a dedicated **"blocked on you"** band serves itqan's core
+thesis — decision availability is the bottleneck — better than A's chip inside the Blocked
+column. It is sourced from real `Unblocked by: Sobhi …` strings.
+
+**Rejected:** A as delivered (buries the bottleneck in a column); B as delivered (duplicates the
+Board's by-project cut and compresses it).
+
+**Consequence:** The Stage 3 spec is written against this synthesis, not against either wireframe
+as drawn. Provenance rendering (◆ derived / ✓ verified / ~ suspect, suspect in amber and never
+the Board's drift red) carries over from both concepts unchanged.

@@ -27,6 +27,13 @@ belongs in `docs/DECISIONS.md` instead.
   fractal-code's branch and commit age changed the next day. **Two rules from one finding:**
   role detection must check full-profile alternates, and **live facts (branch, dirty count, age)
   must never be hardcoded in a document** — compute them or omit them.
+- (2026-07-27) **A superseded design frame kept the obvious name while its replacement was
+  called "v2".** `design/wireframes.pen` holds both a round-1 `Fix Proposal` (a multi-line prose
+  rewrite, which D15 forbids) and the correct `Fix Proposal v2 — Fixable (DC1)`. A builder
+  reaching for the obvious name would implement the thing the spec prohibits. **When a design is
+  superseded, rename the old one — supersession has to be visible at the point someone reaches
+  for it**, not only in a rationale note beside it. (itqan's supersede ritual, applied to design
+  files rather than docs.)
 - (2026-07-26) A doc that references a sibling section by number (`"the brief for §6.1–6.4"`)
   goes stale the moment a section is added. Prefer naming the thing over numbering it, or
   accept that the pair must be re-read on every edit.

@@ -168,8 +168,11 @@ All closed. Anything further stops the build and goes to `docs/DECISIONS.md` fir
 1. **Are corrections generated or computed?** **Computed — deterministic string edits only.**
    This is forced, not chosen: `CLAUDE.md` §Invariants 1 and PRD §3.6 permit no network egress
    beyond `gh`, so a model-drafted rewrite is out of scope by invariant. It is also the better
-   engineering answer (§3.3). **Promote to `docs/DECISIONS.md` as D15 when this slice builds** —
-   it constrains every future fix, not just this one.
+   engineering answer (§3.3). **Recorded as `docs/DECISIONS.md` D15** (promoted 2026-07-27) — it
+   constrains every future fix, not just this one.
+   **⚠ Build against the `Fix Proposal v2 — Fixable (DC1)` frame in `design/wireframes.pen`, not
+   the frame named `Fix Proposal`.** The latter is a superseded round-1 sketch proposing a
+   multi-line prose rewrite, which this decision forbids. See `docs/LEARNINGS.md`.
 2. **Which checks get fixes?** DC1 only (§3.1). Others state plainly that no automatic fix
    exists.
 3. **Where does the write land?** Working tree, unstaged, uncommitted. The commit stays the
