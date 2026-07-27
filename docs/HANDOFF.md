@@ -25,7 +25,17 @@
 - **D14 closed mid-build** — DC4 (uncommitted work) needed a threshold. Without one every
   project was permanently non-green and `✓ in sync` could never render, failing AC-2. Default 5,
   configurable per project.
-- **All product decisions closed** — `docs/DECISIONS.md` D1–D14.
+- **Stage 2 is specified and ready to build** — `docs/specs/stage-2-fix-proposals.spec.md`, `☑`.
+  Nothing blocks it.
+- **Round-2 designs delivered and reviewed** (2026-07-27) in `design/wireframes.pen`: Overview A
+  and B (+dark), Board Quiet Day, and three fix-proposal states. Review outcome:
+  - **Overview direction chosen — D16**: Concept A (tabbed, by-band) **plus** Concept B's
+    dedicated "blocked on you" spotlight band. Reason: the Board is already by-project, so a
+    by-project Overview would duplicate it.
+  - **`Fix Proposal v2 — Fixable (DC1)` is the design to build.** The frame plainly named
+    `Fix Proposal` is a superseded round-1 sketch proposing a multi-line prose rewrite, which
+    **D15 forbids**. → `docs/BACKLOG.md`, rename it before building the UI.
+- **All product decisions closed** — `docs/DECISIONS.md` D1–D16.
 
 ## How to pick up
 
