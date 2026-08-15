@@ -1,7 +1,22 @@
 # Agentic OS — Design Brief
 
+> ## ⚠ Scope note — added 2026-08-15
+>
+> **This file is now the *portfolio layer* brief only** — the Board and the Overview. The product
+> gained a second layer on 2026-08-15 (D18): a per-project execution layer with tasks, goals,
+> inbox, sessions and costs. **Round 3 briefs that separately:**
+> [`DESIGN-BRIEF-EXECUTION.md`](DESIGN-BRIEF-EXECUTION.md), which also owns the app shell and
+> navigation.
+>
+> **Everything in §6 (visual direction) and §7 (constraints) still governs both layers** and is
+> inherited by round 3 by reference — the verified palette especially, which may not be
+> re-derived. **Two things here are superseded:** §5.5's Overview scope now reads two sources and
+> gains a fourth provenance level `▶ executed` (D22), and §7's blanket ban on badges is narrowed
+> to a single legitimate counter (execution brief §5). Both are marked in place below.
+
 > **For:** the design agent drafting wireframe concepts
-> **Status:** brief · written 2026-07-26 · **round 2 open, updated 2026-07-27** · not a design system yet
+> **Status:** brief · written 2026-07-26 · round 2 delivered 2026-07-27 · **portfolio layer only
+> as of 2026-08-15** · not a design system yet
 > **Reads with:** [`PRD.md`](PRD.md) (the what and why — read §1, §6.1, §6.2, §6.8 first)
 > **Round 1 output:** [`../design/wireframes.pen`](../design/wireframes.pen)
 
@@ -293,6 +308,14 @@ human gates. One concept sketch is enough at this stage.
 
 ### 5.5 · The Overview *(NEW in round 2 — the second pillar · PRD §6.8)*
 
+> **⚠ Partly superseded 2026-08-15 by D22.** The Overview now reads **two** sources — tasks and
+> goals for projects with an execution layer, documents and git for those without — and provenance
+> gains a fourth, strongest level: **`▶ executed`** (produced by a session this system ran,
+> carrying its session id and commit sha). The layout direction closed as D16 is unchanged
+> (by band, plus a "blocked on you" spotlight); what changed is where rows come from. **There is
+> no per-project Overview.** Everything else in §5.5 still stands, including §5.5.3's refusal to
+> invent sprints.
+
 **Give this roughly the effort of §5.1.** It is the other half of the product, not a subpanel.
 
 **The question it answers:** across all projects — what's in flight, what's ready to build,
@@ -477,7 +500,12 @@ the page's visual tone.
 - Sparklines or trend arrows on the Board. Drift is binary — a doc is true or it isn't. Trend
   decoration implies a gradient that does not exist.
 - Notifications, badges, streaks, or any engagement mechanic. This tool should be opened *less*
-  as things improve.
+  as things improve. **⚠ Narrowed 2026-08-15** — the execution layer needs to tell you an agent is
+  blocked, so **exactly one counter is legitimate: the Inbox's open-question count**, because it
+  counts work blocked on you rather than activity. It trends to zero and zero is the goal state.
+  Everything else — sessions running, tasks moved, cost accrued — stays badge-free. Reasoning:
+  [`DESIGN-BRIEF-EXECUTION.md`](DESIGN-BRIEF-EXECUTION.md) §5. **This ban is otherwise unchanged
+  and still applies to the portfolio layer in full.**
 - Configuration UI. Projects are declared in `projects.config.ts`; there is no settings screen.
 - Onboarding, tours, or empty-state illustrations.
 

@@ -268,3 +268,173 @@ is therefore *not* built as drawn — recorded here so the divergence is deliber
 
 **Rejected:** *Reject = dismiss for this session* (loses a decision silently); *Reject = mark
 resolved* (the dashboard grading its own work, already refused in spec §5.6).
+
+---
+
+> **D18–D22 re-scope the product** (2026-08-15). They introduce an execution layer beneath the
+> portfolio, adapted from `docs/specs/AgentOS-spec.md`. Read D18 first; the other four follow from
+> it. Together they amend D9, D12, D16 and supersede D11 in part — each says so where it applies.
+
+## D18 — Two layers: a portfolio above a per-project execution layer (2026-08-15)
+
+**Decision:** Agentic OS becomes **two layers**, not one product.
+
+- **Portfolio layer** — top level, all projects. The Board (drift) and the Overview (in flight ·
+  ready · blocked · shipped · deferred). Read-only, derived from files and git. This is what
+  exists today.
+- **Execution layer** — per project, nested. An AgentOS in the shape of
+  [`specs/AgentOS-spec.md`](specs/AgentOS-spec.md): agents, tasks, goals, inbox, sessions,
+  templates, costs. Read-write; it runs agents.
+
+**The execution layer is opt-in per project.** A project has an `agentos.yml` or it does not. A
+project without one keeps appearing in the portfolio exactly as today — the same graceful
+degradation the codebase already applies to unfilled roles (*absent → "not instantiated", never an
+error*). Of the six watched projects, itqan is a framework repo and two are router-only; none of
+them needs an agent roster.
+
+**Rationale.** The AgentOS spec is *already* project-scoped — its §4 makes `Project` the unit of
+YAML-as-code, holding agents, skills, templates, MCP connections and repos, and its reference UI
+carries a project switcher above the entire sidebar. What it has **no** surface for is more than
+one project at a time. This product is the inverse: nothing but a cross-project surface. They
+stack; they do not compete.
+
+The reason to own both rather than adopt one is sharper than convenience. **An executor that
+spawns a five-hour goal from a specification drafted against a twelve-day-stale HANDOFF will burn
+the money and pass every safety rail the spec defines.** §11's rails — spend cap, max duration,
+stuck-at-19 — all measure the *loop*; none measures its premise. Nothing in AgentOS-spec checks
+whether a goal's inputs are still true. Stage 1 already does exactly that, against real repos,
+and found the instance that motivated this project. That check is worth more guarding a spend
+than guarding a read.
+
+**Rejected:** *Replace this product with AgentOS* — throws away the only verification layer, which
+is the one thing the spec lacks and cannot easily grow. *Build AgentOS as a panel of the Board* —
+inverts the scale; execution is 20–40× the current codebase and cannot be a subpanel of it. *One
+flat sidebar holding both* — a project's agent roster is not a portfolio concern, and six rosters
+in one nav destroys the three-second scan the Board is built for.
+
+**Consequence:** navigation and shell become a first-class design problem for the first time —
+[`DESIGN-BRIEF-EXECUTION.md`](DESIGN-BRIEF-EXECUTION.md). The Overview as scoped in D16 is
+cancelled and rewritten → D22.
+
+## D19 — The invariants are narrowed to the portfolio layer, not deleted (2026-08-15)
+
+**Supersedes D11 in part.** Amends
+`CLAUDE.md` §Invariants 1, 4 and 5.
+
+**Decision:** Three of the five invariants change **scope, not truth**. Each holds unchanged at
+the portfolio layer, and is narrowed — explicitly, with a stated boundary — inside a project that
+has opted into an execution layer.
+
+| Invariant | Portfolio layer | Execution layer (opted-in project only) |
+|---|---|---|
+| **1 · Local-only, no egress** | unchanged — git, `gh`, the filesystem | **+ the model API the runner calls**, and the hosts a session's environment explicitly allow-lists. Nothing else. No telemetry, no analytics, no cloud sync, ever. |
+| **4 · Read-only; writes gated** | unchanged — one click, one line, two files | agent sessions write in their granted repos. The gate moves from **per-write** to **per-session**: a session is authorized once, at spawn, against a declared manifest of repos, paths, and permissions. |
+| **5 · No second source of truth** | **unchanged and absolute** | narrowed by the rule below |
+
+**The rule that replaces D11 inside a project:**
+
+> **The portfolio stores no state. A project's execution layer may — and everything it stores
+> carries a session id and a commit sha as evidence.**
+
+**Rationale.** D11 made read-only an identity property because anything editable becomes a status
+that nothing checks — precisely the drift this product exists to catch. *That reasoning is still
+correct*, which is why the carve-out is scoped rather than general. A Kanban card reading
+`status: done` is exactly the unchecked claim D11 forbids — **unless** the transition was produced
+by a session that ran and left a commit behind, in which case it is the strongest fact in the
+system: stronger than a document, and stronger than a bare git log, because it carries its own
+provenance (→ D22).
+
+**The evidence requirement is what makes the carve-out safe.** A status that cannot name the
+session that produced it is a claim, not a fact, and must render as one. Human-set statuses are
+therefore permitted and must be visibly weaker than executed ones — the same claim-versus-fact
+distinction the Board already draws, applied one layer down.
+
+**Consequence:** the layer boundary *is* the enforcement boundary, so it must be a real boundary
+in code and not only in the UI — the portfolio's data path may not import the execution layer's
+store. The fix-proposal gate stays per-write and unchanged; it is a portfolio-layer feature.
+
+**Rejected:** *Delete D11* — loses the only reason this is not a worse Linear, and licenses
+exactly the drift the product diagnoses. *Keep D11 whole* — makes the execution layer unbuildable;
+every task, goal, session and inbox message is state with no file to hold it.
+
+## D20 — Runner: local-first, behind the spec's Runner interface (2026-08-15)
+
+**Decision:** MVP sessions execute **on the local machine** — the Claude Agent SDK as a
+subprocess, an **ephemeral git worktree** per session, SQLite for domain objects, the OS keychain
+for secrets. AgentOS-spec §16's `Runner` interface (`provision` / `streamToolCalls` /
+`injectReply` / `destroy`) is implemented from the first session, with one backend behind it.
+
+**Rationale**, in order of weight. It narrows D19's egress carve-out from *"delete invariant 1"*
+to *"add the model API host"* — the difference between amending an invariant and abandoning it.
+Both products are explicitly single-operator on one machine, so cloud execution buys the ability
+to close the laptop and very little else before the loop is proven. And §16's interface is the
+spec's best structural idea: it is the seam that makes this reversible, so building it first costs
+one indirection and buys the cloud path unbuilt.
+
+**The spec's ephemeral container becomes an ephemeral git worktree plus a fresh SDK session.** The
+rule the container exists to enforce — §6: no warm dirty workspace; nothing survives a session but
+commits and files written through the filesystem MCP — is preserved exactly, and cheaply.
+
+**The weakening is stated, not hidden:** a local process can in principle reach the whole
+filesystem, so §5's least-privilege walls are enforced at the MCP and tool layer only, without a
+container or a network namespace beneath them. → `docs/BACKLOG.md`.
+
+**Rejected:** *Cloud-managed from day one* — deletes invariant 1 outright and adds infrastructure
+before any loop is proven. *R2 + Secret Manager as specced* — that persistence design exists
+because *the spec's* containers are ephemeral **and remote**; a local worktree runs on a local
+disk, so the whole R2 layer solves a problem this build does not yet have.
+
+## D21 — A project may mount several repos; exactly one is primary (2026-08-15)
+
+**Amends D9.**
+
+**Decision:** `Project` holds a **list** of repos, each with a mount path and permissions, per
+AgentOS-spec §4. Exactly one is marked **primary**: the repo whose state document the Board
+reconciles and whose role coverage the roster reports.
+
+**Rationale:** [`projects.config.ts`](../projects.config.ts) currently assumes one project is one
+directory, and salla-apps already strains it — the project is named `salla-apps` and the directory
+is `hadaya/`. The AgentOS model is 1:N because an agent commonly mounts an application repo and a
+docs or infrastructure repo together. Deciding this now costs one config shape; deciding it after
+tasks, sessions, grants and cost records all reference a repo costs a migration through every one
+of them.
+
+**The primary designation is declared, never derived.** With several repos there is no
+non-arbitrary rule for which one holds "the" HANDOFF, and guessing would make the Board's source
+citation unreliable — the one thing it may never be (invariant 2).
+
+**Consequence:** `projects.config.ts` grows `repos[]`; today's `path` becomes the primary repo's
+path. D9's rule — the watched set is explicit and never auto-discovered — is unchanged.
+
+## D22 — `▶ executed` provenance; one Overview, two sources (2026-08-15)
+
+**Amends D12 and D16.**
+
+**Decision:** Three parts.
+
+1. **Provenance gains a fourth level**, above the three in PRD §6.8.1: **`▶ executed`** — this
+   item was produced by a session *this system ran*, and it carries the session id and commit sha
+   that prove it.
+2. **The portfolio Overview reads both sources** — tasks and goals for projects with an execution
+   layer, documents and git for those without — into the same bands.
+3. **There is no per-project Overview.** A project's forward-looking surface is its Tasks and
+   Goals. Full stop.
+
+**Rationale.** (1) The provenance ladder was `derived` > `verified` > `suspect`, and `derived`
+topped it because git cannot lie. An executed item is strictly stronger still: *"we ran it, here
+is the session, here is the commit"* answers not only whether the work happened but what produced
+it and what it cost. This is the payoff of D19's evidence requirement — the thing that makes
+stored state safe is the same thing that makes it the best row on the Overview.
+
+(2) A mixed portfolio is the real one: six projects, and the execution layer will reach them one
+at a time over months. An Overview that only reads files would go blind on exactly the projects
+being worked hardest; one that only reads tasks would show four empty projects.
+
+(3) Two answers to *"what is in flight for nadim"*, drawn from two sources, is **the drift this
+product exists to catch, appearing inside the product.** The bands are a portfolio cut; per
+project, the Kanban already answers the question with better data.
+
+**Consequence:** the Stage 3 Overview spec is cancelled and rewritten. D16's synthesis survives
+unchanged — arranged by band, with a dedicated "blocked on you" spotlight above the columns; what
+changes is where the rows come from and that a fourth provenance level must be designed.
+`~ suspect` keeps its rule: sourced from the Board's drift state, never re-derived.
