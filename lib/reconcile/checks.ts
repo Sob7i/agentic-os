@@ -4,9 +4,62 @@ import { collectDocs } from "../collectors/itqan-docs";
 import { collectGit } from "../collectors/git";
 import { collectGitHub } from "../collectors/github";
 import { ageInDays, humanAge } from "../collectors/exec";
-import type { CheckResult, ProjectReport, Severity } from "../types";
+import type { CheckResult, DocsFacts, GitHubResult, ProjectReport, Severity } from "../types";
 
 const hash = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 12);
+
+/**
+ * DC1 · PR frontier mismatch — the only check with a sub-1.0 claim confidence
+ * that can produce a drift, and the only one with a deterministic fix.
+ *
+ * Pure and exported so Stage 2's fixture tests exercise the *real* check against
+ * stubbed GitHub facts. A fixture repo has no remote, so `gh` cannot answer for
+ * it; re-implementing DC1 in the test would verify the copy, not the code.
+ */
+export function dc1Checks(
+  projectName: string,
+  docs: DocsFacts,
+  github: GitHubResult,
+): CheckResult[] {
+  if (!github.ok || !docs.claims.length || !docs.stateDocPath) return [];
+  const out: CheckResult[] = [];
+
+  for (const claim of docs.claims) {
+    const unclaimedOpen = github.open.filter((p) => p.number > claim.hi);
+    const behind = github.maxMerged - claim.hi;
+    if (behind <= 0 && unclaimedOpen.length === 0) continue;
+
+    const parts: string[] = [];
+    if (behind > 0) parts.push(`#${github.maxMerged} is merged (${behind} past the claim)`);
+    if (unclaimedOpen.length) {
+      parts.push(`unclaimed open: ${unclaimedOpen.map((p) => `#${p.number}`).join(", ")}`);
+    }
+    const staleFor = docs.stateDocMtimeISO ? ageInDays(docs.stateDocMtimeISO) : null;
+
+    out.push({
+      id: "DC1",
+      severity: "drift",
+      headline:
+        (behind > 0
+          ? `${behind + unclaimedOpen.length} PRs unaccounted for`
+          : "open PR unaccounted for") + (staleFor !== null ? ` · doc unchanged ${staleFor}d` : ""),
+      claimed: claim.text,
+      verified: parts.join("; "),
+      confidence: claim.confidence,
+      source: claim.source,
+      claimHash: hash(`${projectName}:DC1:${claim.text}:${github.maxMerged}`),
+      fix: {
+        stateDocPath: docs.stateDocPath,
+        claimRaw: claim.raw,
+        claimLo: claim.lo,
+        claimHi: claim.hi,
+        actualMaxMerged: github.maxMerged,
+        unclaimedOpen: unclaimedOpen.map((p) => p.number),
+      },
+    });
+  }
+  return out;
+}
 
 /** Severity ranking — highest wins for the project's overall state. */
 const RANK: Record<Severity, number> = {
@@ -24,33 +77,7 @@ export async function reconcileProject(cfg: ProjectConfig): Promise<ProjectRepor
   const checks: CheckResult[] = [];
 
   // ── DC1 · PR frontier mismatch ─────────────────────────────────────────────
-  // The only check with a sub-1.0 claim confidence that can produce a drift.
-  if (github.ok && docs.claims.length) {
-    for (const claim of docs.claims) {
-      const unclaimedOpen = github.open.filter((p) => p.number > claim.hi);
-      const behind = github.maxMerged - claim.hi;
-      if (behind > 0 || unclaimedOpen.length > 0) {
-        const parts: string[] = [];
-        if (behind > 0) parts.push(`#${github.maxMerged} is merged (${behind} past the claim)`);
-        if (unclaimedOpen.length) {
-          parts.push(`unclaimed open: ${unclaimedOpen.map((p) => `#${p.number}`).join(", ")}`);
-        }
-        const staleFor = docs.stateDocMtimeISO ? ageInDays(docs.stateDocMtimeISO) : null;
-        checks.push({
-          id: "DC1",
-          severity: "drift",
-          headline:
-            (behind > 0 ? `${behind + unclaimedOpen.length} PRs unaccounted for` : "open PR unaccounted for") +
-            (staleFor !== null ? ` · doc unchanged ${staleFor}d` : ""),
-          claimed: claim.text,
-          verified: parts.join("; "),
-          confidence: claim.confidence,
-          source: claim.source,
-          claimHash: hash(`${cfg.name}:DC1:${claim.text}:${github.maxMerged}`),
-        });
-      }
-    }
-  }
+  checks.push(...dc1Checks(cfg.name, docs, github));
 
   // ── DC2 · "Next up" item already done ──────────────────────────────────────
   // Confidence 0.6 by construction: a "Next up" line naming a merged PR usually

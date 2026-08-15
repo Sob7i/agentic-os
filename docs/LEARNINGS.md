@@ -33,10 +33,30 @@ belongs in `docs/DECISIONS.md` instead.
   reaching for the obvious name would implement the thing the spec prohibits. **When a design is
   superseded, rename the old one — supersession has to be visible at the point someone reaches
   for it**, not only in a rationale note beside it. (itqan's supersede ritual, applied to design
-  files rather than docs.)
+  files rather than docs.) *Resolved 2026-07-27: renamed to `SUPERSEDED (round 1) — Fix Proposal ·
+  violates D15, do not build`.*
+- (2026-07-27) **The wireframe cited the wrong line, and only building it found out.** `Fix
+  Proposal v2` places nadim's PR claim on `docs/HANDOFF.md · line 24`; the running collector puts
+  it on **line 15**, inside a 600-character bullet, not the tidy two-line snippet the mockup drew.
+  The design's shape held up — full line, flagged date — but its *content* was a plausible
+  reconstruction. **A wireframe built from real data is still a claim about real data.**
 - (2026-07-26) A doc that references a sibling section by number (`"the brief for §6.1–6.4"`)
   goes stale the moment a section is added. Prefer naming the thing over numbering it, or
   accept that the pair must be re-read on every edit.
+
+## Code
+
+- (2026-07-27) **A safety guard took its bounds from the thing it was guarding.** Stage 2's path
+  confinement computed the allowed write targets as *"the state doc named by this proposal, plus
+  the project's lessons file"* — so a proposal naming `README.md` as its state doc had `README.md`
+  allowed. The acceptance test still passed, because the content hash refused the write further
+  down; only reading *which guard fired* exposed it. **Two rules:** a guard must derive its bounds
+  independently of its input, and a test must assert which guard rejected, not merely that
+  something did. Fixed by resolving both targets from the repo's own role detection.
+- (2026-07-27) **The JSX-newline bug bit a second time** — `write {n} file\n{n === 1 ? "" : "s"}`
+  rendered as *"2 file s"*, the same shape as Stage 1's *"contradict s reality"*. Twice is a rule,
+  not a note: **promoted to `CLAUDE.md` §Conventions.** Interpolate complete strings; never let a
+  line break fall between text and an expression that continues the same word.
 
 ## Verification
 

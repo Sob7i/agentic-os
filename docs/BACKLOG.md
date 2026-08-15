@@ -27,16 +27,31 @@ and things explicitly punted with a reason.
 
 ### From the round-2 design review (2026-07-27)
 
-- **Rename or archive the superseded `Fix Proposal` frame** in `design/wireframes.pen` — it
-  proposes a multi-line prose rewrite that D15 forbids, and it holds the obvious name while the
-  correct design is `Fix Proposal v2 — Fixable (DC1)`. Unblocked by: a design-file edit. **Do
-  before building Stage 2's UI.** See `docs/LEARNINGS.md`.
-- **Two minor inaccuracies in `Fix Proposal v2`** — it cites `docs/HANDOFF.md · line 24`; the
-  real claim is on line 15. Its dates read `2026-07-26` where the review ran on `07-27`.
-  Cosmetic; fix on the next design pass.
-- **Stray `untitled.pen` (1 MB) at the repo root** — an untracked Pencil autosave, deliberately
-  not committed. Unblocked by: confirming it is disposable, then deleting it or gitignoring
-  `untitled*.pen`.
+- **`Fix Proposal v2` draws a claim that does not look like the real one** — it cites
+  `docs/HANDOFF.md · line 24` as a tidy two-line snippet. Confirmed while building: the claim is
+  on **line 15**, inside a ~600-character bullet, so the real card's diff is a wrapped paragraph
+  rather than the mockup's neat line. The design's structure survives; its content was a
+  reconstruction. Its dates also read `2026-07-26` where the review ran on `07-27`. Unblocked by:
+  the next design pass — redraw the diff against the actual line.
+
+### From the Stage 2 build (2026-07-27)
+
+- **The approval flow has never been exercised end-to-end on a real repo.** AC-1…AC-11 prove it
+  on fixture repos and all four UI states were rendered against live data, but no watched project
+  has been corrected through the button — writing into another repo is an owner gate. Unblocked
+  by: the owner approving nadim's `#22` → `#23` proposal once, and confirming the resulting
+  working-tree change reads as expected.
+- **`data/verified.json` has no pruning.** Acknowledgements expire logically (their key stops
+  matching) but the rows stay in the file forever. Harmless at this size. Unblocked by: the file
+  becoming large enough to notice, or a "show acknowledged" view wanting to list them.
+- **Lesson insertion picks the first matching heading only.** `appendLesson` targets the first of
+  `## Workflow` / `## Docs` / `## Process`; a file whose lesson belongs under a later, more
+  specific heading gets it in the wrong section. Unblocked by: a watched project where this
+  actually lands badly — the fallback (end of file) is already correct for files with no heading.
+- **DC1 fires per claim, so a doc repeating its frontier twice offers two proposals.** Each is
+  individually correct and the exactly-once guard refuses both (identical text, two occurrences),
+  so nothing can be written — but the card shows two proposals that will each refuse. Unblocked
+  by: seeing it happen; the refusal is safe, the UI is just noisy.
 
 ### Product / design
 
@@ -47,9 +62,6 @@ and things explicitly punted with a reason.
   Unblocked by: measured false-positive/false-negative rates from Stage 1 in real use.
 - **Revisit whether Blocked deserves its own screen** — D12 folded the decision queue into the
   Overview's Blocked band. Unblocked by: the band proving too crowded in daily use.
-- **Round-2 wireframes** — brief written and re-scoped 2026-07-27 (`docs/DESIGN-BRIEF.md` §8):
-  the Overview, the week view, and the fix-proposal gate. Concepts not yet drafted. Unblocked
-  by: a design agent run. **Blocks the Stage 3 spec only** — Stage 2 can build against §5.2.1.
 - **Concept C shows each project twice (feed + roster)** — the concept's own rationale names
   this as its sacrifice. *Partly solved in the build:* rostered projects with a card above carry
   a left marker. Unblocked by: round-2 design, if it finds something better
@@ -57,14 +69,12 @@ and things explicitly punted with a reason.
 
 ### From the Stage 1 build (2026-07-27)
 
-- **"Mark verified" / `data/verified.json` is specified but not implemented** — the Board shows
-  drift state but has no acknowledge control. Deferred because the write path and its approval
-  gate are the same problem, and that problem is Stage 2. **Now scoped**: it is Stage 2's §1.5
-  and AC-9 (`docs/specs/stage-2-fix-proposals.spec.md`). Unblocked by: building Stage 2.
 - **AC-5 degrades both collectors instead of isolating `gh`** — the test strips `PATH`, which
   disables `git` too. It proves failures surface with readable reasons and no silent zeros, but
-  does not prove a `gh`-only outage leaves git data intact. Unblocked by: a narrower fixture
-  (a stub `gh` on `PATH` that exits non-zero), worth building alongside Stage 2's tests.
+  does not prove a `gh`-only outage leaves git data intact. Was expected to land with Stage 2's
+  fixture harness and did not: Stage 2's fixtures stub GitHub facts as data rather than stubbing
+  the `gh` binary, so they gave the needed capability no push. Unblocked by: a stub `gh` earlier
+  on `PATH` that exits non-zero — the harness in `scripts/verify-stage2.mts` now makes this cheap.
 - **DC2 and DC5 have never fired on real data** — no watched project currently has a "Next up"
   line naming a merged PR, nor a branch diverging from its upstream. Both are verified by
   construction only. Unblocked by: real instances appearing, or a synthetic fixture repo.
@@ -96,3 +106,14 @@ and things explicitly punted with a reason.
   claim-vs-fact drift). The `.pen` file still carries the fabricated card as round-1 record.
 - **Decide what a Router-only project looks like on the Board** — resolved 2026-07-27 by the
   fourth severity level, `◌ unverifiable` (spec §3.4). Distinct from both in-sync and drift.
+- **Round-2 wireframes** — delivered and reviewed 2026-07-27 (`design/wireframes.pen`): Overview
+  A and B in both schemes, Board Quiet Day, and three fix-proposal states. Direction closed as
+  D16. The Stage 3 spec is no longer blocked.
+- **Rename or archive the superseded `Fix Proposal` frame** — done 2026-07-27, alongside the
+  Stage 2 build: renamed to `SUPERSEDED (round 1) — Fix Proposal · violates D15, do not build`,
+  so the warning is visible where someone reaches for it rather than only in a rationale note.
+- **Stray `untitled.pen` (1 MB) at the repo root** — gone as of 2026-07-27; the file is no longer
+  on disk. No gitignore rule was added, so a future autosave would reappear as untracked.
+- **"Mark verified" / `data/verified.json`** — built 2026-07-27 as Stage 2's "Leave as is"
+  control (AC-9). Keyed by claim hash, so acknowledgements expire by construction rather than by
+  expiry logic. The gate's second button acknowledges rather than rejects — D17.

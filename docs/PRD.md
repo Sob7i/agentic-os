@@ -498,11 +498,17 @@ Gated. Each stage ships and gets used before the next is justified.
 The board (§6.1). No transcripts, no charts, no cost.
 *Acceptance:* it independently rediscovers nadim's HANDOFF drift — the instance verified by hand
 in §1 — and shows itqan as green.
+**Shipped 2026-07-27** — acceptance met; `pnpm verify:stage1`.
 
 **Stage 2 — Close the loop.** Fix proposals (§6.2) with the approval gate and the paired
 `LEARNINGS.md` entry.
 *Acceptance:* one real drift is corrected through the dashboard, and the ritual is measurably
 cheaper than doing it by hand.
+**Built 2026-07-27 — acceptance NOT yet met.** The mechanism is verified against fixture repos
+(11 checks, `pnpm verify:stage2`) and nadim's proposal renders live, but **no real drift has been
+corrected through it**: approving a write into a watched repo is an owner gate, so the stage's
+own acceptance criterion is the owner's to satisfy, not the agent's. Recorded rather than
+rounded up — this document does not get to claim a verification that has not run.
 
 **Stage 3 — The Overview** (§6.8). The second pillar. Deliberately placed *before* cost, because
 it answers "what do I work on next" while cost answers "what did last month cost" — and it

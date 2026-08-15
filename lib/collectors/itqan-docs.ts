@@ -77,11 +77,46 @@ export function extractClaims(doc: string, source: string): Claim[] {
       lo,
       hi,
       text: m[0].replace(/\s+/g, " ").trim(),
+      raw: m[0],
+      start: idx,
       confidence: 0.95,
       source,
     });
   }
   return claims;
+}
+
+/**
+ * Substitute the upper-bound integer inside a matched claim — and nothing else
+ * (Stage 2 spec §3.2 step 2).
+ *
+ * Uses the same pattern that produced the claim, with the indices flag, so the
+ * replaced span is the regex's own capture group rather than a second, looser
+ * search. A `String.replace` on the number would be wrong: "PRs #22 through #22"
+ * has two of them, and only the second is the frontier.
+ *
+ * Returns null when the text does not parse as the claim it is supposed to be —
+ * the caller must then abandon the proposal rather than edit by approximation.
+ */
+export function prRangeHiSpan(raw: string): { start: number; end: number } | null {
+  const single = new RegExp(PR_RANGE_MERGED.source, "id");
+  const span = single.exec(raw)?.indices?.[2];
+  return span ? { start: span[0], end: span[1] } : null;
+}
+
+export function rewritePrRangeHi(raw: string, newHi: number): string | null {
+  const span = prRangeHiSpan(raw);
+  if (!span) return null;
+  return raw.slice(0, span.start) + String(newHi) + raw.slice(span.end);
+}
+
+/**
+ * The repo-relative path filling a role, or null. Exported so the fix path finds
+ * a project's lessons file by exactly the rule that detected it (spec §3.5) —
+ * two lists of role filenames would be a second source of truth (D11).
+ */
+export function findRoleFile(repo: string, role: Role): string | null {
+  return ROLE_FILES[role].find((rel) => fills(repo, rel)) ?? null;
 }
 
 /** "Next up" items naming a PR — DC2's input. Low confidence by construction. */
@@ -100,7 +135,7 @@ function extractNextUpPrRefs(doc: string): { pr: number; line: string }[] {
 
 export function collectDocs(repo: string): DocsFacts {
   const roles = detectRoles(repo);
-  const stateRel = ROLE_FILES.state.find((rel) => fills(repo, rel)) ?? null;
+  const stateRel = findRoleFile(repo, "state");
 
   let claims: Claim[] = [];
   let nextUpPrRefs: { pr: number; line: string }[] = [];

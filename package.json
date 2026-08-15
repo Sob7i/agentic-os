@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "verify": "tsx scripts/verify-acceptance.mts"
+    "verify": "pnpm verify:stage1 && pnpm verify:stage2",
+    "verify:stage1": "tsx scripts/verify-acceptance.mts",
+    "verify:stage2": "tsx scripts/verify-stage2.mts"
   },
   "dependencies": {
     "next": "^15.1.6",

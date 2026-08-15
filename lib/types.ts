@@ -78,8 +78,15 @@ export interface PrRangeClaim {
   kind: "pr-range-merged";
   lo: number;
   hi: number;
-  /** The matched text, quoted verbatim in the UI. Never paraphrased. */
+  /** The matched text, whitespace-normalised. Quoted in the UI; never paraphrased. */
   text: string;
+  /**
+   * The matched text exactly as it appears in the file — line breaks and all.
+   * `text` is for reading; `raw` is what a correction may splice (Stage 2 §3.2).
+   */
+  raw: string;
+  /** Character offset of `raw` in the source document. The edit target. */
+  start: number;
   confidence: number;
   /** Repo-relative path of the document that made the claim. */
   source: string;
@@ -97,6 +104,23 @@ export interface DocsFacts {
   nextUpPrRefs: { pr: number; line: string }[];
 }
 
+/**
+ * Everything a deterministic DC1 correction needs, captured at check time
+ * (Stage 2 spec §3.2). Present on DC1 and nowhere else — its absence is how the
+ * UI knows a drift has no automatic fix, rather than a disabled button (AC-8).
+ */
+export interface Dc1FixData {
+  stateDocPath: string;
+  /** The claim exactly as it sits in the file. Located again before any write. */
+  claimRaw: string;
+  claimLo: number;
+  claimHi: number;
+  /** The number the claim should carry. */
+  actualMaxMerged: number;
+  /** Open PRs numbered past the claim — context for the paired lesson. */
+  unclaimedOpen: number[];
+}
+
 /** A single check result. `derived` checks cannot be wrong about their own inputs. */
 export interface CheckResult {
   id: string;
@@ -112,6 +136,8 @@ export interface CheckResult {
   source?: string;
   /** Stable identity for acknowledgements — changes when the claim changes. */
   claimHash?: string;
+  /** DC1 only: the inputs a deterministic correction needs (Stage 2). */
+  fix?: Dc1FixData;
 }
 
 export interface ProjectReport {
