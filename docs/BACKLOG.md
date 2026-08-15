@@ -80,6 +80,31 @@ and things explicitly punted with a reason.
 - **Cloud runner behind the `Runner` interface** — D20 builds `provision`/`streamToolCalls`/
   `injectReply`/`destroy` with one local backend. Unblocked by: wanting to close the laptop, or
   the local machine becoming the bottleneck.
+  **Re-scoped 2026-08-15 by a finding while writing the Stage 3 spec:** Anthropic's **Managed
+  Agents** already provides, as platform primitives, several things `AgentOS-spec.md` describes as
+  control-plane code to be written — a per-session **dollar spend cap** that pauses rather than
+  terminates, **scheduled deployments** (cron → session, with per-firing run records), **webhooks**
+  for session state transitions, per-session **sandboxed containers**, persistent **memory stores**,
+  and **multiagent** sub-agent orchestration. That maps onto AgentOS-spec §11 rails, §15
+  automations, §14 triggers, §6 containers, and §10's reviewer fan-out respectively. So the cloud
+  path is materially cheaper than the spec assumes — it is *adopting* primitives, not rebuilding
+  them. It is still deferred (D20: it would widen the egress carve-out and add infrastructure before
+  the loop is proven), but the trade should be re-evaluated with this in hand rather than from the
+  spec's own framing.
+
+### From the Stage 3 spec (2026-08-15)
+
+- **Every session leaves a `~/.claude/projects/<encoded-cwd>/` directory behind.** The Agent SDK
+  keys transcript storage by working directory, and each session gets a fresh worktree path, so the
+  tree accumulates one directory per session forever. Harmless at this size, and the same property
+  gives Stage 7 a free attribution key (spec §3.6). Unblocked by: the directory count becoming
+  noticeable, or Stage 7 wanting to prune.
+- **Per-session cost has two sources that will disagree.** The SDK reports `total_cost_usd`; Stage 7
+  computes the same figure from the transcript. Spec §3.6 says show both rather than reconcile them
+  silently (D7). Unblocked by: Stage 7, which is when the second number first exists.
+- **`docs/specs/AgentOS-spec.md` still has no `status:` glyph** — see the entry above; the Stage 6
+  Overview build must decide whether the queue parser skips glyph-less files or the reference moves
+  out of `docs/specs/`.
 - **R2-style filesystem MCP + secret manager** — deferred by D20: the spec's persistence design
   exists because *its* containers are ephemeral **and remote**; a local worktree has a local disk.
   Unblocked by: the cloud runner above.
