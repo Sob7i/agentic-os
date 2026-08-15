@@ -40,6 +40,16 @@ belongs in `docs/DECISIONS.md` instead.
   it on **line 15**, inside a 600-character bullet, not the tidy two-line snippet the mockup drew.
   The design's shape held up — full line, flagged date — but its *content* was a plausible
   reconstruction. **A wireframe built from real data is still a claim about real data.**
+- (2026-08-15) **The same change that documented a red test suite left "19 passing" in the State
+  doc — twice.** Running `pnpm verify` found AC-2 failing; that got written into `CLAUDE.md` and a
+  blocking `BACKLOG.md` entry in the same commit, while `docs/HANDOFF.md` kept *"19 passing as of
+  this commit"* in "Where things stand" **and** *"should print 19 passes"* in "How to pick up". A PR
+  reviewer caught one of the two. **This is not staleness — the correct value was known and written
+  down minutes earlier.** The cause is treating "update the docs" as a checklist of files rather
+  than a **search for the claim**: the paired-docs rule says *which* files move together, and says
+  nothing about finding every place a number was asserted. **When a fact changes, grep for the old
+  value before editing anything** — `19 passing` would have found both in one second. Doubly true
+  for a State doc, whose whole job is to be believed by the next session.
 - (2026-08-15) **The router contradicted itself in the same file and nobody read past line 12.**
   `CLAUDE.md` opened with *"Status: pre-code… no application code exists yet"* while its own
   Commands table 80 lines below documented `pnpm verify` running 19 acceptance checks against

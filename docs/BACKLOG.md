@@ -115,11 +115,14 @@ and things explicitly punted with a reason.
   configuration becoming tedious enough in the UI to be worth a file, or wanting to version it.
 - **PWA + web push for the inbox** — AgentOS-spec §12. Unblocked by: the inbox being worth being
   paged about, which requires sessions long enough to walk away from.
-- **`docs/specs/AgentOS-spec.md` is a reconstruction and is not marked as a spec.** It has no
-  `status:` glyph, so the queue-role parser sees it as a spec that is neither `☑` nor `☐`. It is a
-  *reference*, not a buildable slice, and it sits in the directory the Overview parses. Unblocked
-  by: the Stage 6 Overview build, which must decide whether to skip glyph-less files or move this
-  one out of `docs/specs/`.
+- **`docs/specs/AgentOS-spec.md` should move out of `docs/specs/` entirely.** *Partly resolved
+  2026-08-15* after PR review: the file now opens with a REFERENCE header stating it is not a queue
+  item, carries no glyph deliberately, and names the source-of-truth order that supersedes its own
+  *"build exactly this system"* framing. **That fixes the hazard, not the category error** — a
+  reference document still sits in the directory that holds the *queue* role, which the Stage 6
+  Overview parses across every watched repo. The clean endgame is `docs/reference/`. Unblocked by:
+  Stage 6, which must in any case decide whether the queue parser skips glyph-less files; moving it
+  then costs one directory and ~6 link updates, and removes the edge case instead of handling it.
 
 ### Product / design
 

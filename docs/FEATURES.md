@@ -32,7 +32,7 @@ that was actually executed.
 | Reports open PR state | Open PR numbers match `gh pr list` | Compare to `gh pr list` in that repo | Stage 1 |
 | Detects a stale PR claim (DC1) | nadim: claim `"PRs #1 through #22 merged"` shown beside `#23 merged; open #24` | `pnpm verify` → AC-1 | Stage 1 |
 | Separates claim from fact visually | "Claimed" in quoted italic sans; "Verified" in mono with a green rule | Load `/`, read the drift card | Stage 1 |
-| Shows in-sync projects as a result | itqan renders `✓ in sync` with a check timestamp | `pnpm verify` → AC-2 | Stage 1 |
+| Shows in-sync projects as a result | A project with no findings renders `✓ in sync` with a check timestamp — **not** a blank row | `pnpm verify` → AC-2 *(currently failing — see Known gaps)* | Stage 1 |
 | Distinguishes "nothing to check" from "checked and fine" | Projects with no state doc render `◌ unverifiable`, not green | Load `/`; salla-apps, fractal-code, my-personal-website | Stage 1 |
 | Shows role coverage incl. full-profile alternates | salla-apps: router+queue+lessons+record filled | `pnpm verify` → AC-3 | Stage 1 |
 | Names the source of every claim | Drift card shows the repo-relative doc path | `pnpm verify` → AC-4 | Stage 1 |
@@ -111,6 +111,14 @@ Stated in full in `CLAUDE.md` §Invariants.
 - Cloud sync, telemetry, accounts, multi-user views.
 
 ## Known gaps in this map
+
+- **⚠ AC-2 currently fails, and the code is right.** The check asserts *"itqan renders `✓ in sync`"*
+  **by name**; itqan has not committed since 2026-07-21, so DC7 correctly reports it stalled and the
+  row is `○ attention`. The *behaviour* in the table above is intact — a finding-free project does
+  render green — but the row's original wording named a live repo as its example, which made a
+  behaviour claim rot when the world moved. **Reworded 2026-08-15** to state the behaviour and stop
+  naming the specimen. Fixing the check itself amends a PRD acceptance criterion, so it is a
+  decision, logged as blocking in `docs/BACKLOG.md`.
 
 - **A corrected line can carry a stale date.** The substitution changes one integer inside the
   matched claim and cannot read the prose beside it, so `(verified 2026-07-13)` survives next to
