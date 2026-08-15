@@ -102,9 +102,8 @@ and things explicitly punted with a reason.
 - **Per-session cost has two sources that will disagree.** The SDK reports `total_cost_usd`; Stage 7
   computes the same figure from the transcript. Spec §3.6 says show both rather than reconcile them
   silently (D7). Unblocked by: Stage 7, which is when the second number first exists.
-- **`docs/specs/AgentOS-spec.md` still has no `status:` glyph** — see the entry above; the Stage 6
-  Overview build must decide whether the queue parser skips glyph-less files or the reference moves
-  out of `docs/specs/`.
+*(The AgentOS-spec glyph item that was listed here is folded into the re-scope entry above, which
+was rewritten after PR review — it is partly resolved, not merely deferred.)*
 - **R2-style filesystem MCP + secret manager** — deferred by D20: the spec's persistence design
   exists because *its* containers are ephemeral **and remote**; a local worktree has a local disk.
   Unblocked by: the cloud runner above.
