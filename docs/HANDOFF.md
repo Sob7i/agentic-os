@@ -22,10 +22,15 @@
 - **Stage 2 is built but NOT merged.** PR **#6** (`feat/stage-2-fix-proposals`) is still open, and
   Stage 2's own acceptance criterion — *one real drift corrected through the dashboard* — has never
   been met. Both are owner gates. Do not treat Stage 2 as closed.
+- **⚠ `pnpm verify` is RED — 18 of 19 — and the code is correct.** Stage 1's **AC-2 fails**: it
+  asserts *"itqan is green"* by name, and itqan has not committed since 2026-07-21, so DC7 rightly
+  reports it stalled. The test hardcoded a time-dependent fact about a live repo. **Fixing it
+  amends a PRD acceptance criterion**, so it is logged as blocking in `docs/BACKLOG.md` with two
+  readings and a recommendation, rather than edited silently. Stage 2's 11 checks all pass.
 - **Stage 2 ships: the gate is live.** The Board now offers a correction on DC1 drift and writes
   it only on an explicit click. `pnpm verify` runs **both** suites — 8 Stage 1 checks and 11
-  Stage 2 checks, **19 passing** as of this commit. Stage 2's tests run entirely against
-  generated fixture repos in a temp dir; no watched project is written to by a test.
+  Stage 2 checks. Stage 2's tests run entirely against generated fixture repos in a temp dir; no
+  watched project is written to by a test.
 - **The write path, in order:** `lib/fix/propose.ts` (pure, reads only) → `lib/fix/apply.ts`
   (four guards, all-or-nothing) → `app/actions.ts` (rebuilds the proposal server-side from the
   claim hash — the browser never names a path or supplies bytes) → the card UI in `app/page.tsx`.
@@ -58,9 +63,11 @@
 ## How to pick up
 
 1. `git status && git log --oneline -5 && gh pr list` — verify this file against reality.
-2. `pnpm install && pnpm verify` — should print **19 passes** (8 + 11). If Stage 1's AC-1 now
-   fails, that is **good news**: it means nadim's HANDOFF was fixed. Update the acceptance
-   fixture rather than the check.
+2. `pnpm install && pnpm verify` — expect **18 of 19**, with Stage 1's **AC-2 failing** for the
+   reason above. That is a known, logged, blocking item — not a regression you introduced, and not
+   something to "fix" by editing the check before reading `docs/BACKLOG.md`. If **AC-1** also fails,
+   that is **good news**: it means nadim's HANDOFF was corrected. Update the acceptance fixture
+   rather than the check.
 3. `pnpm dev` → read the Board. It includes itself, and nadim's card carries a live proposal.
 4. `pnpm type-check` and `pnpm build` both clean as of this commit.
 

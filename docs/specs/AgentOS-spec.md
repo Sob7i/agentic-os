@@ -1,6 +1,30 @@
 # AgentOS — Product Spec & Implementation Blueprint
 
-Reconstructed from Danny Postma's talk *How I Built My Own AgentOS on Claude's Agent SDK (So You Can Too)* (2026). This document is both a product spec for a human and an implementation prompt for an AI coding agent. Build exactly this system. Do not invent features that are not specified here.
+> ## ⚠ REFERENCE — not a spec, and **not buildable as written**
+>
+> **status: — (not applicable; this is not a queue item)**
+>
+> This file sits in `docs/specs/` for findability, but it is **not** a spec in this project's sense
+> and deliberately carries no `☑`/`☐` glyph — see [`README.md`](README.md), where the glyph is the
+> machine-readable contract for *buildable slices*. Nothing here is decision-closed, and **nothing
+> here may be built from directly.**
+>
+> **What it actually is:** a reconstruction of a conference talk, written for a different product,
+> by someone else, from memory. Its own §23 lists what it is guessing about — the prompts, the
+> stack, the fourth plan-reviewer. Treat every line as a design reference, never as a settled
+> requirement.
+>
+> **The source-of-truth order, when this file and the repo disagree:**
+> `docs/DECISIONS.md` → `docs/PRD.md` §12 → the stage spec → **this file, last.**
+> PRD §12.3 tabulates what was adopted, changed, and dropped; D18–D22 record why.
+> Where this document says *"build exactly this"*, the repo does not.
+>
+> **Concretely, this file is already wrong about this build in at least these ways** (PRD §12.3):
+> the runner is local, not cloud (D20); there is no R2 filesystem and no Secret Manager; containers
+> are git worktrees; triggers, cron automations, the CLI and the PWA are all deferred; and the
+> product it plugs into has a portfolio layer this document knows nothing about.
+
+Reconstructed from Danny Postma's talk *How I Built My Own AgentOS on Claude's Agent SDK (So You Can Too)* (2026). **As originally written, it addressed an implementing agent directly — "build exactly this system" — and that instruction does not apply here; the header above supersedes it.** The imperative voice is left intact below as a faithful record of the reconstruction rather than rewritten into a summary, because a paraphrase would quietly lose the detail that makes it useful as a reference.
 
 **Role contracts and prompts in this file are reconstructed from the talk, not his verbatim files.** Mark every reconstructed prompt in code comments and docs as such.
 
