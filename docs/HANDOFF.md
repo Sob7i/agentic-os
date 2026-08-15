@@ -42,8 +42,12 @@
 - **It found the drift it was built to find, unaided.** nadim's HANDOFF claims *"PRs #1 through
   #22 merged"*; the Board reports `#23 is merged (1 past the claim); unclaimed open: #24`, and
   cites `docs/HANDOFF.md` as the source.
-- **Live board state** (2026-07-27): nadim `⚠ drift` · agentic-os `○ attention` · fractal-code,
-  my-personal-website, salla-apps `◌ unverifiable` (no state doc) · itqan `✓ in sync`.
+- **Live board state is not recorded here — run the app.** This bullet used to list all six
+  severities as of 2026-07-27, and by 2026-08-15 at least one had moved (itqan `✓ in sync` →
+  `○ attention`, which is the whole AC-2 story above). **`docs/LEARNINGS.md` already forbids
+  exactly this** — *live facts must never be hardcoded in a document; compute them or omit them* —
+  and the rule was written after the PRD's own reference table drifted the same way. Omitted
+  2026-08-15 rather than refreshed, because refreshing it only resets the clock.
 - **Built:** collectors (`git`, `github`, `itqan-docs`), checks DC1–DC8, the Board UI per
   Concept C, degraded states, and `scripts/verify-acceptance.mts`.
 - **D14 closed mid-build** — DC4 (uncommitted work) needed a threshold. Without one every
