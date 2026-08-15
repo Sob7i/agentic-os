@@ -53,6 +53,49 @@ and things explicitly punted with a reason.
   so nothing can be written — but the card shows two proposals that will each refuse. Unblocked
   by: seeing it happen; the refusal is safe, the UI is just noisy.
 
+### Blocking — found 2026-08-15
+
+- **`pnpm verify` is red: Stage 1 AC-2 fails, and the check is right.** AC-2 asserts *"itqan is
+  green"* by name ([`scripts/verify-acceptance.mts`](../scripts/verify-acceptance.mts) §AC-2), and
+  itqan's last commit is 2026-07-21 — 25 days, past its `stalledAfterDays: 14`, so DC7 correctly
+  reports `○ attention`. **The product is behaving exactly as designed; the test hardcoded a
+  time-dependent fact about a real repo**, which is the same error `docs/LEARNINGS.md` already
+  records for documents, now in a test.
+  **It needs a decision, not just an edit**, because `docs/PRD.md` §10 names itqan in the Stage 1
+  acceptance criterion, so changing the test amends the PRD. The two readings: *(a)* AC-2 exists to
+  prove **a green row is reachable and correctly attributed** → assert that *some* project renders
+  `in-sync` with a timestamp, which never rots; *(b)* AC-2 exists to pin **one known-good repo** →
+  keep the name and refresh the fixture whenever it rots, accepting the maintenance. Unblocked by:
+  the owner picking (a) or (b). **(a) is the recommendation** — it tests the behaviour the PRD
+  actually cares about (§3.1: *a green row is worth as much as a red one*) instead of the weather.
+
+### From the execution-layer re-scope (2026-08-15, D18–D22)
+
+- **Local sessions have no container or network wall.** D20 chose local-first, so AgentOS-spec §5's
+  least-privilege model is enforced at the MCP and tool layer only — a local process can in
+  principle reach the whole filesystem, and the spec's "second wall" (§5.5: a network allow-list
+  that blocks GitHub even if a prompt leak asks) does not exist. **Stated, not pretended.**
+  Unblocked by: a session doing something outside its grants that the tool layer failed to catch —
+  or the cloud runner, which brings the container with it.
+- **Cloud runner behind the `Runner` interface** — D20 builds `provision`/`streamToolCalls`/
+  `injectReply`/`destroy` with one local backend. Unblocked by: wanting to close the laptop, or
+  the local machine becoming the bottleneck.
+- **R2-style filesystem MCP + secret manager** — deferred by D20: the spec's persistence design
+  exists because *its* containers are ephemeral **and remote**; a local worktree has a local disk.
+  Unblocked by: the cloud runner above.
+- **Triggers (webhooks) and cron automations** — AgentOS-spec §14–§15. Real capability, not
+  required for the MVP loop (PRD §12.4). Unblocked by: a repeating job actually being run by hand
+  twice.
+- **YAML-as-code round-trip and the `agentos` CLI** — AgentOS-spec §17. Unblocked by: agent
+  configuration becoming tedious enough in the UI to be worth a file, or wanting to version it.
+- **PWA + web push for the inbox** — AgentOS-spec §12. Unblocked by: the inbox being worth being
+  paged about, which requires sessions long enough to walk away from.
+- **`docs/specs/AgentOS-spec.md` is a reconstruction and is not marked as a spec.** It has no
+  `status:` glyph, so the queue-role parser sees it as a spec that is neither `☑` nor `☐`. It is a
+  *reference*, not a buildable slice, and it sits in the directory the Overview parses. Unblocked
+  by: the Stage 6 Overview build, which must decide whether to skip glyph-less files or move this
+  one out of `docs/specs/`.
+
 ### Product / design
 
 - **Propose structured claim markers upstream to itqan** — D5 chose prose heuristics so the tool

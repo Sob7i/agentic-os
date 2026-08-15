@@ -40,6 +40,14 @@ belongs in `docs/DECISIONS.md` instead.
   it on **line 15**, inside a 600-character bullet, not the tidy two-line snippet the mockup drew.
   The design's shape held up — full line, flagged date — but its *content* was a plausible
   reconstruction. **A wireframe built from real data is still a claim about real data.**
+- (2026-08-15) **The router contradicted itself in the same file and nobody read past line 12.**
+  `CLAUDE.md` opened with *"Status: pre-code… no application code exists yet"* while its own
+  Commands table 80 lines below documented `pnpm verify` running 19 acceptance checks against
+  shipped Stage 1 and Stage 2 code. Both statements were written by sessions that only edited
+  their own section. **The status line of a router is the most-read and least-maintained line in
+  a repo — it is the one place a stale claim is guaranteed to be believed.** Sessions 1–2 updated
+  `HANDOFF.md` and `FEATURES.md` faithfully and left the router untouched; the session-end
+  checklist named neither. Caught 19 days later by a session reading the file cold.
 - (2026-07-26) A doc that references a sibling section by number (`"the brief for §6.1–6.4"`)
   goes stale the moment a section is added. Prefer naming the thing over numbering it, or
   accept that the pair must be re-read on every edit.
@@ -60,6 +68,14 @@ belongs in `docs/DECISIONS.md` instead.
 
 ## Verification
 
+- (2026-08-15) **An acceptance test hardcoded the weather and failed 19 days later.** Stage 1's
+  AC-2 asserts *"itqan is green"* by name; itqan simply stopped committing, DC7 correctly fired at
+  25 days, and `pnpm verify` went red with **nothing wrong**. We already knew this rule — *"live
+  facts (branch, dirty count, age) must never be hardcoded in a document"* is three entries above,
+  learned from the PRD's own reference table — **and did not think to apply it to a test.** A test
+  asserting a fact about a live external repo is a document making a claim about reality, subject
+  to exactly the same rot, and it fails *closed*: a red suite trains you to ignore the suite.
+  **Assert the behaviour (a green row is reachable), not the specimen (itqan is that row).**
 - (2026-07-26) **The dataviz palette validator contradicted a reasonable-looking inheritance.**
   itqan's accent trio was adopted for status colours by eye; the validator then failed it twice
   — light teal `#0f766e` sits below the chroma floor (0.086 < 0.10, reads gray to some viewers)

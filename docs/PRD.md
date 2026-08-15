@@ -70,6 +70,13 @@ that is twelve days stale is not a plan, it is a guess.** Which is why the Overv
 trustworthiness from the Board, and says so on every item — see §6.8.1, the one thing this
 product can do that a general-purpose planning tool structurally cannot.
 
+> **Re-scoped 2026-08-15 — a third pillar, one layer down.** Everything above describes the
+> **portfolio layer**, and remains true of it. Beneath it there is now an **execution layer**: per
+> project, opt-in, an AgentOS that runs the work rather than watching it — agents, tasks, goals,
+> inbox, sessions, templates, costs. **§12 is the section to read for it**, and §§1–11 should be
+> read as describing the layer above. The two are not rivals: verification is what makes execution
+> safe to leave alone, which is the argument §12.1 makes in full. Decisions: **D18–D22**.
+
 ---
 
 ## §3 — Design principles
@@ -510,23 +517,54 @@ corrected through it**: approving a write into a watched repo is an owner gate, 
 own acceptance criterion is the owner's to satisfy, not the agent's. Recorded rather than
 rounded up — this document does not get to claim a verification that has not run.
 
-**Stage 3 — The Overview** (§6.8). The second pillar. Deliberately placed *before* cost, because
-it answers "what do I work on next" while cost answers "what did last month cost" — and it
-reuses Stage 1's collectors rather than needing the transcript parser.
-*Acceptance:* it correctly shows hadaya's 8 `☑` ready specs and 5 `☐` gated ones, and it marks
-every nadim item **suspect** while nadim's HANDOFF is drifted (§6.8.1). The second half of that
-test is the one that matters — it is the whole differentiator.
+> **Re-ordered 2026-08-15 (D18–D22).** Stages 3+ are renumbered because the execution layer
+> (§12) lands between the shipped Board and everything that was queued behind it. Where the old
+> stages went: **old Stage 3 (Overview) → new Stage 6**, rewritten against D22 to read two
+> sources; **old Stage 4 (transcripts/cost) → new Stage 7**; **old Stage 5 (decision queue)** was
+> already folded into the Overview by D12 and stays there; **old Stage 6+** is unchanged at the
+> back. Nothing was dropped, and the re-order has one reason: **the Overview cannot be built
+> before the thing half its rows will come from.**
 
-**Stage 4 — Transcripts and cost.** Incremental parser, SQLite cache, usage panel (§6.3).
-*Acceptance:* totals cross-check against `ccusage` within a stated tolerance; every derived
-metric exposes its formula.
+**Stage 3 — The execution MVP: one thread, one project** (§12.4). Create a task, assign an agent,
+spawn a local session in an ephemeral worktree, watch its tool calls, answer its inbox question,
+see it commit and destroy itself. Per-session cost recorded. One project, opted in.
+*Acceptance:* a task moves `todo → doing → review` under agent control and **cannot** be moved to
+`done` by the session token when gated; the session's worktree does not exist afterwards and the
+next run re-clones; the inbox reply resumes the paused session with the answer in context; the
+commit sha and cost land on the session row. **Aimed at a low-stakes watched repo, never at this
+one** — §12.4 says why.
 
-**Stage 5 — Decision queue** (§6.4). Ships when the drift board is in daily use and the
-question shifts from "what's stale" to "what's blocked on me." May well merge into the
-Overview's *Blocked* band rather than being a separate screen — decide once the Overview is
-in use.
+**Stage 4 — Templates, gates, chains** (§12.5). `TaskTemplate` + instantiate; approval gates
+enforced in the API, not by convention; the follow-up chain scheduler; the nine-step
+compound-engineer workflow seeded.
+*Acceptance:* instantiating the template creates nine cards; step 2 does not start until a human
+marks step 1 `done`; an agent session token attempting that transition is refused with a reason.
 
-**Stage 6+ — Skills, sessions, behaviour drift** (§6.5–6.7). Each waits for its pain.
+**Stage 5 — Goals** (§12.6). Definition of done, human approval of it, the orchestrator that runs
+after every session, and all three safety rails.
+*Acceptance:* a two-item DoD completes by spawning at least two specialist sessions; a goal will
+not spawn before its DoD is approved; a spend cap of `$0.00` refuses to spawn; a `stuckThreshold`
+of 2 stops after two no-progress iterations. **Plus one this product owns and the source spec does
+not:** a goal whose primary repo is in `⚠ drift` warns before spawning, and says which document.
+
+**Stage 6 — The Overview, rewritten** (§6.8, amended by D22). The portfolio's forward view, now
+reading **both** sources — tasks and goals where an execution layer exists, documents and git
+where it does not.
+*Acceptance:* it correctly shows hadaya's 8 `☑` ready specs and 5 `☐` gated ones; it marks every
+nadim item **suspect** while nadim's HANDOFF is drifted; and an item produced by a real session
+renders `▶ executed` carrying its session id and commit sha. The second and third are the ones
+that matter — together they are the whole differentiator.
+
+**Stage 7 — Transcripts and portfolio cost** (§6.3). Incremental parser, SQLite cache, usage
+panel. Per-session cost already exists from Stage 3; this is the cross-project retrospective.
+*Acceptance:* totals cross-check against `ccusage` within a stated tolerance; every derived metric
+exposes its formula; session-recorded cost and transcript-derived cost agree for the same session,
+or the discrepancy is shown rather than reconciled away.
+
+**Stage 8+ — Triggers, automations, YAML + CLI, PWA and push** (§12.7). Each waits for its pain,
+and each is genuinely optional: the MVP loop is complete without any of them.
+
+**Still pain-gated at the back — skills, session stream, behaviour drift** (§6.5–6.7).
 
 ---
 
@@ -545,3 +583,140 @@ in use.
 produces a satisfying artifact without shipping product. The mitigation is the gate structure:
 Stage 1 is small, has a falsifiable acceptance test, and if it fails to change behavior, §11.3
 says stop. That instruction is written here, before enthusiasm, on purpose.
+
+---
+
+## §12 — The execution layer *(added 2026-08-15 · D18–D22)*
+
+> **Source:** [`specs/AgentOS-spec.md`](specs/AgentOS-spec.md) — a reconstruction of Danny
+> Postma's AgentOS talk. **It is a reconstruction**: its prompts, its stack, and its fourth
+> plan-reviewer are explicitly guesses (its own §23 lists them). Treat it as a strong design
+> reference, never as a settled contract. Where it and this section disagree, this section wins.
+
+### 12.1 · Why this product should own an executor at all
+
+The honest version of the argument is not "it would be nice to run agents from the dashboard." It
+is that **the source spec has a blind spot that this project is uniquely built to close.**
+
+AgentOS-spec §11 describes the daily loop: write a spec in the morning, hand it to the goal
+system, walk away, collect a PR at six. Its safety rails are real and well chosen — a spend cap,
+a maximum duration, and a stuck detector that stops after nineteen identical iterations. **All
+three measure the loop. None measures its premise.** A goal spawned from a specification drafted
+against a HANDOFF that is twelve days stale will run cleanly for five hours, cost real money,
+produce a coherent PR, and trip nothing. It was never stuck. It was wrong at line one.
+
+That failure is not hypothetical here. It is the documented, three-times-caught, twelve-day
+instance in §1 that this entire product was built to find — and Stage 1 already finds it,
+unaided, against real repos. **A verification layer is worth more guarding a spend than guarding
+a read.** That is the whole case, and it is why the two layers belong in one system rather than
+two.
+
+### 12.2 · The shape
+
+```
+PORTFOLIO LAYER          all projects · read-only · derived · no stored state
+  ├── Board              claims vs. git/GitHub reality          [§6.1–6.2, shipped]
+  └── Overview           in flight · ready · blocked · shipped  [§6.8, Stage 6]
+        │
+        │  drift state flows down: a goal sourced from a drifted
+        │  document is marked before it is allowed to spend
+        ▼
+EXECUTION LAYER          per project · opt-in · read-write · stores state with evidence
+        Tasks · Goals · Inbox · Sessions · Costs                [Stages 3–5]
+        Agents · Templates            (configuration, not daily work)
+```
+
+**Opt-in per project.** A project has an `agentos.yml` or it does not (D18). Of the six watched
+projects, itqan is a framework repo and two are router-only; none of them wants an agent roster.
+A project without one appears in the portfolio exactly as it does today — the same graceful
+degradation already applied to unfilled roles.
+
+**The boundary is enforced, not decorative** (D19). The portfolio stores no state and its data
+path may not read the execution layer's store. The execution layer may store state, and every
+status it stores carries the session id and commit sha that produced it. A status that cannot
+name its session is a claim, and renders as one.
+
+### 12.3 · What is adopted, changed, and dropped
+
+| AgentOS-spec | Here | Why |
+|---|---|---|
+| Project as YAML unit | **Adopted**, 1:N repos with one primary (D21) | The Board needs one declared state-doc source |
+| Agents with per-agent grants | **Adopted** | §5's default-deny is the right model and matches this codebase's existing guard discipline |
+| Task Kanban, gates, chains | **Adopted** | The gate pattern already exists in `lib/fix/apply.ts` |
+| Goals + orchestrator + rails | **Adopted**, plus a **drift pre-flight** the source lacks | §12.1 |
+| Inbox as the only interrupt channel | **Adopted wholesale** | It is the spec's best idea and it is what makes walking away safe |
+| Sessions, ephemeral, destroyed | **Adopted**; container → **git worktree** (D20) | Preserves §6's "no warm dirty workspace" rule on a local disk |
+| Cloud runner, R2, Secret Manager | **Deferred** behind §16's `Runner` interface (D20) | Local-first narrows the egress carve-out to one host |
+| Least privilege at network layer | **Weakened** — MCP/tool layer only, no container | Stated honestly → `docs/BACKLOG.md`, not pretended |
+| Triggers, cron automations | **Deferred** to Stage 8 | The loop is complete without them |
+| YAML push/pull + CLI | **Deferred** to Stage 8 | Useful, not load-bearing |
+| PWA + web push | **Deferred** to Stage 8 | Depends on the inbox being worth being paged about |
+| Multi-tenant / teams / billing | **Dropped** | Single operator, as both products already assume |
+
+### 12.4 · The MVP: one vertical thread
+
+Seven features were named as important — agents, tasks, goals, inbox, sessions, templates, costs.
+Built together they are four of the source spec's phases and would produce nothing runnable for a
+long time. **Stage 3 is instead the single thread that proves the system is real:**
+
+> Create a task → assign an agent → spawn a local session in an ephemeral worktree → watch its
+> tool calls stream → the agent hits a question it cannot answer and uses the Inbox → you answer →
+> the session resumes with your answer in context → it commits → the worktree is destroyed →
+> the card carries the commit sha and what the run cost.
+
+Everything after Stage 3 is a composition of that thread. Templates are the thread sequenced with
+gates; goals are the thread in a loop with an orchestrator; costs are a column that already exists
+by then.
+
+**One safety decision, stated here because it is easy to get wrong under enthusiasm:** the first
+sessions are aimed at a **low-stakes watched repo** — `my-personal-website` or `fractal-code` —
+and **not** at agentic-os itself. Self-hosting is this project's established acceptance pattern
+(D4) and it should still be the destination, but the MVP thread ends in an agent committing to a
+repo, and the control plane is the worst possible first target for that. Self-host once the loop
+is proven, not before.
+
+### 12.5 · Templates before goals
+
+Templates land at Stage 4 and goals at Stage 5, in that order, for a concrete reason: a template
+chain is **approval gates plus sequencing**, and the approval gate already exists in this codebase
+— built, guarded four ways, and covered by eleven acceptance checks. Goals are the only genuinely
+novel control loop in the whole design, and they deserve to be built on machinery that has already
+run.
+
+The nine-step compound-engineer workflow (AgentOS-spec §10) ships as the seeded template. Its two
+human gates — spec approval at step 1 and PR review at step 9 — are the same gesture this product
+has been making since Stage 2, and they are enforced in the API rather than by prompt.
+
+### 12.6 · Goals, and the rail the source spec is missing
+
+Goals get the spec's three rails unchanged: spend cap (required by default, confirmable away),
+maximum duration, and stuck-at-N. They also get a fourth that no other agent platform can offer:
+
+> **A goal will not silently spawn against a drifted premise.** Before the first session, the
+> orchestrator reads the Board's state for the goal's primary repo. If that repo is in `⚠ drift`,
+> the goal says which document and which claim, and waits for an explicit acknowledgement.
+
+This is §6.8.1's provenance model moved from *planning* to *spending*, and it is the single
+clearest answer to "why build this here instead of using his."
+
+### 12.7 · Deferred, with the condition that unblocks each
+
+Triggers and cron automations, the YAML round-trip and CLI, the PWA and web push, the cloud
+runner, and the R2-style filesystem MCP are all **deferred, not dropped**. Each has an entry with
+an unblock condition in `docs/BACKLOG.md`. None of them is required for the loop in §12.4 to work,
+and the source spec's own phase order agrees.
+
+### 12.8 · What the execution layer may never do
+
+1. **Store a status it cannot attribute.** Every stored transition names a session or a human. No
+   third category (D19).
+2. **Let an agent close its own gate.** Approval-gated transitions are refused for session tokens
+   at the API, not discouraged in a prompt (AgentOS-spec §5.9).
+3. **Reach the network beyond its declared allow-list** — the model API and whatever the
+   environment names, and nothing else. No telemetry, no analytics, no cloud sync (D19).
+4. **Survive a session.** Nothing persists but commits and files written through a granted path.
+   No warm workspaces, ever (D20).
+5. **Answer a question the portfolio already answers.** No per-project Overview, no per-project
+   drift board (D22). One question, one surface.
+6. **Page you for progress.** The inbox exists for decisions and blockage. An agent that messages
+   to report that it is working has misused the only interrupt channel there is.
