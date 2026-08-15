@@ -87,12 +87,14 @@
    **shell and navigation** — four architectures are laid out in §4.2 with the brief's own lean
    toward C (portfolio as a persistent spine, project as the pane) and an explicit invitation to
    beat it. Nothing blocks this; it can run in parallel with everything below.
-3. **Write the Stage 3 spec — the execution MVP** (PRD §12.4): one vertical thread, one project,
-   local runner. `docs/specs/` conventions apply — `☐` until every question in §5 is answered.
-   The interesting decisions it must close: the SQLite schema for tasks/sessions, how a session
-   token is scoped, how the ephemeral worktree is created and torn down, and which watched repo is
-   the first target (PRD §12.4 says a low-stakes one, **not** agentic-os).
-4. **Build Stage 3.** Then Stage 4 templates → Stage 5 goals → Stage 6 the rewritten Overview →
+3. **Clear the two gates on the Stage 3 spec** — `docs/specs/stage-3-execution-mvp.spec.md` is
+   written and `☐`, blocked only on §5.11 (which watched repo the first sessions target —
+   recommendation `fractal-code`) and §5.12 (whether the MVP agent may commit at all —
+   recommendation: ship the capability, default the seeded agent to `canCommit: false`). Both are
+   owner calls because both end in a write to someone's repo. Answering them flips the glyph to `☑`.
+4. **Build Stage 3.** Build order is in the spec's §6, and the risk is concentrated in the first
+   three items — schema, worktree, runner-plus-fake — so the acceptance suite goes in before the UI,
+   exactly as Stage 2 did. Then Stage 4 templates → Stage 5 goals → Stage 6 the rewritten Overview →
    Stage 7 portfolio cost. PRD §10 has the acceptance criterion for each.
 
 **Deliberately not next:** the Overview as previously specced (cancelled by D22 — it must read the
@@ -121,6 +123,12 @@ None.
   path-confinement guard that derived its bounds from its own input, and the JSX-newline bug
   recurring as "2 file s". The second one had already bitten once, so it was promoted from a
   lesson to a rule in `CLAUDE.md`.
+- **2026-08-15 (later)** — Stage 3 spec written against **verified** SDK documentation rather than
+  recall. Two findings changed the design: the Agent SDK is a *different package* from the tool
+  runner the bundled API reference covers, and `strictMcpConfig` turns out to be the whole of
+  "default deny" — omit it and an agent silently inherits the owner's own authenticated MCP servers.
+  The inbox model was the real decision (§3.5): blocking inside the tool handler is less code and
+  was rejected, because a paused run must survive a `pnpm dev` restart to mean anything.
 - **2026-08-15** — Nineteen days idle; PR #6 never merged. `docs/specs/AgentOS-spec.md` arrived as
   the target for where the product should go. Evaluated against the shipped code, and the finding
   that shaped everything: the two systems point in **opposite directions** and the source spec
