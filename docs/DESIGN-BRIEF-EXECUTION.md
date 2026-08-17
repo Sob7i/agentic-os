@@ -1,7 +1,17 @@
 # Agentic OS — Design Brief: the execution layer and the app shell
 
 > **For:** the design agent drafting the new interface
-> **Status:** brief · written 2026-08-15 · **round 3** · nothing here is built yet
+> **Status:** brief · written 2026-08-15 · **round 3 delivered and closed 2026-08-18** · nothing
+> here is built yet
+>
+> **⚠ Round 3 is answered — read this before treating anything below as open.** The delivery is
+> [`design/wireframes2.pen`](../design/wireframes2.pen): frames `C1`–`C5` (Concept C), `B′1`–`B′2`
+> (Concept B′), `T1`, `G1`, `P1`, `S1`, `S2`, `I1`, `I2`, `$1`, `A1`, three dark frames, and six
+> rationale notes. **The shell is closed as D23: Concept B′, the mode switch, with a persistent
+> portfolio ribbon and a conditional drift band** — *not* the design's own recommendation of C, and
+> D23 states why. The design's *"Positions on the ten open questions"* note answers §10 and is
+> **adopted unchanged except position 1** (architecture), which D23 overrides. §4's four
+> architectures and §10's ten questions are therefore history, not an open brief.
 > **Reads with:** [`PRD.md`](PRD.md) **§12 first**, then §2 and §6.8 · [`DECISIONS.md`](DECISIONS.md)
 > **D18–D22** — these are closed and are not open for redesign
 > **Source reference:** [`specs/AgentOS-spec.md`](specs/AgentOS-spec.md) §9–§13, §18

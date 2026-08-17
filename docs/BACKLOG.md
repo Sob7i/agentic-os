@@ -123,6 +123,31 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   Stage 6, which must in any case decide whether the queue parser skips glyph-less files; moving it
   then costs one directory and ~6 link updates, and removes the edge case instead of handling it.
 
+### From the Tasks spec and round-3 design (2026-08-18)
+
+- **A `pnpm dev` restart kills every running session.** D24 puts the run in the Next.js Node
+  process, unawaited, so nothing survives a restart; spec §7.7's boot sweep marks the orphaned rows
+  `interrupted` rather than leaving them claiming to run. **The honest behaviour, not the desired
+  one.** Surviving a restart needs a supervisor process, which is what the cloud runner brings.
+  Unblocked by: sessions long enough that losing one to a hot reload actually hurts — or the cloud
+  runner (D20).
+- **Nothing runs unattended until cron exists.** D24's funnel has four trigger kinds and only
+  `manual` is built, so the executor cannot start work while nobody is watching. That is deliberate
+  for the MVP and it is also the biggest functional gap against the source reference. Unblocked by:
+  a task being run by hand on a schedule twice — same trigger as the existing cron entry above,
+  which this one now depends on for its motive rather than its mechanism.
+- **`design/wireframes2.pen` arrived untracked, and `pencil-new.pen` (1 MB) is at the repo root.**
+  The second is the same Pencil autosave pattern this backlog already recorded once (*"stray
+  `untitled.pen`"*, resolved by the file vanishing rather than by a gitignore rule). It vanished
+  last time and came back under a new name, which is the argument for the rule. Unblocked by:
+  deciding whether `*.pen` outside `design/` should be gitignored — one line, and it stops
+  recurring.
+- **The `blocked` chip has no lifecycle.** Spec §7.6 makes `blocked` a label with a
+  `Task.blockedReason`, but nothing clears it: the reason is set by hand and stays until a human
+  edits it. Fine for one project and a handful of cards. Unblocked by: a card whose blocker is
+  resolved and whose chip lies about it — which is this product's own subject matter appearing on
+  its own board, so it should be caught early.
+
 ### Product / design
 
 - **Propose structured claim markers upstream to itqan** — D5 chose prose heuristics so the tool

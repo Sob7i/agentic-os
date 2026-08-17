@@ -1,7 +1,7 @@
 # Agentic OS — Session Handoff
 
-> Continuation notes for the next working session (human or agent). Updated **2026-08-15**
-> (execution-layer re-scope).
+> Continuation notes for the next working session (human or agent). Updated **2026-08-18**
+> (round-3 design closed; the Tasks surface and the dispatch model specced).
 > Read `CLAUDE.md` first (session ritual, conventions, doc map); this file is only "where we
 > are and what's next."
 >
@@ -19,9 +19,18 @@
   [`docs/specs/AgentOS-spec.md`](specs/AgentOS-spec.md) — tasks, goals, inbox, sessions, costs,
   with agents and templates as configuration. **Nothing of it is built.** Decisions D18–D22 are
   closed; the build order in PRD §10 was renumbered and old Stage 3 (Overview) moved to Stage 6.
-- **Stage 2 is built but NOT merged.** PR **#6** (`feat/stage-2-fix-proposals`) is still open, and
-  Stage 2's own acceptance criterion — *one real drift corrected through the dashboard* — has never
-  been met. Both are owner gates. Do not treat Stage 2 as closed.
+- **Stage 2 is merged; its acceptance criterion is still unmet.** PRs **#6, #7 and #8** all merged
+  into `develop` on 2026-08-15 (`develop` = `081ae34`), so the code and the re-scope docs are in.
+  But Stage 2's own criterion — *one real drift corrected through the dashboard* — **has still never
+  been met**: `verify:stage1` AC-1 still passes, which means nadim's HANDOFF still claims
+  *"PRs #1 through #22 merged"* and no proposal has ever been approved. That is an owner gate, and
+  merging the PR did not clear it.
+- **Round-3 design is delivered and the shell is closed.** [`design/wireframes2.pen`](../design/wireframes2.pen)
+  holds 19 frames and six rationale notes. **D23** picks **Concept B′** (mode switch + a persistent
+  portfolio ribbon + a drift band that appears only when *this* project has drifted) over the design
+  agent's own recommendation of Concept C, and says why. **D24** closes the execution motor: work is
+  **dispatched, never picked up**. The Stage 3 spec gained **§7 (the motor)** and **§8 (the Tasks
+  surface)**, plus AC-14…AC-19 and decisions 13–18.
 - **⚠ `pnpm verify` is RED — 18 of 19 — and the code is correct.** Stage 1's **AC-2 fails**: it
   asserts *"itqan is green"* by name, and itqan has not committed since 2026-07-21, so DC7 rightly
   reports it stalled. The test hardcoded a time-dependent fact about a live repo. **Fixing it
@@ -36,7 +45,7 @@
   claim hash — the browser never names a path or supplies bytes) → the card UI in `app/page.tsx`.
 - **Nothing has actually been approved yet.** All four UI states were rendered against live data,
   but no watched repo has been corrected through the button — that is an owner gate. nadim's
-  `#22` → `#23` proposal is sitting on the Board waiting.
+  `#22` → `#23` proposal is sitting on the Board waiting. **Re-verified 2026-08-18**: still true.
 - **Stage 1 still ships: the reconciliation Board runs.** `pnpm install && pnpm dev` → the Board
   at `localhost:3000` (`:3001` if the port is busy).
 - **It found the drift it was built to find, unaided.** nadim's HANDOFF claims *"PRs #1 through
@@ -61,8 +70,8 @@
   closing the round-2 review's one blocking item.
 - **Round-2 designs delivered, reviewed, and now partly consumed.** Overview direction is closed
   as **D16** (Concept A, tabbed/by-band, plus Concept B's "blocked on you" spotlight band).
-- **All product decisions closed** — `docs/DECISIONS.md` D1–D17. D17 is new: the gate's second
-  button acknowledges, it does not reject.
+- **All product decisions closed** — `docs/DECISIONS.md` **D1–D24**. The newest are D23 (the shell)
+  and D24 (dispatch, never pull); D18–D22 are the re-scope.
 
 ## How to pick up
 
@@ -77,25 +86,40 @@
 
 ## Next up
 
-1. **Approve nadim's proposal once, by hand, and merge PR #6** (both owner gates). This is the
-   only thing separating "eleven fixture tests pass" from "this has corrected a real document",
+1. **Approve nadim's proposal once, by hand** (owner gate). PR #6 has merged, so this is now the
+   *only* thing separating "eleven fixture tests pass" from "this has corrected a real document",
    and it should happen *before* the execution layer starts, so the pivot begins from a closed
    stage rather than an open one. Afterwards the card should read `✎ written · awaiting re-check`
    with git's own porcelain beneath it, and the next reload should decide for itself whether the
    drift is gone. Undo is `git checkout -- docs/HANDOFF.md docs/LEARNINGS.md` in nadim.
-2. **Hand `docs/DESIGN-BRIEF-EXECUTION.md` to a design agent** (round 3). Its main ask is the
-   **shell and navigation** — four architectures are laid out in §4.2 with the brief's own lean
-   toward C (portfolio as a persistent spine, project as the pane) and an explicit invitation to
-   beat it. Nothing blocks this; it can run in parallel with everything below.
-3. **Clear the two gates on the Stage 3 spec** — `docs/specs/stage-3-execution-mvp.spec.md` is
-   written and `☐`, blocked only on §5.11 (which watched repo the first sessions target —
+2. **Clear the two gates on the Stage 3 spec** — `docs/specs/stage-3-execution-mvp.spec.md` is
+   `☐` and now blocked on **nothing but** §5.11 (which watched repo the first sessions target —
    recommendation `fractal-code`) and §5.12 (whether the MVP agent may commit at all —
    recommendation: ship the capability, default the seeded agent to `canCommit: false`). Both are
    owner calls because both end in a write to someone's repo. Answering them flips the glyph to `☑`.
-4. **Build Stage 3.** Build order is in the spec's §6, and the risk is concentrated in the first
-   three items — schema, worktree, runner-plus-fake — so the acceptance suite goes in before the UI,
-   exactly as Stage 2 did. Then Stage 4 templates → Stage 5 goals → Stage 6 the rewritten Overview →
-   Stage 7 portfolio cost. PRD §10 has the acceptance criterion for each.
+   Everything else in §5, including the shell (D23) and the dispatch model (D24), is closed.
+3. **Build Stage 3.** Build order is in the spec's §6 — now seven items, with
+   `lib/agentos/dispatch.ts` added as **5**. Risk is concentrated in the first three (schema,
+   worktree, runner-plus-fake) and in dispatch, which is small but is the only door to a session;
+   the acceptance suite goes in before the UI, exactly as Stage 2 did. Then Stage 4 templates →
+   Stage 5 goals → Stage 6 the rewritten Overview → Stage 7 portfolio cost. PRD §10 has the
+   acceptance criterion for each.
+4. **Commit `design/wireframes2.pen`** — it arrived untracked, and there is a stray
+   `pencil-new.pen` (1 MB) at the repo root, which is the same autosave pattern `docs/BACKLOG.md`
+   already recorded once. Decide whether it is a design artefact or debris before the next commit.
+
+- **2026-08-18** — Round-3 wireframes reviewed and the shell closed as **D23**: Concept B′ over
+  the design agent's own recommendation of C, because the Kanban is the surface this product will be
+  used in for hours and C spends 268px of it permanently on five projects you are not working on.
+  **One amendment to the owner's instruction, stated rather than applied silently:** the drift band
+  is conditional as asked, but the *ribbon* stays always-present — a ribbon that appears only on
+  drift makes its own absence an unsourced claim, which is invariant 2 and the exact distinction
+  Stage 1 already ships (*"nothing to check" vs "checked and fine"*). **D24** closed the motor:
+  work is dispatched through one funnel, never picked up by a scanner — the largest deliberate
+  divergence from AgentOS-spec §9.4, on the grounds that a process which finds work and starts it is
+  PRD §12.1's failure mode automated. **Found stale on arrival:** this file still said PR #6 was
+  open; all three PRs had merged three days earlier. Also evaluated `/to-spec` and declined it —
+  `docs/LEARNINGS.md`.
 
 **Deliberately not next:** the Overview as previously specced (cancelled by D22 — it must read the
 execution layer's tasks and goals, which do not exist yet), and everything in PRD §12.7.

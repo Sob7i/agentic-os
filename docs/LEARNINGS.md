@@ -58,6 +58,14 @@ belongs in `docs/DECISIONS.md` instead.
   a repo — it is the one place a stale claim is guaranteed to be believed.** Sessions 1–2 updated
   `HANDOFF.md` and `FEATURES.md` faithfully and left the router untouched; the session-end
   checklist named neither. Caught 19 days later by a session reading the file cold.
+- (2026-08-18) **Not all staleness is the same kind, and the cheap kind should not trigger the
+  expensive reaction.** This session found `docs/HANDOFF.md` still saying PR #6 was open three days
+  after #6, #7 and #8 all merged. That is **predicted** staleness — the file's own "trust but
+  verify" banner names merged PRs as the exact thing that goes stale silently, `gh pr list` found it
+  in one second, and the fix was three bullets. It is a different animal from the *"19 passing"*
+  entry above, where the doc **asserted a number that was already known to be wrong**. The first
+  costs a minute; the second costs the next session's judgement. **Worth keeping separate, because
+  treating every stale line as a process failure is how a real process failure stops standing out.**
 - (2026-07-26) A doc that references a sibling section by number (`"the brief for §6.1–6.4"`)
   goes stale the moment a section is added. Prefer naming the thing over numbering it, or
   accept that the pair must be re-read on every edit.
@@ -102,6 +110,15 @@ belongs in `docs/DECISIONS.md` instead.
   parser, no MCP server and no authentication required. Structure: `{version, children[],
   themes, variables, fileToken}`; text lives on `content`, colours reference theme variables as
   `$name`. A failing Pencil MCP connection does not block reading or auditing a design file.
+
+- (2026-08-18) **A good general-purpose skill can still be wrong for a project, and the reason was
+  in its last step.** `/to-spec` (a personal skill) produces a solid template — problem, solution,
+  user stories, implementation and testing decisions — and **publishes it to an issue tracker with a
+  `ready-for-agent` label**. Adopting it wholesale would have put the queue in a tracker while
+  `docs/specs/` also held it: **invariant 5, violated by the tool meant to help.** The useful half
+  was its step 2 — *sketch the seams you will test at; prefer existing seams; the ideal number is
+  one* — which our spec template has no slot for even though Stage 3 does it implicitly (the
+  injectable `Runner`). **Evaluate a skill by what it does at the end, not by its template.**
 
 ## Workflow
 
