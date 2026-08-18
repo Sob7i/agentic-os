@@ -269,7 +269,7 @@ function makeDbFixture(approvalGate: boolean) {
   // agent calls task_update_status. Mirror that here via a human-actorType setup transition
   // (always legal, and excluded from AC-4's own assertions below, which only read the LAST
   // event) rather than leaving the fixture at its old, now-unrealistic starting state.
-  writeTaskTransition(db, { taskId: task.id, toStatus: "doing", actorType: "human", actorId: "owner", reason: "setup — mirrors dispatch's own todo->doing" });
+  writeTaskTransition(db, { taskId: task.id, toStatus: "doing", actorType: "session", actorId: session.id, reason: "setup — mirrors dispatch's own todo->doing" });
   const ctx = { db, sessionId: session.id, taskId: task.id };
   const result = await createTaskUpdateStatusTool(ctx).handler(
     { status: "review", reason: "ready for review" },
@@ -534,27 +534,48 @@ function importersOf(symbol: string, files: string[], definingFile: string): str
   return files.filter((f) => f !== definingFile && re.test(readFileSync(f, "utf8")));
 }
 
+/**
+ * The named-import check above has one blind spot, and it is exactly the shape someone in a hurry
+ * writes: `import * as db from "./db"` followed by `db.createSession(...)` names no symbol, so the
+ * regex never sees it and the funnel is bypassed with AC-14 still green. §7.2's guarantee is worth
+ * only as much as the assurance that nothing goes around it, so a namespace import of either
+ * defining module is treated as a bypass regardless of whether the symbol is used.
+ */
+function namespaceImportersOf(moduleBasename: string, files: string[], definingFile: string): string[] {
+  const re = new RegExp(`import\\s+\\*\\s+as\\s+\\w+\\s+from\\s+["'][^"']*\\b${moduleBasename}["']`);
+  return files.filter((f) => f !== definingFile && re.test(readFileSync(f, "utf8")));
+}
+
 {
   const files = walkTsFiles(["lib", "app"]);
   const DEFINING_DISPATCH = join("lib", "agentos", "dispatch.ts");
-  const createSessionImporters = importersOf("createSession", files, join("lib", "agentos", "db.ts"));
-  const localRunnerImporters = importersOf("LocalRunner", files, join("lib", "agentos", "runner", "local.ts"));
+  const dbFile = join("lib", "agentos", "db.ts");
+  const localFile = join("lib", "agentos", "runner", "local.ts");
+  const createSessionImporters = importersOf("createSession", files, dbFile);
+  const localRunnerImporters = importersOf("LocalRunner", files, localFile);
+  // A namespace import reaches the same symbols while naming none of them — counted as a bypass.
+  const namespaceBypasses = [
+    ...namespaceImportersOf("db", files, dbFile),
+    ...namespaceImportersOf("local", files, localFile),
+  ].filter((f) => f !== DEFINING_DISPATCH);
   const ok =
     createSessionImporters.length === 1 &&
     createSessionImporters[0] === DEFINING_DISPATCH &&
     localRunnerImporters.length === 1 &&
-    localRunnerImporters[0] === DEFINING_DISPATCH;
+    localRunnerImporters[0] === DEFINING_DISPATCH &&
+    namespaceBypasses.length === 0;
   if (!ok) {
     fail(
       "AC-14",
       `createSession imported by [${createSessionImporters.join(", ")}]; LocalRunner imported by ` +
-        `[${localRunnerImporters.join(", ")}] — expected exactly ["${DEFINING_DISPATCH}"] for both`,
+        `[${localRunnerImporters.join(", ")}]; namespace-import bypasses [${namespaceBypasses.join(", ")}] ` +
+        `— expected exactly ["${DEFINING_DISPATCH}"] for both, and no bypasses`,
     );
   } else {
     pass(
       "AC-14",
-      `createSession and LocalRunner are each imported by exactly one module: ${DEFINING_DISPATCH} ` +
-        `(${files.length} files under lib/, app/ scanned)`,
+      `createSession and LocalRunner are each imported by exactly one module: ${DEFINING_DISPATCH}; ` +
+        `no namespace-import bypass (${files.length} files under lib/, app/ scanned)`,
     );
   }
 }

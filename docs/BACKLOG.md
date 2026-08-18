@@ -10,6 +10,17 @@ and things explicitly punted with a reason.
 
 ## Open
 
+- **`runBootSweep` has no call site** *(added 2026-08-18)*. T5 built the boot sweep of §7.7 and
+  AC-18 proves it works, but nothing calls it on server start — the hook would live in
+  `instrumentation.ts` or equivalent, which is outside `lib/agentos/` and was outside T5's file
+  list. **Until it is wired, a `pnpm dev` restart leaves `running` rows that no longer have a
+  process** — precisely the stored-claim-contradicted-by-reality this product exists to catch,
+  occurring inside it. **Unblock condition:** T7 (the UI), which is the first ticket that owns app
+  startup. It must also add the §7.7 *Known gap* row to `docs/FEATURES.md` — *restarting the dev
+  server kills every running session, and the system reports that rather than hiding it* — which is
+  deliberately not added now, because `FEATURES.md` documents behaviour a user can reach and no
+  user can dispatch until T7.
+
 - **Fast-forward `main` to `develop`, or stop provisioning sub-agents from it** *(added
   2026-08-18)*. `origin/main` sits at `3ea05a0` — the PRD/design-brief commit, before Stage 1 —
   because the workflow says `main` receives only `develop` and only from the owner. The isolated
