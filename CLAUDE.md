@@ -28,9 +28,9 @@ reports it stalled; the check is right and the fixture rotted, and the fix needs
 state — this file does not carry suite results.* **Re-scoped 2026-08-15** to two layers (D18–D22) — `docs/PRD.md` §12.
 **Round-3 design closed 2026-08-18** — D23 (the shell), D24 (work is dispatched, never picked up),
 D25 (a DoD item carries the kind of evidence that closed it) and D26 (the app shell splits out of
-Stage 3 as **Stage 3a** and is built first). Next build step: **Stage 3a, the shell** — ungated and
-buildable now, because it is portfolio-layer work against Stage 1 data. Stage 3, the execution MVP,
-follows and is gated on two owner decisions in its spec's §5.11 and §5.12; Stages 4 and 5 are
+Stage 3 as **Stage 3a**). **Stage 3a is built** — the shell runs, with the portfolio ribbon, the
+conditional drift band, and a complete watched-only project view. Next build step: **Stage 3**, the
+execution MVP, gated on two owner decisions in its spec's §5.11 and §5.12; Stages 4 and 5 are
 specced behind that. Behaviour today: `docs/FEATURES.md`. **Counts, PR states and branch heads are
 deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state* block, once.
 
@@ -78,6 +78,7 @@ deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state*
 | `docs/PRD.md` | Product | The problem, the features, the build order |
 | `docs/DESIGN-BRIEF.md` | Design | Portfolio layer (Board, Overview) — rounds 1–2 |
 | `docs/DESIGN-BRIEF-EXECUTION.md` | Design | Execution layer + app shell — round 3 |
+| `docs/specs/stage-3a-shell.spec.md` | Queue | The app shell — **built 2026-08-18** |
 | `docs/specs/AgentOS-spec.md` | Reference | Reconstructed source spec for the execution layer — **a reconstruction, not a contract** |
 | `design/wireframes.pen` | Design | Round-1/2 wireframes (Pencil; plain JSON, readable directly) |
 | `design/wireframes2.pen` | Design | **Round-3** wireframes — the shell, Tasks, Goals, Sessions, Inbox, plus six rationale notes. Shell closed as D23 |
@@ -127,9 +128,10 @@ cache arrives with Stage 7 (derived and disposable). *Corrected 2026-08-18: this
 |---|---|
 | `pnpm install` | Install. |
 | `pnpm dev` | The Board at `localhost:3000` (falls back to `:3001` if the port is taken). |
-| `pnpm verify` | **Both** acceptance suites, Stage 1 then Stage 2. Non-zero exit on any failure. Counts: `HANDOFF.md` §Verified state. |
+| `pnpm verify` | **Every** acceptance suite, via [`scripts/verify-all.mts`](scripts/verify-all.mts). Runs all of them, prints a summary, and exits non-zero if **any** failed; it does **not** stop at the first red one (`docs/LEARNINGS.md`). A flag, not a sum of exit codes — status is mod 256, so summing can land on 0 and report a false green. Counts: `HANDOFF.md` §Verified state. |
 | `pnpm verify:stage1` | Stage 1 only. Runs against the **real** watched repos, read-only. |
 | `pnpm verify:stage2` | Stage 2 only. Runs against **generated fixture repos in a temp dir** — never a watched project. |
+| `pnpm verify:stage3a` | Stage 3a (the shell) only. Pure-function fixtures, plus the Stage 1/2 suites re-run as a regression oracle. |
 | `pnpm type-check` | `tsc --noEmit`. |
 | `pnpm build` | Production build. |
 
@@ -139,7 +141,14 @@ If `pnpm build` fails on a missing `pages-manifest.json`, the cause is a stale c
 ## Conventions
 
 - **TypeScript**, Next.js App Router. Collectors are server-side under `lib/collectors/`;
-  the write path is `lib/fix/`.
+  the write path is `lib/fix/`; the shell's logic is pure functions in `lib/shell/`.
+- **Every surface reads the Board through `boardOnce`** (`lib/reconcile/cached.ts`), never
+  `buildBoard` directly — one collector run per request, so the ribbon and the Board cannot
+  disagree (D23). `verify:stage3a` AC-3 asserts it structurally.
+- **Shell logic is pure; shell components are dumb.** Anything that could be *wrong* belongs in
+  `lib/shell/model.ts` where the suite can assert it without rendering a route.
+- **New surfaces use CSS Modules**; `app/board.css` stays global and untouched. Both read the
+  tokens in `app/globals.css`, which is where the shared vocabulary lives.
 - **In JSX, interpolate complete strings.** Never let a line break fall between literal text and
   an expression continuing the same word — JSX collapses the newline to a space, and
   `write {n} file\n{n === 1 ? "" : "s"}` renders as *"2 file s"*. This has shipped twice
@@ -175,6 +184,16 @@ feature branch ──PR (agent opens)──▶ develop ──(owner merges)─�
 - **Never open a PR from `develop` or `main`** — work always goes on a feature branch.
 - Branch names: `feat/…`, `fix/…`, `chore/…`, `docs/…`.
 - **Never tag or bump a version without explicit owner approval.**
+- **Two branches that will both touch the hub docs should be stacked, not parallel.**
+  `docs/HANDOFF.md`, `docs/LEARNINGS.md`, `docs/BACKLOG.md` and `docs/DECISIONS.md` are appended to
+  at fixed anchor points, so two branches off the same base collide there **by construction** —
+  and the collision is spurious every time, because the answer is always "keep both". Branch the
+  second stage off the first, or expect to resolve four union conflicts per merge. **The tell that
+  a conflict is spurious is that every hunk resolves to a union**; if you are choosing between two
+  versions, that one is real and deserves attention.
+- **Never add a suite to a hand-maintained list.** `pnpm verify` discovers its suites from the
+  `verify:*` keys in `package.json` ([`scripts/verify-all.mts`](scripts/verify-all.mts)) precisely
+  so that adding a stage is an insert, not an edit to a line another branch also edited.
 
 ## Standing rules
 

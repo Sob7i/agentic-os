@@ -1,7 +1,7 @@
 # Agentic OS — Session Handoff
 
 > Continuation notes for the next working session (human or agent). Updated **2026-08-18**
-> (round-3 design closed; the Tasks surface and the dispatch model specced).
+> (round-3 design closed; Stages 3a/4/5 specced; **Stage 3a built**).
 > Read `CLAUDE.md` first (session ritual, conventions, doc map); this file is only "where we
 > are and what's next."
 >
@@ -25,17 +25,19 @@
 > "none" was already wrong by the time the PR recording it existed. A fact that its own recording
 > changes cannot be recorded; it can only be reproduced.
 >
-> **Checked 2026-08-18.** If today is much later than that, this table is a hypothesis.
+> **Checked 2026-08-18 (evening).** If today is much later than that, this table is a hypothesis.
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
 | `develop` head | `081ae34` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #6, #7, #8 — all 2026-08-15 | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **21 of 22** on this branch | `pnpm verify` |
+| `pnpm verify` | **29 of 30** — measured 2026-08-18 after merging #11 | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
+| `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
 | `pnpm verify:stage3` | 3 of 3 (AC-2, AC-9, AC-8a) | `pnpm verify:stage3` |
+| `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
 | Live board severities | **not recorded, by rule** | `pnpm dev` |
@@ -103,7 +105,16 @@
   of Stage 3 as **Stage 3a** and builds it first: it is portfolio-layer work against Stage 1 data,
   so it is not gated by Stage 3's two owner decisions, and it is the cheapest available test of
   D23's one known weakness (whether six project names actually fit in a 40px ribbon).
-- **There is no app shell today, and that was the gap.** Inventoried 2026-08-18: one route, a
+- **Stage 3a is built — the shell runs.** `/` is the Board inside a portfolio rail, `/p/<name>` is
+  a project with the always-present ribbon and a conditional drift band, `/p/<slug>/<tab>` is the
+  mount point Stage 3 will fill, and `/overview` says honestly that it is Stage 6. All six watched
+  projects render the watched-only view, because none has an `agentos.yml` yet — that is the
+  correct output, not a placeholder. **`pnpm verify` now runs every suite instead of stopping at
+  the first red one**, which it had been doing since Stage 2, silently hiding Stage 2's results
+  whenever Stage 1's AC-2 failed.
+- **The shell's logic is pure functions in `lib/shell/model.ts`.** The components are deliberately
+  dumb, so `verify:stage3a` asserts the things that could be *wrong* without rendering a route.
+- **~~There is no app shell today~~** *(resolved 2026-08-18)* — the inventory that motivated it: Inventoried 2026-08-18: one route, a
   15-line root layout, a **448-line `app/page.tsx`** holding the Board, the fix UI and the roster
   together, over 539 lines of global CSS. The design tokens are the exception — `app/globals.css`
   already carries the validated palette in both schemes, so Stage 3a inherits it.
@@ -138,6 +149,9 @@
   of an agent's tools was fed a row that already excluded them, and `composeOptions` simply
   forwarded configuration. Now a floor in code, checked against a **hostile** row that asks for
   both. *An invariant enforced only by seed data is enforced by nobody.*
+- **Merging #11 then #12 conflicted in four files, none of them a real disagreement** — see
+  `docs/LEARNINGS.md`. `package.json`'s suite list is now *discovered* rather than written down, so
+  that half cannot recur; the hub-doc half is a sequencing rule now in `CLAUDE.md` §Git.
 - **Next waves:** T4 (MCP + gate) → T5 (`dispatch` + sweep) → T6/T7. Tickets and the wave plan:
   [`stage-3-tickets.md`](specs/stage-3-tickets.md). **T4's question is already answered** in §3.3:
   the fake does not simulate SDK tool dispatch, and AC-4/AC-5 call the handler and `canUseTool`
@@ -168,12 +182,10 @@
    recommendation: ship the capability, default the seeded agent to `canCommit: false`). Both are
    owner calls because both end in a write to someone's repo. Answering them flips the glyph to `☑`.
    Everything else in §5, including the shell (D23) and the dispatch model (D24), is closed.
-3. **Build Stage 3a — the shell.** [`stage-3a-shell.spec.md`](specs/stage-3a-shell.spec.md) is
-   **`☑` buildable now** and is the only slice in the queue that is not waiting on anything. Build
-   order is its §6, and step 1 is deliberately *"extract components with the Board still at `/`,
-   then run `pnpm verify`"* — because AC-1 is that the suite result is **unchanged**, and running it
-   before any routing exists means a failure has exactly one possible cause. Then take the AC-10
-   measurement (does the ribbon fit at 1280px with six real names) and record it either way.
+3. **Look at the ribbon once** (AC-10). It is the one acceptance criterion that cannot be
+   automated, and it is currently recorded in `docs/FEATURES.md` as a **computed estimate, not an
+   observation** — ~890px of 1280px. `pnpm dev` → any `/p/<name>`. If it is cramped, D23 named the
+   fallback in advance and §5.4 kept the pane unconstrained so the swap stays a layout change.
 4. **Specs for Stages 4 and 5 are written** —
    [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) is **`☑`
    buildable** (no owner gate; it is sequenced behind Stage 3), and
@@ -221,6 +233,18 @@
   of the inventory: the validated palette is already in `globals.css`, so tokens are not a gap; and
   `buildBoard()` is already a single entry point, so *"the ribbon and the Board cannot disagree"* is
   a matter of not adding a second call rather than of building a sharing mechanism.
+
+- **2026-08-18 (build)** — **Stage 3a shipped.** Built in the spec's order, and step 1 earned its
+  place: extracting the components with the Board still at `/`, then running `pnpm verify` before
+  any routing existed, meant AC-1 had exactly one possible cause. It passed first time.
+  **Two findings changed the code.** `pnpm verify` chained its suites with `&&`, so a red Stage 1
+  meant Stage 2 and the new Stage 3a suite never ran in the aggregate — that had been true since
+  Stage 2 shipped and was only visible once a third suite existed. Now every suite runs and the
+  exit code aggregates. And AC-3's first draft asserted React's `cache()` dedupes by calling it
+  three times in a plain Node script; it does not, because there is no render pass — **the test
+  failed while the app was correct.** Rewritten as an import-graph assertion, which is the same
+  correction the Copilot review had just forced on Stage 3's AC-14, arrived at independently one
+  hour later. **A check that fails while the invariant holds is the kind people learn to delete.**
 
 **Deliberately not next:** the Overview as previously specced (cancelled by D22 — it must read the
 execution layer's tasks and goals, which do not exist yet), and everything in PRD §12.7.

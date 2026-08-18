@@ -1,0 +1,130 @@
+/* Stage 3a, D23. New surfaces use CSS Modules; app/board.css is left alone
+   (spec §5.2). Both read the same tokens from app/globals.css. */
+
+/* ── The portfolio ribbon — always present inside a project ─────────────── */
+.ribbon {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 40px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ribbon::-webkit-scrollbar { display: none; }
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.back:hover { text-decoration: underline; }
+
+.kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.sep { width: 1px; height: 18px; background: var(--line); flex: none; }
+
+.projects { display: flex; align-items: center; gap: 12px; flex: none; }
+
+.proj {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--muted);
+}
+.proj:hover { color: var(--text); }
+.proj[data-current="true"] { color: var(--text); font-weight: 600; }
+
+.glyph { font-size: 11px; line-height: 1; }
+.glyph[data-s="drift"] { color: var(--drift); }
+.glyph[data-s="attention"] { color: var(--attention); }
+.glyph[data-s="in-sync"] { color: var(--sync); }
+.glyph[data-s="unverifiable"] { color: var(--muted); }
+
+.fresh { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+.ribbonFail { margin-left: auto; color: var(--attention); font-size: 11px; }
+
+/* ── The drift band — only when THIS project has drifted ────────────────── */
+.band {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--drift-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.bandGlyph { color: var(--drift); flex: none; }
+.bandLink { margin-left: auto; white-space: nowrap; color: var(--muted); font-size: 12px; }
+
+/* ── Project rail + pane ────────────────────────────────────────────────── */
+.body { display: flex; min-height: calc(100vh - 40px); }
+
+.rail {
+  width: 172px;
+  flex: none;
+  border-right: 1px solid var(--line);
+  padding: 16px 12px;
+  background: var(--surface);
+}
+.railName { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+.railRepo { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 0 0 16px; word-break: break-all; }
+.railTabs { display: flex; flex-direction: column; gap: 2px; list-style: none; padding: 0; margin: 0; }
+.railTab a { display: block; padding: 5px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; font-size: 13px; }
+.railTab a:hover { background: var(--surface-2); color: var(--text); }
+.railTab a[data-current="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.railNote { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 14px 0 0; }
+.setup { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+
+/* The pane gets no max-width: the Kanban's real demand is measured one slice
+   later, and baking a guess in now would make D23's fallback expensive (§5.4). */
+.pane { flex: 1; padding: 24px; min-width: 0; }
+
+/* ── Watched-only project view (frame C3) ───────────────────────────────── */
+.watchedNote {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  background: var(--surface);
+  max-width: 62ch;
+}
+.watchedNote strong { color: var(--text); }
+.facts { display: flex; flex-wrap: wrap; gap: 18px; font-family: var(--mono); font-size: 12px; color: var(--muted); margin: 0 0 18px; }
+.findings { list-style: none; padding: 0; margin: 0 0 20px; display: flex; flex-direction: column; gap: 10px; }
+.finding { border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: var(--radius); padding: 12px 14px; background: var(--surface); }
+.finding[data-s="drift"] { border-left-color: var(--drift); }
+.finding[data-s="attention"] { border-left-color: var(--attention); }
+.finding h3 { font-size: 13px; margin: 0 0 4px; font-weight: 600; }
+.finding p { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.5; }
+.findingMeta { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+.h1 { font-size: 19px; margin: 0 0 4px; }
+.sub { font-size: 13px; color: var(--muted); margin: 0 0 20px; }
+.notBuilt { font-size: 13px; color: var(--muted); line-height: 1.6; max-width: 60ch; }
+
+/* ── Portfolio home rail (frame B'1) ────────────────────────────────────── */
+.home { display: flex; min-height: 100vh; }
+.homeRail { width: 172px; flex: none; border-right: 1px solid var(--line); padding: 16px 12px; background: var(--surface); }
+.brand { font-size: 14px; font-weight: 600; margin: 0 0 16px; }
+.enter { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--line); }
+.enterLbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }

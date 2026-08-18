@@ -113,6 +113,13 @@ belongs in `docs/DECISIONS.md` instead.
   commits anything**; it surfaced only when a new check made a run commit *and then crash*.
   **A symbolic ref is a question, not an answer: resolve it to a sha at the moment of capture**, or
   the record silently describes a different repository state than the one you meant.
+- (2026-08-18) **An aggregate that short-circuits hides every suite after the first failure.**
+  `pnpm verify` was `verify:stage1 && verify:stage2`, and Stage 1 has had a known, logged failure
+  since 2026-08-15 — so **Stage 2's eleven checks had not run in the aggregate for three days**, and
+  nobody noticed because `verify:stage2` was being run by hand each time. It only became visible when
+  a third suite was added and also never ran. **A red test that suppresses other tests converts one
+  known failure into unknown coverage.** Aggregates run everything and sum the exit codes; `&&` is
+  for dependent steps, not for independent checks.
 
 - (2026-07-27) **A safety guard took its bounds from the thing it was guarding.** Stage 2's path
   confinement computed the allowed write targets as *"the state doc named by this proposal, plus
@@ -144,6 +151,33 @@ belongs in `docs/DECISIONS.md` instead.
   in review rather than by the suite. **Two fixes, and the second matters more:** the check now
   feeds a *hostile* row that asks for both denied tools, and the exclusion became a floor in code.
   **An invariant enforced only by seed data is enforced by nobody.**
+- (2026-08-18) **A structural check that only knew one spelling of the thing it forbade.** Stage
+  3a's AC-3 asserts nothing imports `buildBoard` except the cached accessor, and matched module
+  specifiers containing `reconcile/board`. A file *inside* `lib/reconcile/` writing
+  `import { buildBoard } from "./board"` would have passed — the one directory where that spelling
+  is the natural one. Caught by review, and confirmed by writing the violating file and watching
+  the check stay green. **A guard is only as wide as the syntax it recognises; prove it by
+  committing the sin and watching it fail.**
+
+- (2026-08-18) **A structural guard that read the git index instead of the disk.** Stage 3a's AC-3
+  asserts nothing imports `buildBoard` directly, and enumerated files with `git ls-files` — which
+  lists only **tracked** files. A newly written module doing exactly the forbidden thing would have
+  passed until someone committed it, meaning the check was weakest at the moment it mattered most:
+  while the mistake was being made. Noticed only because the reported file count jumped from 13 to
+  27 after a commit, and the number looked wrong. **A guard over source must walk the source, not
+  an index of it** — and a check that prints what it scanned is how you find out it was scanning
+  the wrong thing.
+
+- (2026-08-18) **A test asserted a framework's behaviour outside the runtime that provides it.**
+  Stage 3a's AC-3 checked that the ribbon and the Board share one collector run by calling React's
+  `cache()` three times in a plain Node script and asserting one execution. It saw three: `cache`
+  dedupes within a React render pass, and a script has none. **The test failed while the app was
+  correct** — the failure mode that teaches people to delete checks. Rewritten to assert the import
+  graph instead (nothing imports `buildBoard` except the cached accessor; no module calls it twice),
+  which is a property of *our* code rather than of React's. **The same correction had been forced on
+  Stage 3's AC-14 by a reviewer an hour earlier**, and I made the identical mistake anyway — which
+  says the lesson is not "grep is brittle" but **assert what you own, not what your dependency
+  promises.**
 
 - (2026-08-15) **An acceptance test hardcoded the weather and failed 19 days later.** Stage 1's
   AC-2 asserts *"itqan is green"* by name; itqan simply stopped committing, DC7 correctly fired at
@@ -180,6 +214,24 @@ belongs in `docs/DECISIONS.md` instead.
   injectable `Runner`). **Evaluate a skill by what it does at the end, not by its template.**
 
 ## Workflow
+
+- (2026-08-18) **Two branches off the same base both had to edit the same four files, and every one
+  of them conflicted.** Merging #11 (Stage 3a) then #12 (Stage 3) produced conflicts in
+  `package.json`, `HANDOFF.md`, `LEARNINGS.md` and `BACKLOG.md` — **and not one of them was a real
+  disagreement.** Both branches wanted their suite registered; both appended a lesson; both added
+  backlog entries; both updated the state table. Git could not tell that "keep both" was always the
+  answer, because each edit landed at the same anchor point.
+  **Two distinct causes, and they need different fixes.**
+  *(a) A hand-maintained list two branches must both edit is a conflict waiting for a second
+  branch.* `package.json`'s `verify` chain named its suites; adding one meant editing a shared
+  line. **Fixed structurally** — `scripts/verify-all.mts` now *discovers* suites from the
+  `verify:*` script keys, so a new stage adds one entry and never touches the aggregate again.
+  *(b) The hub documents are append-at-a-fixed-anchor by design*, so parallel branches collide
+  there by construction. That one has no clean structural fix — the mitigation is sequencing:
+  **branch stages off each other rather than off `develop` when both will touch the hub docs**, or
+  accept the conflict and resolve it with "keep both", which is what it always is.
+  **The tell that a conflict is spurious: every hunk resolves to a union.** If you find yourself
+  choosing, look harder — that one is real.
 
 - (2026-07-27) The first three commits landed directly on `main` before the branch model was
   decided (D13). `develop` was branched from that point so history stayed consistent — but the
