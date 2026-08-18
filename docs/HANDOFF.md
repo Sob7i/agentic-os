@@ -57,11 +57,12 @@
   agent's own recommendation of Concept C, and says why. **D24** closes the execution motor: work is
   **dispatched, never picked up**. The Stage 3 spec gained **§7 (the motor)** and **§8 (the Tasks
   surface)**, plus AC-14…AC-19 and decisions 13–18.
-- **⚠ `pnpm verify` is RED, and the code is correct.** Stage 1's **AC-2 fails**: it asserts
-  *"itqan is green"* by name, and itqan has not committed since 2026-07-21, so DC7 rightly reports
-  it stalled. The test hardcoded a time-dependent fact about a live repo. **Fixing it amends a PRD
-  acceptance criterion**, so it is logged as blocking in `docs/BACKLOG.md` with two readings and a
-  recommendation, rather than edited silently. Counts are in the Verified state block above.
+- **⚠ Stage 1's AC-2 is a known blocking item, and the code is right.** It asserts *"itqan is
+  green"* **by name**; itqan stopped committing, so DC7 correctly reports it stalled and the check
+  fails. The test hardcoded a time-dependent fact about a live repo. **Fixing it amends a PRD
+  acceptance criterion**, so it is logged in `docs/BACKLOG.md` with two readings and a
+  recommendation rather than edited silently. It will keep failing until that decision is made —
+  **the current suite result is in the Verified state block, not here.**
 - **Stage 2 ships: the gate is live.** The Board now offers a correction on DC1 drift and writes
   it only on an explicit click. `pnpm verify` runs **both** suites. Stage 2's tests run entirely
   against generated fixture repos in a temp dir; no watched project is written to by a test.

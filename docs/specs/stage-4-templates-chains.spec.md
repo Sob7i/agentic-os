@@ -63,7 +63,7 @@ Nothing here is gated on an owner decision; it is gated on Stage 3 existing.
 | Says what approving will start | The gate reads *"Approve & start step 2 (@plan)"* — never a bare "Approve" | AC-6 |
 | Leaves a human step for a human | A step with no agent cannot be dispatched; the refusal names the reason | AC-7 |
 | Halts the chain on failure | A failed step stops the chain; later steps say which step stopped them | **AC-8** |
-| Records the chain on every card | Each card shows `step N of 9 · compound-engineer` | AC-9 |
+| Records the chain on every card | Each card shows `step N of 9 · <template name>` | AC-9 |
 | Never re-dispatches a step | A step already run cannot be started twice by the chain | AC-10 |
 
 ## §3 — Data & sources
@@ -72,6 +72,7 @@ Nothing here is gated on an owner decision; it is gated on Stage 3 existing.
 
 ```
 TaskTemplate(id, projectId, slug, name, description, variablesJson, seeded, createdAt)
+             -- slug = stable key ('compound-engineer-workflow'); name = display ('compound-engineer')
 TemplateStep(id, templateId, ord, name, promptTemplate, assigneeAgentName,
              approvalGate, notes)
 Chain(id, projectId, templateId, templateVersionJson, variablesJson,
@@ -84,6 +85,12 @@ and `Task` gains `chainId`, `chainOrd` (both nullable — a hand-made task has n
 A running chain must not change because someone edited the template underneath it — that is the
 same reasoning as D19's evidence rule one level down: *what actually ran* has to stay
 reconstructible. It also makes AC-8's halt reason meaningful a week later.
+
+**One template, one identifier on screen.** `TaskTemplate` carries both a `slug` — the seeded one
+is `compound-engineer-workflow`, as AgentOS-spec §10 names it — and a short `name`, which is what a
+card renders (`step 3 of 9 · compound-engineer`). The slug is the stable key for seeding, config and
+tests; the name is display only. **Never render the slug on a card and never key anything on the
+name**, or the same template acquires two identities and AC-9 starts asserting the wrong one.
 
 **`assigneeAgentName` is a name, not an id.** A template is portable across projects (the seeded
 one ships with the product); an agent id is not. Resolution happens at instantiate, and a name that

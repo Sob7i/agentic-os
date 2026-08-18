@@ -238,7 +238,7 @@ Agent(id, projectId, name, monogram, model, rolePrompt,          -- JSON columns
       allowedTools, disallowedTools, canCommit, maxTurns, maxBudgetUsd)
 Task(id, projectId, name, description, status, blockedReason,
      approvalGate, assigneeAgentId, scheduleKind, createdAt)     -- scheduleKind: 'manual' in Stage 3
-TaskEvent(id, taskId, from, to, actorType, actorId, reason, atISO)
+TaskEvent(id, taskId, fromStatus, toStatus, actorType, actorId, reason, atISO)
                                                                  -- actorType: 'session' | 'human' | 'system'
 Session(id, taskId, agentId, sdkSessionId, status, triggerKind,
         worktreePath, baseRef, costUsd, pid, bootId,
@@ -466,7 +466,7 @@ algorithm. A reader who assumes Stage 3 has it will look for code that is not th
 // lib/agentos/dispatch.ts — the ONLY function in the system that may create a Session
 dispatch(taskId: string, trigger: TriggerKind): Promise<DispatchResult>
 
-type TriggerKind = 'manual' | 'chain' | 'cron' | 'webhook'
+type TriggerKind = 'manual' | 'chain' | 'goal' | 'cron' | 'webhook'
 type DispatchResult =
   | { started: true;  sessionId: string }
   | { started: false; refusedBy: Precondition; reason: string }
@@ -479,8 +479,15 @@ function**, not future mechanisms:
 |---|---|---|
 | `manual` | the *Run now* control on a card | **3** |
 | `chain` | the `done` transition handler, when step N+1 exists | 4 |
+| `goal` | the goal orchestrator choosing the next specialist | 5 |
 | `cron` | a scheduler tick | deferred → `docs/BACKLOG.md` |
 | `webhook` | the trigger receiver | deferred → `docs/BACKLOG.md` |
+
+**Each caller gets its own kind, even when the code path is identical.** `goal` and `chain` both
+advance work without a human, and it would be tempting to let goals reuse `chain`. They are kept
+apart because `triggerKind` exists to record **what asked for this run** — a chain step was decided
+in advance by a template a human instantiated, a goal step was chosen by a model mid-loop, and a
+session record that cannot tell those apart has lost the distinction the funnel was built to keep.
 
 The value of deciding this now is that cron — the first caller that can start work while nobody is
 watching — inherits §7.3's preconditions and §7.5's drift record **by construction**, instead of

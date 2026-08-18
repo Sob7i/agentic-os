@@ -497,9 +497,11 @@ note are adopted unchanged **except position 1** (architecture), which this deci
 
 **Decision:** Three parts, all load-bearing for the execution layer.
 
-1. **No agent chooses its work.** Every `Task` names exactly one agent; a task with none uses the
-   project's default. There is no scanner, no poller, and no queue-worker that looks for `todo`
-   cards and starts them. **Nothing runs unless something explicitly asks for it by task id.**
+1. **No agent chooses its work.** Every `Task` carries its agent in `assigneeAgentId`, written
+   **when the task is created** — `Project.defaultAgentId` is applied there, never at dispatch, so a
+   `null` assignee reaching `dispatch` means deliberately human-only work and is refused (spec
+   §7.1, §7.3). There is no scanner, no poller, and no queue-worker that looks for `todo` cards and
+   starts them. **Nothing runs unless something explicitly asks for it by task id.**
 2. **One funnel.** A single `dispatch(taskId, trigger)` is the only path in the system that may
    create a `Session`. Run-now (Stage 3), chain steps (Stage 4), cron and webhooks (deferred, →
    `docs/BACKLOG.md`) are **callers of that function**, not mechanisms of their own.
@@ -545,7 +547,7 @@ differently:
 
 | `verification` | What actually happened | Renders as |
 |---|---|---|
-| `command` | a declared `verificationCmd` ran in the worktree and exited 0 | **`✓ verified`**, with the command and its exit |
+| `command` | a declared `verificationCmd` ran in the worktree and exited 0 | **`✓ verified`**, naming the command and when it ran |
 | `judged` | the orchestrator's model call read the progress log and concluded it | **`◆ derived`** — *"the orchestrator's reading"* — with the session id |
 | `human` | a person ticked it | quoted italic, naming them |
 

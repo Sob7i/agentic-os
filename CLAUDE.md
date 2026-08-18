@@ -21,10 +21,11 @@ works. Full rationale: `docs/PRD.md` §12.1.
 
 **Status: Stages 1 and 2 are built** — the reconciliation Board runs and gated fix proposals write
 on an explicit click. Stage 2's acceptance criterion (**one real drift corrected**) is still unmet:
-no proposal has ever been approved, and that is an owner gate. **`pnpm verify` has one known
-failure** — Stage 1's AC-2 hardcodes itqan as the green project and itqan stopped committing, so
-DC7 correctly reports it stalled; the check is right and the fixture rotted, and the fix needs a
-decision (`docs/BACKLOG.md`). **Re-scoped 2026-08-15** to two layers (D18–D22) — `docs/PRD.md` §12.
+no proposal has ever been approved, and that is an owner gate. **Stage 1's AC-2 is a known blocking
+item** — it hardcodes itqan as the green project, itqan stopped committing, and DC7 correctly
+reports it stalled; the check is right and the fixture rotted, and the fix needs a decision
+(`docs/BACKLOG.md`). *For whether the suite is currently green, read `docs/HANDOFF.md` §Verified
+state — this file does not carry suite results.* **Re-scoped 2026-08-15** to two layers (D18–D22) — `docs/PRD.md` §12.
 **Round-3 design closed 2026-08-18** — D23 (the shell), D24 (work is dispatched, never picked up),
 D25 (a DoD item carries the kind of evidence that closed it) and D26 (the app shell splits out of
 Stage 3 as **Stage 3a** and is built first). Next build step: **Stage 3a, the shell** — ungated and

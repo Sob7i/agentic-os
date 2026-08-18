@@ -75,7 +75,12 @@ belongs in `docs/DECISIONS.md` instead.
   volatile facts live, so that "update the volatile facts" is one edit and one check instead of a
   search. Fixed 2026-08-18 with `docs/HANDOFF.md`'s *Verified state* block and a `CLAUDE.md`
   convention forbidding restatement elsewhere. **A lesson that keeps recurring is not a lesson
-  anyone forgot — it is a lesson with no mechanism attached.**
+  anyone forgot — it is a lesson with no mechanism attached.** *Postscript, same day:* the commit
+  that introduced the convention **violated it three times** — a suite count in `CLAUDE.md`'s
+  command table (self-caught), and a *"`pnpm verify` is RED"* status in `HANDOFF.md` plus a
+  *"has one known failure"* in `CLAUDE.md` (both caught by a reviewer). **A convention is not in
+  force over the change that introduces it** unless you re-read that change against it — writing the
+  rule feels like compliance, and it is not.
 - (2026-08-18) **Some facts cannot be written down at all, because writing them down changes
   them.** The new *Verified state* block opened with `Open PRs | none`, which was true when
   `gh pr list` returned `[]` and false twenty minutes later — falsified **by the pull request that

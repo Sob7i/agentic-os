@@ -132,7 +132,7 @@ product itself, on the screen that decides whether to keep spending.
 
 | `verification` | Means | Renders |
 |---|---|---|
-| `command` | `verificationCmd` ran in the worktree and exited 0 | **`✓ verified`** + the command and its exit |
+| `command` | `verificationCmd` ran in the worktree and exited 0 | **`✓ verified`** + the command, and when it ran |
 | `judged` | the orchestrator's model call read the log and concluded it | **`◆ derived`** + *"the orchestrator's reading"* + the session id |
 | `human` | a person ticked it | quoted italic, naming them |
 
@@ -156,7 +156,7 @@ After **every** session ends — completed, failed, or interrupted — the orche
 3. ask the model to evaluate the remaining items and pick a    ← model
    next specialist, given the log, the DoD, and the diff
 4. check the four rails                                        ← code, and it wins
-5. spawn via dispatch(taskId, 'chain') — or stop, with a reason
+5. spawn via dispatch(taskId, 'goal') — or stop, with a reason
 ```
 
 **Step 4 is never the model's.** The model may propose the next specialist and may judge a `judged`
@@ -249,8 +249,11 @@ Closed unless marked.
 5. **Are all four rails checked before spawning, or during?** Before. Checking during would mean
    killing a live session, which destroys uncommitted work in an ephemeral worktree (§3.7).
 6. **How does a goal spawn work — a new mechanism?** No: the orchestrator creates a task and calls
-   `dispatch(taskId, 'chain')`. D24's funnel again, so goal sessions inherit every precondition and
-   the drift record.
+   `dispatch(taskId, 'goal')`. D24's funnel again, so goal sessions inherit every precondition and
+   the drift record. **Its own trigger kind, not `chain`** — the two are the same code path and
+   different provenance: a chain step was decided in advance by a template a human instantiated, a
+   goal step was chosen by a model mid-loop. `triggerKind` records what asked for the run, so
+   collapsing them would discard exactly what it is for (Stage 3 §7.2).
 7. **Shared filesystem across sessions?** No — the repo is the shared state, plus the append-only
    log. AgentOS-spec's R2 folder exists because *its* containers are remote (D20).
 8. **Can a goal run in a project that is not opted in?** No. Stage 3 §7.3 precondition 1, unchanged.
