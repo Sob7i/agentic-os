@@ -49,7 +49,7 @@
 **May touch:** `lib/agentos/db.ts`, `lib/agentos/types.ts`, `.gitignore`.
 **Must not touch:** anything under `lib/reconcile/`, `lib/fix/`, `app/`, `components/`.
 
-**Build:** the nine tables of §3.7 with migrations, at `data/agentos.sqlite`, **gitignored**.
+**Build:** the eight tables of §3.7 with migrations, at `data/agentos.sqlite`, **gitignored**.
 Expose typed accessors — **including exactly one `createSession()`**, which is the only function in
 the system permitted to insert a `Session` row (T5's AC-14 asserts nothing else imports it).
 

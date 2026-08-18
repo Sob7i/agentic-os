@@ -32,9 +32,10 @@
 | `develop` head | `081ae34` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #6, #7, #8 — all 2026-08-15 | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **18 of 19** | `pnpm verify` |
+| `pnpm verify` | **21 of 22** on this branch | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
+| `pnpm verify:stage3` | 3 of 3 (AC-2, AC-9, AC-8a) | `pnpm verify:stage3` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
 | Live board severities | **not recorded, by rule** | `pnpm dev` |
 
@@ -108,6 +109,24 @@
 - **Older decisions** — `docs/DECISIONS.md` D1–D25. The newest are D23 (the
   shell), D24 (dispatch, never pull) and **D25** (a DoD item carries the *kind* of evidence that
   closed it — which supersedes what frame `G1` drew); D18–D22 are the re-scope.
+
+## Stage 3 — wave 1 landed (2026-08-18)
+
+- **T1 (schema) and T2 (worktree) are built**, by two Sonnet agents in isolated worktrees, reviewed
+  against the spec before integration. `lib/agentos/{db,types,worktree}.ts` and
+  `scripts/verify-stage3.mts` (AC-2, AC-9, **AC-8a**).
+- **The agents found three things in my own documents**, which is what they were for: the spec said
+  *"nine tables"* while its schema block has always had **eight** (the agent refused to invent a
+  ninth); the spec named every session *failure* state and no success state (now `completed`); and
+  the ticket brief asserted `verify` behaviour that was only true on an unmerged branch.
+- **Review found one real bug the agents' own tests could not.** `withWorktree` read commit shas
+  only on the success path, and stored `baseRef` verbatim — so `baseRef: "HEAD"` made
+  `git log HEAD..HEAD` empty and a committing session would have recorded **no commits at all**.
+  AC-2 and AC-9 passed throughout because neither commits anything. **AC-8a** was added to catch
+  it: a run that commits and then crashes must still report its sha before teardown, because
+  `--force` removal leaves those commits unreferenced and the sha is the only way back.
+- **Next waves:** T3 (runner + fake) → T4 (MCP + gate) → T5 (`dispatch` + sweep) → T6/T7. Tickets
+  and the wave plan: [`stage-3-tickets.md`](specs/stage-3-tickets.md).
 
 ## How to pick up
 

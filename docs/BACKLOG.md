@@ -183,6 +183,26 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   second surface needing the same data with a different composition — which is when the split earns
   itself rather than being asserted.
 
+### From the Stage 3 build — wave 1 (2026-08-18)
+
+- **`node:sqlite` is experimental and will print a warning in suite output.** D28 accepts it for a
+  local-only tool with a declared engine floor, and confines it to `lib/agentos/db.ts`. The warning
+  has not appeared yet only because no suite imports that file. Unblocked by: T5/T6 importing it —
+  suppress narrowly at that point, never with a blanket `--no-warnings`. **Swap condition:** if the
+  experimental API moves under us twice, or a second machine on older Node needs to run this,
+  `better-sqlite3` behind the same accessors is a contained change.
+- **`writeTaskTransition()` does not judge whether a transition is legal.** T1 built it to pair a
+  status update with its `TaskEvent` atomically — which is what makes AC-10 mechanical — but §7.6's
+  legality table and the `approvalGate` carve-out are enforced elsewhere (§3.4 puts the gate in the
+  MCP handler). AC-19 says "rejected at the data layer", which could mean this function or
+  `dispatch.ts`. Unblocked by: T5, where the ambiguity actually has to be resolved — the agent was
+  right to flag it rather than guess.
+- **Agent worktrees were provisioned from a stale commit.** Both wave-1 agents started on a branch
+  pointing at `3ea05a0` — a pre-Stage-1 snapshot off `main` — rather than the branch they were
+  spawned from. Both detected it, reset to the correct base, and reported it. Cost: nothing this
+  time, because they checked. Unblocked by: it happening again — worth re-verifying the base commit
+  at the start of any future agent brief.
+
 ### Product / design
 
 - **Propose structured claim markers upstream to itqan** — D5 chose prose heuristics so the tool

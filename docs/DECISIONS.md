@@ -656,3 +656,33 @@ commits for the first time inside a stage that is also proving four other mechan
 `agentos.yml` when Stage 3 seeds it, and `docs/specs/stage-3-tickets.md` can be built against a spec
 with no open decisions. **The flag stays owner-only** — nothing in the execution layer may set
 `canCommit` on its own agent, and the seed value is configuration, not a default in code.
+
+## D28 — SQLite via Node's built-in `node:sqlite`, with a declared engine floor (2026-08-18)
+
+**Decision:** the execution layer's store uses **`node:sqlite`** (`DatabaseSync`), Node's built-in
+driver — **no dependency added** — and `package.json` gains `engines: { node: ">=22.13" }`, the
+version where it became available unflagged.
+
+**Rationale.** The alternative is `better-sqlite3`, which is mature and stable but needs a native
+build step on every install and every Node upgrade. For a **local-only tool with one user on a
+known machine** (invariant 1), a zero-dependency driver is the smaller surface, and the schema and
+migrations are ours either way — the driver is one import in one file.
+
+**The cost, stated rather than discovered later.** `node:sqlite` is marked **experimental**: it
+prints `ExperimentalWarning: SQLite is an experimental feature and might change at any time` on
+first use, and its API may change across Node releases. Two consequences:
+
+- **The warning will appear in acceptance-suite output** once a suite imports `db.ts`, and this
+  project cares about suite output being readable. Suppressing it must be explicit and narrow, not
+  a blanket `--no-warnings`, which would also hide warnings we want.
+- **An API change breaks one file.** `lib/agentos/db.ts` is the only module that touches the driver,
+  which is what keeps the risk proportionate — and is the same reasoning D20 used for putting a
+  `Runner` interface in front of the SDK.
+
+**The engine floor is not optional.** Without it, an install on Node 20 fails at *runtime*, inside
+the execution layer, with a confusing missing-module error. Declared, it fails at install with a
+clear one. Nothing in the repo declared `engines` before this.
+
+**Consequence:** `docs/BACKLOG.md` carries the swap condition — if the experimental API moves under
+us twice, or a second machine on an older Node needs to run this, `better-sqlite3` behind the same
+accessors is a contained change.

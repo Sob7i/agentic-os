@@ -234,8 +234,9 @@ that a metric ships with its caveat or does not ship.
 ```
 Project(id, slug, primaryRepoPath, yamlPath, defaultAgentId,     -- D21: repos[] arrives with Stage 4
         maxConcurrentSessions, createdAt)
-Agent(id, projectId, name, monogram, model, rolePrompt,          -- JSON columns for the two arrays
-      allowedTools, disallowedTools, canCommit, maxTurns, maxBudgetUsd)
+Agent(id, projectId, name, monogram, model, rolePrompt,
+      allowedToolsJson, disallowedToolsJson,                      -- the Json suffix is the convention:
+      canCommit, maxTurns, maxBudgetUsd)                          -- a reader must know it is text
 Task(id, projectId, name, description, status, blockedReason,
      approvalGate, assigneeAgentId, scheduleKind, createdAt)     -- scheduleKind: 'manual' in Stage 3
 TaskEvent(id, taskId, fromStatus, toStatus, actorType, actorId, reason, atISO)
@@ -243,9 +244,12 @@ TaskEvent(id, taskId, fromStatus, toStatus, actorType, actorId, reason, atISO)
 Session(id, taskId, agentId, sdkSessionId, status, triggerKind,
         worktreePath, baseRef, costUsd, pid, bootId,
         driftAtSpawnJson, startedAtISO, endedAtISO, failureReason)
+        -- status: 'running' | 'waiting-inbox' | 'completed' | 'failed' | 'interrupted'
 ToolCall(id, sessionId, seq, name, inputJson, atISO)
 InboxMessage(id, sessionId, taskId, kind, body, choicesJson,
              answer, status, askedAtISO, answeredAtISO)
+             -- kind: 'question' (the only one in Stage 3)
+             -- status: 'open' | 'answered'
 CommitSha(sessionId, sha)                                        -- read from git, never from us
 ```
 
@@ -253,6 +257,11 @@ CommitSha(sessionId, sha)                                        -- read from gi
 names its actor, and the UI reads status history from here.** A `Task.status` with no corresponding
 `TaskEvent` is a bug, and AC-10 asserts it cannot happen. `reason` is not decoration — a refusal
 and a crash-sweep both write one, and the UI renders it verbatim.
+
+**Three enumerations were missing until the build asked for them** (added 2026-08-18): a session
+that finishes cleanly is **`completed`**; `InboxMessage.kind` is `'question'` and nothing else in
+this slice; `InboxMessage.status` is `'open' | 'answered'`. The spec named every *failure* state and
+no success state — a gap that is invisible while writing and unavoidable while building.
 
 **Four columns exist for D24 and are explained in §7:** `Session.triggerKind` (what asked for this
 run), `driftAtSpawnJson` (what the project claimed when it started), and `pid` + `bootId` (whether
@@ -402,7 +411,7 @@ the Overview renders `▶ executed`.
 
 Order matters; the risk is concentrated in the first three.
 
-1. **`lib/agentos/db.ts`** — schema + migrations. No ORM; this is nine tables.
+1. **`lib/agentos/db.ts`** — schema + migrations. No ORM; this is **eight** tables. *(Said "nine" until 2026-08-18; the schema block below has always had eight. Caught by the agent building it, which correctly refused to invent a ninth to make the count true.)*
 2. **`lib/agentos/worktree.ts`** — create/teardown, with AC-2 and AC-9 written **first**. This is
    the piece that touches a real repo, so it gets tested before anything can call it in anger.
 3. **`lib/agentos/runner/` — the `Runner` interface, `LocalRunner`, and the scripted fake.** The

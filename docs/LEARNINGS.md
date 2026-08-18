@@ -81,6 +81,16 @@ belongs in `docs/DECISIONS.md` instead.
   *"has one known failure"* in `CLAUDE.md` (both caught by a reviewer). **A convention is not in
   force over the change that introduces it** unless you re-read that change against it — writing the
   rule feels like compliance, and it is not.
+- (2026-08-18) **I briefed a builder with a fact that was true on a branch it could not see.**
+  The Stage 3 tickets told an agent that `pnpm verify` "deliberately runs every suite and sums exit
+  codes" and that "Stage 3a's 8 checks must stay green". Both were true — on `feat/stage-3a-shell`,
+  an **unmerged** branch. The agent worked from `develop`, where `verify` still short-circuited and
+  no Stage 3a suite existed; it correctly reported the contradiction rather than trying to satisfy
+  it, and independently rediscovered the same `&&` short-circuit bug already fixed on the branch it
+  could not see. **Writing instructions from a working tree ahead of the reader's is the drift this
+  product detects, aimed at a colleague instead of a document.** Before briefing anyone — human or
+  agent — say which commit the instructions are true *at*, and check them against that commit
+  rather than against your own checkout.
 - (2026-08-18) **Some facts cannot be written down at all, because writing them down changes
   them.** The new *Verified state* block opened with `Open PRs | none`, which was true when
   `gh pr list` returned `[]` and false twenty minutes later — falsified **by the pull request that
@@ -94,6 +104,15 @@ belongs in `docs/DECISIONS.md` instead.
   accept that the pair must be re-read on every edit.
 
 ## Code
+
+- (2026-08-18) **A guard that never ran because its own inputs made it a no-op.** Stage 3's
+  worktree module stored the caller's `baseRef` verbatim and read commits with
+  `git log <baseRef>..HEAD`. Called the obvious way — `baseRef: "HEAD"` — that compares the
+  worktree's current HEAD against itself and reports **nothing**, so a session that committed would
+  have recorded no commits at all. AC-2 and AC-9 both passed throughout, because **neither of them
+  commits anything**; it surfaced only when a new check made a run commit *and then crash*.
+  **A symbolic ref is a question, not an answer: resolve it to a sha at the moment of capture**, or
+  the record silently describes a different repository state than the one you meant.
 
 - (2026-07-27) **A safety guard took its bounds from the thing it was guarding.** Stage 2's path
   confinement computed the allowed write targets as *"the state doc named by this proposal, plus
