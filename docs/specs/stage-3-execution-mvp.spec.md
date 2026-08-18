@@ -1,9 +1,9 @@
 # Spec — Stage 3: the execution MVP (one vertical thread)
 
-status: ☐ design closed — **two owner decisions gate the build**, both in §5.11 and §5.12: which
-watched repo the first sessions target, and whether the MVP agent may commit at all. Everything
-else in §5 is closed, including the shell (D23) and the dispatch model (D24), added 2026-08-18
-with §7 and §8. The owner clears both gates.
+status: ☑ decisions closed — **buildable.** Both gates cleared 2026-08-18 by **D27**: the first
+real sessions target `fractal-code`, and `canCommit` ships with the seeded agent set to `false`.
+The shell (D23) and the dispatch model (D24) closed earlier, with §7 and §8. Decomposed into build
+units in [`stage-3-tickets.md`](stage-3-tickets.md).
 
 > **The first slice that runs an agent.** Everything before it observed; this one *acts*. Product
 > context: `docs/PRD.md` §12.4, and **D18–D22**, which are its premise. Depends on Stage 2
@@ -88,17 +88,30 @@ wrong library.
 
 | What this slice needs | The verified surface |
 |---|---|
-| Run an agent | `query({ prompt, options }) → AsyncGenerator<SDKMessage>` |
+| Run an agent | `query({ prompt, options }) → Query`, where `Query extends AsyncGenerator<SDKMessage, void>` plus control methods (`interrupt`, `close`, …). `for await` works identically |
 | Work in the worktree | `options.cwd` (defaults to `process.cwd()`) |
 | Capture the session id | `session_id`, on the init `system` message **and** on the result message |
 | Resume after an inbox answer | `options.resume: <sessionId>` |
 | Restrict tools | `options.allowedTools[]`, `options.disallowedTools[]` — scoped rules supported, e.g. `Bash(rm *)` |
-| Gate a call at runtime | `options.canUseTool(request) → { allowed: boolean }` |
+| Gate a call at runtime | `options.canUseTool(toolName, input, { signal, suggestions, … }) → Promise<PermissionResult \| null>`; `PermissionResult` is `{behavior:'allow', …}` or `{behavior:'deny', message, …}` |
 | Attach our own tools | `createSdkMcpServer({ name, tools })` + `tool(name, description, zodSchema, handler)` |
 | Refuse every other MCP | `options.strictMcpConfig: true` — ignores `.mcp.json` and settings |
-| Read the cost | `total_cost_usd` on the result message (plus `total_input_tokens` / `total_output_tokens`) |
+| Read the cost | `total_cost_usd` on the result message. **Tokens are `usage: NonNullableUsage`** (`input_tokens` / `output_tokens`) plus a per-model `modelUsage` breakdown — there are no `total_input_tokens` / `total_output_tokens` fields |
 | Cap the spend | `options.maxBudgetUsd` — terminates with result subtype `error_max_budget_usd` |
 | Cap the turns | `options.maxTurns` — terminates with `error_max_turns` |
+
+> **⚠ Corrected 2026-08-18, against the installed package.** Three rows above were wrong when first
+> written, and this section's header claimed they were *"verified, not assumed"*. They were verified
+> against the SDK's **documentation**; the agent building T3 checked them against
+> `node_modules/@anthropic-ai/claude-agent-sdk@0.3.233`'s own `.d.ts` and found `canUseTool`'s
+> signature materially different, `query()` returning `Query` rather than a bare generator, and the
+> token fields simply absent. **Documentation is a claim about an API; the package is the API**
+> (`docs/LEARNINGS.md`). Anything added to this table from now on is checked against the `.d.ts`.
+>
+> **`canUseTool`'s real shape is better for us than the one I invented.** A denial *must* carry
+> `message: string` — the API makes the reason mandatory, where `{ allowed: false }` would have let
+> a refusal be silent. §3.4 asked for "decline with a reason the agent reads and adapts to"; the SDK
+> enforces it.
 
 **Three findings worth more than the table.**
 
@@ -155,6 +168,14 @@ function call with a Zod-validated argument.
 |---|---|---|
 | `agentos` | `task.read`, `task.update_status`, `task.append_activity` | `task.update_status` is where §3.4's gate lives |
 | `inbox` | `inbox.ask` | Returns nothing useful — see §3.5. `inbox.send` is deliberately absent (§5.8) |
+
+**The scripted fake does not simulate SDK tool dispatch, and does not need to** *(closed
+2026-08-18, asked by the agent that built the fake)*. Because these tools are plain async functions
+and `canUseTool` is a plain callback, AC-4 and AC-5 invoke **the handler and the callback directly**
+rather than driving them through `Runner`. That is not a shortcut: §3.4's whole claim is that the
+handler refuses *regardless of what let the call through*, and a test that could only reach the
+handler via a permitted SDK dispatch could never demonstrate it. Calling both layers directly is the
+only way to assert **which** one refused.
 
 Both are constructed **per session** and close over that session's id and task id. The agent
 therefore has no parameter with which to name a *different* task: the object it can act on is fixed
@@ -234,8 +255,9 @@ that a metric ships with its caveat or does not ship.
 ```
 Project(id, slug, primaryRepoPath, yamlPath, defaultAgentId,     -- D21: repos[] arrives with Stage 4
         maxConcurrentSessions, createdAt)
-Agent(id, projectId, name, monogram, model, rolePrompt,          -- JSON columns for the two arrays
-      allowedTools, disallowedTools, canCommit, maxTurns, maxBudgetUsd)
+Agent(id, projectId, name, monogram, model, rolePrompt,
+      allowedToolsJson, disallowedToolsJson,                      -- the Json suffix is the convention:
+      canCommit, maxTurns, maxBudgetUsd)                          -- a reader must know it is text
 Task(id, projectId, name, description, status, blockedReason,
      approvalGate, assigneeAgentId, scheduleKind, createdAt)     -- scheduleKind: 'manual' in Stage 3
 TaskEvent(id, taskId, fromStatus, toStatus, actorType, actorId, reason, atISO)
@@ -243,9 +265,12 @@ TaskEvent(id, taskId, fromStatus, toStatus, actorType, actorId, reason, atISO)
 Session(id, taskId, agentId, sdkSessionId, status, triggerKind,
         worktreePath, baseRef, costUsd, pid, bootId,
         driftAtSpawnJson, startedAtISO, endedAtISO, failureReason)
+        -- status: 'running' | 'waiting-inbox' | 'completed' | 'failed' | 'interrupted'
 ToolCall(id, sessionId, seq, name, inputJson, atISO)
 InboxMessage(id, sessionId, taskId, kind, body, choicesJson,
              answer, status, askedAtISO, answeredAtISO)
+             -- kind: 'question' (the only one in Stage 3)
+             -- status: 'open' | 'answered'
 CommitSha(sessionId, sha)                                        -- read from git, never from us
 ```
 
@@ -253,6 +278,11 @@ CommitSha(sessionId, sha)                                        -- read from gi
 names its actor, and the UI reads status history from here.** A `Task.status` with no corresponding
 `TaskEvent` is a bug, and AC-10 asserts it cannot happen. `reason` is not decoration — a refusal
 and a crash-sweep both write one, and the UI renders it verbatim.
+
+**Three enumerations were missing until the build asked for them** (added 2026-08-18): a session
+that finishes cleanly is **`completed`**; `InboxMessage.kind` is `'question'` and nothing else in
+this slice; `InboxMessage.status` is `'open' | 'answered'`. The spec named every *failure* state and
+no success state — a gap that is invisible while writing and unavoidable while building.
 
 **Four columns exist for D24 and are explained in §7:** `Session.triggerKind` (what asked for this
 run), `driftAtSpawnJson` (what the project claimed when it started), and `pid` + `bootId` (whether
@@ -349,8 +379,14 @@ Closed unless marked. If a new one surfaces mid-build, **stop** and close it in
    namespace, so a local process can read outside its worktree. **Stated in `FEATURES.md` under
    *Known gaps*, not implied away** — already logged in `docs/BACKLOG.md` from D20.
 7. **Can the agent reach the network?** Only what the SDK itself needs, plus whatever tools it is
-   granted. `WebFetch`/`WebSearch` are **not** in the MVP agent's `allowedTools`. This keeps D19's
-   egress carve-out at "the model API" rather than "the internet".
+   granted. `WebFetch`/`WebSearch` are **stripped from `allowedTools` and forced into
+   `disallowedTools` by `composeOptions`, on every call, whatever the `Agent` row says.** This keeps
+   D19's egress carve-out at "the model API" rather than "the internet".
+   *Tightened 2026-08-18:* this originally read as a fact about the seeded agent's configuration,
+   and was built that way. **An invariant enforced only by seed data is enforced by nobody** — one
+   mistyped row would have widened invariant 1. It is now a floor in code, and its check feeds
+   `composeOptions` a **hostile** agent row that asks for both tools, so the test proves the floor
+   rather than the fixture.
 8. **Can the agent message the human for progress?** No. `inbox.ask` exists; `inbox.send` does not.
    AgentOS-spec §8's foundational prompt says *do not message for routine progress* — a tool that
    cannot be misused beats an instruction not to misuse it. Progress goes to `task.append_activity`.
@@ -360,12 +396,15 @@ Closed unless marked. If a new one surfaces mid-build, **stop** and close it in
    recorded in `FEATURES.md`.
 10. **Model for the MVP agent?** `claude-opus-5`, default effort. One agent, one job; tiering is a
     Stage 4 concern once several roles exist.
-11. **⚠ GATING — which repo do the first real sessions target?** PRD §12.4 says a low-stakes watched
-    repo, never agentic-os. Both candidates are quiet: `my-personal-website` (last commit 2026-08-06)
-    and `fractal-code` (2026-07-26). **The owner picks**, because it is their repo and the run ends
+11. **Which repo do the first real sessions target?** **`fractal-code` — closed as D27.** PRD §12.4 says a low-stakes watched
+    repo, never agentic-os. Both candidates were quiet — `my-personal-website` and `fractal-code`,
+    last committed 2026-08-06 and 2026-07-26 respectively **as measured on 2026-08-18, when this
+    was decided**. Those are evidence for a closed decision, not current facts; recompute with
+    `git -C <repo> log -1 --format=%cI` rather than trusting them.
+    **The owner picks**, because it is their repo and the run ends
     in a commit. *Recommendation: `fractal-code`* — it is the quieter of the two and has no state
     doc for a stray agent to contradict.
-12. **⚠ GATING — may the MVP agent commit at all?** The thread in PRD §12.4 ends in a commit, and
+12. **May the MVP agent commit at all?** **`canCommit` ships, seeded `false` — closed as D27.** The thread in PRD §12.4 ends in a commit, and
     AC-8 assumes one. A `canCommit: false` first run — agent works, we read the diff, nothing is
     written to the object store — is a defensible smaller step that still exercises worktree,
     inbox, gate, and cost. **The owner decides**; both are buildable and the schema carries the flag
@@ -402,7 +441,7 @@ the Overview renders `▶ executed`.
 
 Order matters; the risk is concentrated in the first three.
 
-1. **`lib/agentos/db.ts`** — schema + migrations. No ORM; this is nine tables.
+1. **`lib/agentos/db.ts`** — schema + migrations. No ORM; this is **eight** tables. *(Said "nine" until 2026-08-18; the schema block below has always had eight. Caught by the agent building it, which correctly refused to invent a ninth to make the count true.)*
 2. **`lib/agentos/worktree.ts`** — create/teardown, with AC-2 and AC-9 written **first**. This is
    the piece that touches a real repo, so it gets tested before anything can call it in anger.
 3. **`lib/agentos/runner/` — the `Runner` interface, `LocalRunner`, and the scripted fake.** The

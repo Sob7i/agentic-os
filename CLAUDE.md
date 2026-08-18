@@ -162,6 +162,12 @@ If `pnpm build` fails on a missing `pages-manifest.json`, the cause is a stale c
   cannot link to should name the command that produces it (`gh pr list`) rather than the answer.
   This is `docs/LEARNINGS.md`'s *"compute them or omit them"* rule, promoted to a convention after
   it was applied one bullet at a time and kept missing instances.
+  **One exception, and it must be marked:** a **decision record may cite what was true when the
+  decision was taken** — that is evidence, and deleting it would leave the reasoning unsupportable.
+  Write it as history and say when it was measured (*"last committed 2026-07-26, as measured
+  2026-08-18, when this was decided"*), and name the command that recomputes it. A dated
+  measurement inside a closed decision is a fact about the past and does not rot; the same string
+  in a spec's present tense does.
 - Dates are absolute (`2026-07-27`), never "yesterday" or "last week".
 - Prefer markdown links (`[file.ts](lib/file.ts)`) in docs.
 
@@ -178,6 +184,16 @@ feature branch ──PR (agent opens)──▶ develop ──(owner merges)─�
 - **Never open a PR from `develop` or `main`** — work always goes on a feature branch.
 - Branch names: `feat/…`, `fix/…`, `chore/…`, `docs/…`.
 - **Never tag or bump a version without explicit owner approval.**
+- **Two branches that will both touch the hub docs should be stacked, not parallel.**
+  `docs/HANDOFF.md`, `docs/LEARNINGS.md`, `docs/BACKLOG.md` and `docs/DECISIONS.md` are appended to
+  at fixed anchor points, so two branches off the same base collide there **by construction** —
+  and the collision is spurious every time, because the answer is always "keep both". Branch the
+  second stage off the first, or expect to resolve four union conflicts per merge. **The tell that
+  a conflict is spurious is that every hunk resolves to a union**; if you are choosing between two
+  versions, that one is real and deserves attention.
+- **Never add a suite to a hand-maintained list.** `pnpm verify` discovers its suites from the
+  `verify:*` keys in `package.json` ([`scripts/verify-all.mts`](scripts/verify-all.mts)) precisely
+  so that adding a stage is an insert, not an edit to a line another branch also edited.
 
 ## Standing rules
 

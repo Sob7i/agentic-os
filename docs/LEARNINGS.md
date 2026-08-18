@@ -81,6 +81,16 @@ belongs in `docs/DECISIONS.md` instead.
   *"has one known failure"* in `CLAUDE.md` (both caught by a reviewer). **A convention is not in
   force over the change that introduces it** unless you re-read that change against it — writing the
   rule feels like compliance, and it is not.
+- (2026-08-18) **I briefed a builder with a fact that was true on a branch it could not see.**
+  The Stage 3 tickets told an agent that `pnpm verify` "deliberately runs every suite and sums exit
+  codes" and that "Stage 3a's 8 checks must stay green". Both were true — on `feat/stage-3a-shell`,
+  an **unmerged** branch. The agent worked from `develop`, where `verify` still short-circuited and
+  no Stage 3a suite existed; it correctly reported the contradiction rather than trying to satisfy
+  it, and independently rediscovered the same `&&` short-circuit bug already fixed on the branch it
+  could not see. **Writing instructions from a working tree ahead of the reader's is the drift this
+  product detects, aimed at a colleague instead of a document.** Before briefing anyone — human or
+  agent — say which commit the instructions are true *at*, and check them against that commit
+  rather than against your own checkout.
 - (2026-08-18) **Some facts cannot be written down at all, because writing them down changes
   them.** The new *Verified state* block opened with `Open PRs | none`, which was true when
   `gh pr list` returned `[]` and false twenty minutes later — falsified **by the pull request that
@@ -95,6 +105,14 @@ belongs in `docs/DECISIONS.md` instead.
 
 ## Code
 
+- (2026-08-18) **A guard that never ran because its own inputs made it a no-op.** Stage 3's
+  worktree module stored the caller's `baseRef` verbatim and read commits with
+  `git log <baseRef>..HEAD`. Called the obvious way — `baseRef: "HEAD"` — that compares the
+  worktree's current HEAD against itself and reports **nothing**, so a session that committed would
+  have recorded no commits at all. AC-2 and AC-9 both passed throughout, because **neither of them
+  commits anything**; it surfaced only when a new check made a run commit *and then crash*.
+  **A symbolic ref is a question, not an answer: resolve it to a sha at the moment of capture**, or
+  the record silently describes a different repository state than the one you meant.
 - (2026-08-18) **An aggregate that short-circuits hides every suite after the first failure.**
   `pnpm verify` was `verify:stage1 && verify:stage2`, and Stage 1 has had a known, logged failure
   since 2026-08-15 — so **Stage 2's eleven checks had not run in the aggregate for three days**, and
@@ -102,7 +120,6 @@ belongs in `docs/DECISIONS.md` instead.
   a third suite was added and also never ran. **A red test that suppresses other tests converts one
   known failure into unknown coverage.** Aggregates run everything and sum the exit codes; `&&` is
   for dependent steps, not for independent checks.
-
 
 - (2026-07-27) **A safety guard took its bounds from the thing it was guarding.** Stage 2's path
   confinement computed the allowed write targets as *"the state doc named by this proposal, plus
@@ -118,6 +135,22 @@ belongs in `docs/DECISIONS.md` instead.
 
 ## Verification
 
+- (2026-08-18) **A spec section that boasted "verified, not assumed" was verified against the wrong
+  artifact.** Stage 3 §3.1 tabulated the Agent SDK's surface and said explicitly that it was fetched
+  rather than recalled. It was fetched — from the **documentation**. When an agent finally installed
+  the package and read its `.d.ts`, three rows were wrong: `canUseTool`'s signature was materially
+  different, `query()` returned a `Query` object rather than a bare generator, and the token fields
+  named in the table **do not exist**. **Documentation is a claim about an API; the package is the
+  API.** The project's own rule — `external-API-fields-are-guilty-until-verified` — was satisfied in
+  form and missed in substance, because "verified" was allowed to mean "read somewhere reputable"
+  instead of "checked against the artifact that will run".
+- (2026-08-18) **A test that fed itself the answer.** T3's check that `WebFetch`/`WebSearch` stay out
+  of an agent's tools passed an `Agent` row that already excluded them — so it asserted its fixture,
+  not any behaviour, and would have kept passing if the code had simply forwarded configuration
+  (which it did). This is Stage 1 AC-2's *specimen-not-behaviour* failure in a new costume, found
+  in review rather than by the suite. **Two fixes, and the second matters more:** the check now
+  feeds a *hostile* row that asks for both denied tools, and the exclusion became a floor in code.
+  **An invariant enforced only by seed data is enforced by nobody.**
 - (2026-08-18) **A structural check that only knew one spelling of the thing it forbade.** Stage
   3a's AC-3 asserts nothing imports `buildBoard` except the cached accessor, and matched module
   specifiers containing `reconcile/board`. A file *inside* `lib/reconcile/` writing
@@ -145,7 +178,6 @@ belongs in `docs/DECISIONS.md` instead.
   Stage 3's AC-14 by a reviewer an hour earlier**, and I made the identical mistake anyway — which
   says the lesson is not "grep is brittle" but **assert what you own, not what your dependency
   promises.**
-
 
 - (2026-08-15) **An acceptance test hardcoded the weather and failed 19 days later.** Stage 1's
   AC-2 asserts *"itqan is green"* by name; itqan simply stopped committing, DC7 correctly fired at
@@ -182,6 +214,24 @@ belongs in `docs/DECISIONS.md` instead.
   injectable `Runner`). **Evaluate a skill by what it does at the end, not by its template.**
 
 ## Workflow
+
+- (2026-08-18) **Two branches off the same base both had to edit the same four files, and every one
+  of them conflicted.** Merging #11 (Stage 3a) then #12 (Stage 3) produced conflicts in
+  `package.json`, `HANDOFF.md`, `LEARNINGS.md` and `BACKLOG.md` — **and not one of them was a real
+  disagreement.** Both branches wanted their suite registered; both appended a lesson; both added
+  backlog entries; both updated the state table. Git could not tell that "keep both" was always the
+  answer, because each edit landed at the same anchor point.
+  **Two distinct causes, and they need different fixes.**
+  *(a) A hand-maintained list two branches must both edit is a conflict waiting for a second
+  branch.* `package.json`'s `verify` chain named its suites; adding one meant editing a shared
+  line. **Fixed structurally** — `scripts/verify-all.mts` now *discovers* suites from the
+  `verify:*` script keys, so a new stage adds one entry and never touches the aggregate again.
+  *(b) The hub documents are append-at-a-fixed-anchor by design*, so parallel branches collide
+  there by construction. That one has no clean structural fix — the mitigation is sequencing:
+  **branch stages off each other rather than off `develop` when both will touch the hub docs**, or
+  accept the conflict and resolve it with "keep both", which is what it always is.
+  **The tell that a conflict is spurious: every hunk resolves to a union.** If you find yourself
+  choosing, look harder — that one is real.
 
 - (2026-07-27) The first three commits landed directly on `main` before the branch model was
   decided (D13). `develop` was branched from that point so history stayed consistent — but the

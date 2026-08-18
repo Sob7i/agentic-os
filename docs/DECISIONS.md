@@ -626,3 +626,63 @@ fallback in advance**, which is the reason it was designed.
 narrows to the surfaces that need an execution layer. `pnpm verify` must be **unchanged** by the
 decomposition — that is the shell spec's AC-1, and it is what makes refactoring a 448-line file
 covered by eleven acceptance checks a safe move rather than a brave one.
+
+## D27 — The first real sessions target `fractal-code`, and may commit — but the seeded agent may not (2026-08-18)
+
+**Closes both gates on `docs/specs/stage-3-execution-mvp.spec.md`** (§5.11 and §5.12), which move
+that spec from `☐` to `☑`. Owner decision, taken 2026-08-18; both halves end in a write to
+someone's repo, which is why neither was the agent's to make.
+
+**Decision, in two parts.**
+
+1. **Target repo: `fractal-code`.** PRD §12.4 requires a low-stakes watched repo and forbids
+   agentic-os. `fractal-code` is the quieter of the two candidates and **has no state document**,
+   so there is nothing for a stray agent to contradict — a first run cannot manufacture the exact
+   drift this product exists to detect.
+2. **`canCommit` ships; the seeded agent is `false`.** The capability is built, tested and on the
+   `Agent` row, so AC-8 can assert commit-sha capture against a fixture that does commit. The agent
+   seeded into `fractal-code` starts with `canCommit: false`, so the **first real run is observable
+   before it is consequential**: the worktree, the inbox pause, the gate and the cost are all
+   exercised, the diff is readable, and nothing enters the object store until the owner flips one
+   flag.
+
+**Rationale.** These are the same shape of call, and the same answer: *build the capability, seed
+it timid.* The alternative to (2) — not building `canCommit` at all — would have made AC-8 untestable
+and pushed the first commit-bearing run into a later slice where it would arrive alongside chains
+and rails rather than alone. **The expensive thing is not an agent that commits; it is an agent that
+commits for the first time inside a stage that is also proving four other mechanisms.**
+
+**Consequence:** the spec's status glyph flips to `☑`, `projects.config.ts` gains fractal-code's
+`agentos.yml` when Stage 3 seeds it, and `docs/specs/stage-3-tickets.md` can be built against a spec
+with no open decisions. **The flag stays owner-only** — nothing in the execution layer may set
+`canCommit` on its own agent, and the seed value is configuration, not a default in code.
+
+## D28 — SQLite via Node's built-in `node:sqlite`, with a declared engine floor (2026-08-18)
+
+**Decision:** the execution layer's store uses **`node:sqlite`** (`DatabaseSync`), Node's built-in
+driver — **no dependency added** — and `package.json` gains `engines: { node: ">=22.13" }`, the
+version where it became available unflagged.
+
+**Rationale.** The alternative is `better-sqlite3`, which is mature and stable but needs a native
+build step on every install and every Node upgrade. For a **local-only tool with one user on a
+known machine** (invariant 1), a zero-dependency driver is the smaller surface, and the schema and
+migrations are ours either way — the driver is one import in one file.
+
+**The cost, stated rather than discovered later.** `node:sqlite` is marked **experimental**: it
+prints `ExperimentalWarning: SQLite is an experimental feature and might change at any time` on
+first use, and its API may change across Node releases. Two consequences:
+
+- **The warning will appear in acceptance-suite output** once a suite imports `db.ts`, and this
+  project cares about suite output being readable. Suppressing it must be explicit and narrow, not
+  a blanket `--no-warnings`, which would also hide warnings we want.
+- **An API change breaks one file.** `lib/agentos/db.ts` is the only module that touches the driver,
+  which is what keeps the risk proportionate — and is the same reasoning D20 used for putting a
+  `Runner` interface in front of the SDK.
+
+**The engine floor is not optional.** Without it, an install on Node 20 fails at *runtime*, inside
+the execution layer, with a confusing missing-module error. Declared, it fails at install with a
+clear one. Nothing in the repo declared `engines` before this.
+
+**Consequence:** `docs/BACKLOG.md` carries the swap condition — if the experimental API moves under
+us twice, or a second machine on an older Node needs to run this, `better-sqlite3` behind the same
+accessors is a contained change.
