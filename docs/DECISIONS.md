@@ -534,3 +534,46 @@ either layer could answer.
 asserts it (spec §7, AC-14…AC-18). `Session` gains `triggerKind`, `driftAtSpawn`, `pid` and
 `bootId`. A goal-level pre-flight that *does* block is still open for Stage 5 (PRD §12.6) and is
 not pre-empted by this decision.
+
+## D25 — A Definition of Done item carries the *kind* of evidence that closed it (2026-08-18)
+
+**Amends the round-3 design** (frame `G1` in [`design/wireframes2.pen`](../design/wireframes2.pen)),
+and applies D22's provenance ladder to the execution layer's own completion signal.
+
+**Decision:** `DoDItem` gains a `verification` field with three values, and the UI renders each
+differently:
+
+| `verification` | What actually happened | Renders as |
+|---|---|---|
+| `command` | a declared `verificationCmd` ran in the worktree and exited 0 | **`✓ verified`**, with the command and its exit |
+| `judged` | the orchestrator's model call read the progress log and concluded it | **`◆ derived`** — *"the orchestrator's reading"* — with the session id |
+| `human` | a person ticked it | quoted italic, naming them |
+
+A goal's completion banner states the split — *"3 of 5 verified by command, 2 by the orchestrator's
+reading"* — so a goal that declared itself finished looks different from one that was checked.
+
+**Rationale.** AgentOS-spec §11 has the orchestrator *"mark DoD checkboxes that are satisfied"*, and
+frame `G1` draws a met item with `▶ s_8f21c4 · b71f04d` beside it. In this product `▶ executed`
+means *a session produced this and here is the commit that proves it* (D22). **It does not prove
+it.** The session produced the work; the judgement that the work satisfies the item is a model
+reading a log. Rendering a model's reading with the glyph reserved for verified execution is the
+claim-as-fact collapse invariant 3 exists to prevent — committed by this product, on the one screen
+that decides whether to keep spending money.
+
+The fix is cheap because the vocabulary already exists. D22 built a four-level ladder precisely so
+that things of different evidentiary weight could stop looking alike; a DoD item is simply the first
+place inside the execution layer where two of those levels collide. **`~ suspect` is deliberately
+not used** — a judged item is not doubtful, it is *derived*, and reserving `suspect` for the Board's
+drift state keeps its meaning sharp.
+
+**The second-order effect is the valuable one.** Because a `verificationCmd` upgrades an item from
+`judged` to `verified`, writing a DoD becomes an exercise in asking *"how would I know?"* —
+*"covered by an integration test"* becomes `pnpm test path/to/spec`, and completion becomes a fact.
+Items that genuinely cannot be commanded (*"the key is never written to a log"*) stay `judged` and
+say so. **The design pressure points the right way**, which a single boolean `met` could never do.
+
+**Consequence:** the schema in `docs/specs/stage-5-goals.spec.md` §3.1 carries `verification`,
+`verificationCmd`, `metBySessionId`, `metSha` and `evidenceNote`; AC-5 asserts that a failing
+command keeps an item unmet **even when the model says it is met**; and frame `G1` is superseded in
+this one respect. It cannot be retrofitted after the goal UI is built, which is why it is closed
+now rather than during Stage 5.

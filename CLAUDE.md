@@ -19,16 +19,17 @@ from a twelve-day-stale document and trip none of its own safety rails — they 
 never its premise. The portfolio layer is the check that catches exactly that, and it already
 works. Full rationale: `docs/PRD.md` §12.1.
 
-**Status: Stages 1 and 2 are built and merged** — the reconciliation Board runs and gated fix
-proposals write on an explicit click. PRs #6–#8 merged into `develop` on 2026-08-15, but Stage 2's
-acceptance criterion (**one real drift corrected**) is still unmet: no proposal has ever been
-approved. **`pnpm verify` is RED: 18 of 19** — Stage 1's AC-2 fails because it hardcodes itqan as
-the green project and itqan has not committed since 2026-07-21, so DC7 correctly reports it
-stalled. The check is right and the fixture rotted; the fix needs a decision, see
-`docs/BACKLOG.md`. **Re-scoped 2026-08-15** to two layers (D18–D22) — `docs/PRD.md` §12.
-**Round-3 design closed 2026-08-18** — D23 (the shell) and D24 (work is dispatched, never picked
-up). Next build step: Stage 3, the execution MVP, gated on two owner decisions in its spec's §5.11
-and §5.12. Behaviour today: `docs/FEATURES.md`.
+**Status: Stages 1 and 2 are built** — the reconciliation Board runs and gated fix proposals write
+on an explicit click. Stage 2's acceptance criterion (**one real drift corrected**) is still unmet:
+no proposal has ever been approved, and that is an owner gate. **`pnpm verify` has one known
+failure** — Stage 1's AC-2 hardcodes itqan as the green project and itqan stopped committing, so
+DC7 correctly reports it stalled; the check is right and the fixture rotted, and the fix needs a
+decision (`docs/BACKLOG.md`). **Re-scoped 2026-08-15** to two layers (D18–D22) — `docs/PRD.md` §12.
+**Round-3 design closed 2026-08-18** — D23 (the shell), D24 (work is dispatched, never picked up),
+D25 (a DoD item carries the kind of evidence that closed it). Next build step: **Stage 3**, the
+execution MVP, gated on two owner decisions in its spec's §5.11 and §5.12; Stages 4 and 5 are
+specced behind it. Behaviour today: `docs/FEATURES.md`. **Counts, PR states and branch heads are
+deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state* block, once.
 
 ---
 
@@ -42,8 +43,13 @@ and §5.12. Behaviour today: `docs/FEATURES.md`.
    - `git status` / `git log --oneline -5` — does the tree and history match what the doc says?
    - `gh pr list` — are the PR states it claims still true?
    - Run the app if it is cheap to do so (once there is one).
-4. **If you find staleness: fix the doc now**, in this session, and add a dated line to
-   `docs/LEARNINGS.md`. Staleness found is a lesson, not just a correction.
+4. **If you find staleness: fix the doc now**, in this session. Then decide which kind it was:
+   - **Predicted** — a value the *Verified state* block exists to hold (a merged PR, a suite count,
+     a branch head). Fix it and move on. **No lesson**; the mechanism already knows about this class
+     and a fourth near-identical entry only dilutes `docs/LEARNINGS.md`.
+   - **Asserted** — a doc claimed something that was already known to be false, or a new class of
+     rot. **Add a dated line to `docs/LEARNINGS.md`.** That is the kind that costs the next session
+     its judgement rather than a minute.
 5. Only then start work.
 
 **At session end** — in the *same commit/PR as the code*, never a separate "docs" commit:
@@ -108,14 +114,17 @@ These are the product's identity. A change that breaks one is a decision, not a 
 
 ## Commands
 
-Every command below was **run**, not copied from a template. Next.js 15 + TypeScript; no database
-yet (D3 plans SQLite for Stage 4's transcript index — nothing needs it before then).
+Every command below was **run**, not copied from a template. Next.js 15 + TypeScript; **no
+database yet.** Two are planned and they are separate files on purpose: the execution layer's
+record arrives with Stage 3 (`data/agentos.sqlite` — losing it loses evidence), and D3's transcript
+cache arrives with Stage 7 (derived and disposable). *Corrected 2026-08-18: this line still said
+"Stage 4's transcript index", which the D18 renumbering moved to Stage 7.*
 
 | Command | Does |
 |---|---|
 | `pnpm install` | Install. |
 | `pnpm dev` | The Board at `localhost:3000` (falls back to `:3001` if the port is taken). |
-| `pnpm verify` | **Both** acceptance suites — 8 Stage 1 checks, 11 Stage 2. Non-zero exit on any failure. |
+| `pnpm verify` | **Both** acceptance suites, Stage 1 then Stage 2. Non-zero exit on any failure. Counts: `HANDOFF.md` §Verified state. |
 | `pnpm verify:stage1` | Stage 1 only. Runs against the **real** watched repos, read-only. |
 | `pnpm verify:stage2` | Stage 2 only. Runs against **generated fixture repos in a temp dir** — never a watched project. |
 | `pnpm type-check` | `tsc --noEmit`. |
@@ -134,6 +143,13 @@ If `pnpm build` fails on a missing `pages-manifest.json`, the cause is a stale c
   (`docs/LEARNINGS.md`); use a ternary returning whole phrases.
 - **Docs are prose, not bullets-only** — these files are read by models under time pressure;
   state the reason inline so it survives out of context.
+- **Volatile facts live in exactly one place: `docs/HANDOFF.md`'s *Verified state* block.** Open PR
+  numbers and their states, branch heads, suite pass counts, live board severities — every one of
+  these rots on someone else's schedule, and every one has already gone stale here at least once.
+  **No other document may restate them**; link to the block instead. A doc that needs a fact it
+  cannot link to should name the command that produces it (`gh pr list`) rather than the answer.
+  This is `docs/LEARNINGS.md`'s *"compute them or omit them"* rule, promoted to a convention after
+  it was applied one bullet at a time and kept missing instances.
 - Dates are absolute (`2026-07-27`), never "yesterday" or "last week".
 - Prefer markdown links (`[file.ts](lib/file.ts)`) in docs.
 
