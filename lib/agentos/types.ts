@@ -5,15 +5,15 @@
  * These mirror the literal columns `db.ts` creates, one interface per table. Columns that hold
  * JSON store it as **text** here, never as a parsed object — "parse at the edge" (the T1 ticket's
  * words) means the caller that actually needs the value parses it, not this file and not `db.ts`.
- * `parseJson` / `toJsonColumn` in `db.ts` exist for exactly that edge.
+ * `parseJsonColumn` in `db.ts` exists for exactly that edge.
  *
- * Two things the spec leaves open, flagged rather than guessed at (see the T1 report for the
- * full reasoning — this is not a place to relitigate it):
- * - `SessionStatus` has no named "finished successfully" value anywhere in the spec. `'completed'`
- *   is a placeholder, deliberately **not** enforced by a CHECK constraint in `db.ts`, so a later
- *   ticket can settle the real name without a migration.
- * - `InboxMessage.kind` and `.status` are never enumerated. Both are plain `string` here for the
- *   same reason.
+ * **These were open when T1 was built and are now closed** — the build is what surfaced them, and
+ * spec §3.7 was amended on 2026-08-18 rather than left to a later guess:
+ * - A session that finishes cleanly is **`completed`**. The spec had named every *failure* state
+ *   and no success state, which is invisible while writing a schema and unavoidable while building
+ *   against one.
+ * - `InboxMessage.kind` is `'question'` — the only kind in this slice — and `.status` is
+ *   `'open' | 'answered'`.
  */
 
 /** §7.6: the four columns of the Kanban. `blocked` is a chip on a card, never a fifth value. */
@@ -21,6 +21,12 @@ export type TaskStatus = "todo" | "doing" | "review" | "done";
 
 /** §7.6 / §3.7: who moved a Task, on every `TaskEvent` row. */
 export type ActorType = "session" | "human" | "system";
+
+/** §3.7: the only inbox kind in this slice. `inbox.send` deliberately does not exist (§5.8). */
+export type InboxKind = "question";
+
+/** §3.7: an inbox message is open until the human answers it. */
+export type InboxStatus = "open" | "answered";
 
 /**
  * §7.2: what asked for a dispatch. Only `'manual'` is reachable in Stage 3 — the other four are
@@ -145,14 +151,14 @@ export interface InboxMessageRow {
   id: string;
   sessionId: string;
   taskId: string;
-  /** Not enumerated by the spec — see the module doc comment. */
-  kind: string;
+  /** §3.7: `'question'` is the only kind in Stage 3. */
+  kind: InboxKind;
   body: string;
   /** Raw JSON text of offered choices, if any; parse at the edge. Null for a free-text ask. */
   choicesJson: string | null;
   answer: string | null;
-  /** Not enumerated by the spec — see the module doc comment. */
-  status: string;
+  /** §3.7: `'open'` until the human answers. */
+  status: InboxStatus;
   askedAtISO: string;
   answeredAtISO: string | null;
 }

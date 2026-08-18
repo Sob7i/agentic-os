@@ -39,7 +39,7 @@
   `pnpm verify`.
 - **`lib/reconcile/` must never import `lib/agentos/`.** D19 makes the layer boundary an enforcement
   boundary. The reverse direction is permitted and is used deliberately (spec §7.5).
-- **No ORM.** Nine tables, plain SQL (spec §6.1).
+- **No ORM.** **Eight** tables, plain SQL (spec §3.7 and §6.1). *Said "nine" until 2026-08-18; the schema block has always had eight.*
 - **Interpolate complete strings in JSX** — `CLAUDE.md` §Conventions; this bug has shipped twice.
 - Dates in docs and comments are absolute (`2026-08-18`), never "today".
 

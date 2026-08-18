@@ -89,7 +89,17 @@ export async function createWorktree(
  */
 export async function readWorktreeCommits(wt: Worktree): Promise<string[]> {
   const out = await run("git", ["log", `${wt.baseRef}..HEAD`, "--format=%H"], wt.path);
-  if (!out) return [];
+  /**
+   * `run()` returns `null` when the command **failed** and `""` when it succeeded and printed
+   * nothing. Collapsing both to `[]` would report "this run committed nothing" for a `git log`
+   * that never ran — silently discarding the commit evidence AC-8a exists to protect, in the one
+   * situation where it is hardest to notice. A failure here is loud.
+   */
+  if (out === null) {
+    throw new Error(
+      `git log failed in worktree — commit evidence unavailable: path=${wt.path} base=${wt.baseRef}`,
+    );
+  }
   return out.split("\n").filter(Boolean).reverse();
 }
 
@@ -99,10 +109,23 @@ export async function readWorktreeCommits(wt: Worktree): Promise<string[]> {
  * doesn't know how far setup got.
  */
 export async function removeWorktree(wt: Worktree): Promise<void> {
-  if (!existsSync(wt.path)) return;
-  const out = await run("git", ["worktree", "remove", "--force", wt.path], wt.repoPath);
-  if (out === null) {
-    throw new Error(`git worktree remove failed: repo=${wt.repoPath} path=${wt.path}`);
+  /**
+   * Teardown is "git no longer lists it", not "the directory is gone".
+   *
+   * An earlier version returned early when the path was missing, which leaves a **stale entry in
+   * `git worktree list`** whenever the directory was removed out from under us — by a failed
+   * partial creation, an external `rm -rf`, or a temp-dir sweep. AC-2 checks `git worktree list`
+   * precisely because that registry, not the filesystem, is what a later `worktree add` collides
+   * with.
+   */
+  if (existsSync(wt.path)) {
+    const out = await run("git", ["worktree", "remove", "--force", wt.path], wt.repoPath);
+    if (out !== null) return;
+    // Fall through: removal failed, so prune below rather than leaving it registered.
+  }
+  const pruned = await run("git", ["worktree", "prune"], wt.repoPath);
+  if (pruned === null) {
+    throw new Error(`git worktree remove and prune both failed: repo=${wt.repoPath} path=${wt.path}`);
   }
 }
 

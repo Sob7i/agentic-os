@@ -30,6 +30,8 @@ import type {
   ToolCallRow,
   InboxMessageRow,
   CommitShaRow,
+  InboxKind,
+  InboxStatus,
   TaskStatus,
   ActorType,
   TriggerKind,
@@ -629,11 +631,13 @@ export function listToolCallsBySession(db: DatabaseSync, sessionId: string): Too
 export interface CreateInboxMessageInput {
   sessionId: string;
   taskId: string;
-  kind: string;
+  /** §3.7: `'question'` is the only kind in Stage 3; defaults to it. */
+  kind?: InboxKind;
   body: string;
   /** Parsed array in, JSON text out. Omit for a free-text ask. */
   choices?: unknown;
-  status: string;
+  /** §3.7: a new message is `'open'` until answered; defaults to it. */
+  status?: InboxStatus;
 }
 
 export function createInboxMessage(db: DatabaseSync, input: CreateInboxMessageInput): InboxMessageRow {
@@ -641,11 +645,11 @@ export function createInboxMessage(db: DatabaseSync, input: CreateInboxMessageIn
     id: randomUUID(),
     sessionId: input.sessionId,
     taskId: input.taskId,
-    kind: input.kind,
+    kind: input.kind ?? "question",
     body: input.body,
     choicesJson: input.choices === undefined ? null : JSON.stringify(input.choices),
     answer: null,
-    status: input.status,
+    status: input.status ?? "open",
     askedAtISO: nowISO(),
     answeredAtISO: null,
   };

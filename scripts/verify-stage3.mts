@@ -121,7 +121,6 @@ console.log("\nStage 3 acceptance — worktree lifecycle, fixture repos only\n")
   }
 }
 
-for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
 
 // ── AC-8a · a failed run's commits are still recorded ───────────────────────
 // Added during review of T2. `worktree remove --force` leaves any commits the run
@@ -136,8 +135,11 @@ for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
   try {
     await withWorktree(repo, "HEAD", "stage3-session-fail", async (wtPath) => {
       writeFileSync(join(wtPath, "work.md"), "# work done before the crash\n");
-      execFileSync("git", ["add", "-A"], { cwd: wtPath });
-      execFileSync("git", ["commit", "-m", "work committed before the failure"], { cwd: wtPath });
+      // Per-invocation identity: `-c` flags do not persist, and a machine (or CI box)
+      // with no global user.name would otherwise fail here for reasons unrelated to the check.
+      const id = ["-c", "user.email=t@t", "-c", "user.name=t"];
+      execFileSync("git", [...id, "add", "-A"], { cwd: wtPath });
+      execFileSync("git", [...id, "commit", "-m", "work committed before the failure"], { cwd: wtPath });
       throw new Error("boom — crashed after committing");
     }, (shas) => { seen.push(shas); });
   } catch {
@@ -149,6 +151,10 @@ for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
   else if (!/^[0-9a-f]{40}$/.test(captured[0])) fail("AC-8a", `not a sha: ${captured[0]}`);
   else pass("AC-8a", `a run that committed and then threw still reported its sha (${captured[0].slice(0, 8)}) before teardown`);
 }
+
+// Cleanup last, after every check has created its fixtures. It used to run before AC-8a,
+// which meant AC-8a's repo was left in the OS temp dir on every single run.
+for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
 
 console.log(failures === 0 ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a).\n" : `\n${failures} FAILING.\n`);
 process.exit(failures === 0 ? 0 : 1);
