@@ -1,9 +1,9 @@
 # Spec — Stage 3: the execution MVP (one vertical thread)
 
-status: ☐ design closed — **two owner decisions gate the build**, both in §5.11 and §5.12: which
-watched repo the first sessions target, and whether the MVP agent may commit at all. Everything
-else in §5 is closed, including the shell (D23) and the dispatch model (D24), added 2026-08-18
-with §7 and §8. The owner clears both gates.
+status: ☑ decisions closed — **buildable.** Both gates cleared 2026-08-18 by **D27**: the first
+real sessions target `fractal-code`, and `canCommit` ships with the seeded agent set to `false`.
+The shell (D23) and the dispatch model (D24) closed earlier, with §7 and §8. Decomposed into build
+units in [`stage-3-tickets.md`](stage-3-tickets.md).
 
 > **The first slice that runs an agent.** Everything before it observed; this one *acts*. Product
 > context: `docs/PRD.md` §12.4, and **D18–D22**, which are its premise. Depends on Stage 2
@@ -360,12 +360,12 @@ Closed unless marked. If a new one surfaces mid-build, **stop** and close it in
    recorded in `FEATURES.md`.
 10. **Model for the MVP agent?** `claude-opus-5`, default effort. One agent, one job; tiering is a
     Stage 4 concern once several roles exist.
-11. **⚠ GATING — which repo do the first real sessions target?** PRD §12.4 says a low-stakes watched
+11. **Which repo do the first real sessions target?** **`fractal-code` — closed as D27.** PRD §12.4 says a low-stakes watched
     repo, never agentic-os. Both candidates are quiet: `my-personal-website` (last commit 2026-08-06)
     and `fractal-code` (2026-07-26). **The owner picks**, because it is their repo and the run ends
     in a commit. *Recommendation: `fractal-code`* — it is the quieter of the two and has no state
     doc for a stray agent to contradict.
-12. **⚠ GATING — may the MVP agent commit at all?** The thread in PRD §12.4 ends in a commit, and
+12. **May the MVP agent commit at all?** **`canCommit` ships, seeded `false` — closed as D27.** The thread in PRD §12.4 ends in a commit, and
     AC-8 assumes one. A `canCommit: false` first run — agent works, we read the diff, nothing is
     written to the object store — is a defensible smaller step that still exercises worktree,
     inbox, gate, and cost. **The owner decides**; both are buildable and the schema carries the flag

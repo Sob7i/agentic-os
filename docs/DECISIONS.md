@@ -626,3 +626,33 @@ fallback in advance**, which is the reason it was designed.
 narrows to the surfaces that need an execution layer. `pnpm verify` must be **unchanged** by the
 decomposition — that is the shell spec's AC-1, and it is what makes refactoring a 448-line file
 covered by eleven acceptance checks a safe move rather than a brave one.
+
+## D27 — The first real sessions target `fractal-code`, and may commit — but the seeded agent may not (2026-08-18)
+
+**Closes both gates on `docs/specs/stage-3-execution-mvp.spec.md`** (§5.11 and §5.12), which move
+that spec from `☐` to `☑`. Owner decision, taken 2026-08-18; both halves end in a write to
+someone's repo, which is why neither was the agent's to make.
+
+**Decision, in two parts.**
+
+1. **Target repo: `fractal-code`.** PRD §12.4 requires a low-stakes watched repo and forbids
+   agentic-os. `fractal-code` is the quieter of the two candidates and **has no state document**,
+   so there is nothing for a stray agent to contradict — a first run cannot manufacture the exact
+   drift this product exists to detect.
+2. **`canCommit` ships; the seeded agent is `false`.** The capability is built, tested and on the
+   `Agent` row, so AC-8 can assert commit-sha capture against a fixture that does commit. The agent
+   seeded into `fractal-code` starts with `canCommit: false`, so the **first real run is observable
+   before it is consequential**: the worktree, the inbox pause, the gate and the cost are all
+   exercised, the diff is readable, and nothing enters the object store until the owner flips one
+   flag.
+
+**Rationale.** These are the same shape of call, and the same answer: *build the capability, seed
+it timid.* The alternative to (2) — not building `canCommit` at all — would have made AC-8 untestable
+and pushed the first commit-bearing run into a later slice where it would arrive alongside chains
+and rails rather than alone. **The expensive thing is not an agent that commits; it is an agent that
+commits for the first time inside a stage that is also proving four other mechanisms.**
+
+**Consequence:** the spec's status glyph flips to `☑`, `projects.config.ts` gains fractal-code's
+`agentos.yml` when Stage 3 seeds it, and `docs/specs/stage-3-tickets.md` can be built against a spec
+with no open decisions. **The flag stays owner-only** — nothing in the execution layer may set
+`canCommit` on its own agent, and the seed value is configuration, not a default in code.
