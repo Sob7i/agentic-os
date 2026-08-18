@@ -88,17 +88,30 @@ wrong library.
 
 | What this slice needs | The verified surface |
 |---|---|
-| Run an agent | `query({ prompt, options }) → AsyncGenerator<SDKMessage>` |
+| Run an agent | `query({ prompt, options }) → Query`, where `Query extends AsyncGenerator<SDKMessage, void>` plus control methods (`interrupt`, `close`, …). `for await` works identically |
 | Work in the worktree | `options.cwd` (defaults to `process.cwd()`) |
 | Capture the session id | `session_id`, on the init `system` message **and** on the result message |
 | Resume after an inbox answer | `options.resume: <sessionId>` |
 | Restrict tools | `options.allowedTools[]`, `options.disallowedTools[]` — scoped rules supported, e.g. `Bash(rm *)` |
-| Gate a call at runtime | `options.canUseTool(request) → { allowed: boolean }` |
+| Gate a call at runtime | `options.canUseTool(toolName, input, { signal, suggestions, … }) → Promise<PermissionResult \| null>`; `PermissionResult` is `{behavior:'allow', …}` or `{behavior:'deny', message, …}` |
 | Attach our own tools | `createSdkMcpServer({ name, tools })` + `tool(name, description, zodSchema, handler)` |
 | Refuse every other MCP | `options.strictMcpConfig: true` — ignores `.mcp.json` and settings |
-| Read the cost | `total_cost_usd` on the result message (plus `total_input_tokens` / `total_output_tokens`) |
+| Read the cost | `total_cost_usd` on the result message. **Tokens are `usage: NonNullableUsage`** (`input_tokens` / `output_tokens`) plus a per-model `modelUsage` breakdown — there are no `total_input_tokens` / `total_output_tokens` fields |
 | Cap the spend | `options.maxBudgetUsd` — terminates with result subtype `error_max_budget_usd` |
 | Cap the turns | `options.maxTurns` — terminates with `error_max_turns` |
+
+> **⚠ Corrected 2026-08-18, against the installed package.** Three rows above were wrong when first
+> written, and this section's header claimed they were *"verified, not assumed"*. They were verified
+> against the SDK's **documentation**; the agent building T3 checked them against
+> `node_modules/@anthropic-ai/claude-agent-sdk@0.3.233`'s own `.d.ts` and found `canUseTool`'s
+> signature materially different, `query()` returning `Query` rather than a bare generator, and the
+> token fields simply absent. **Documentation is a claim about an API; the package is the API**
+> (`docs/LEARNINGS.md`). Anything added to this table from now on is checked against the `.d.ts`.
+>
+> **`canUseTool`'s real shape is better for us than the one I invented.** A denial *must* carry
+> `message: string` — the API makes the reason mandatory, where `{ allowed: false }` would have let
+> a refusal be silent. §3.4 asked for "decline with a reason the agent reads and adapts to"; the SDK
+> enforces it.
 
 **Three findings worth more than the table.**
 
@@ -155,6 +168,14 @@ function call with a Zod-validated argument.
 |---|---|---|
 | `agentos` | `task.read`, `task.update_status`, `task.append_activity` | `task.update_status` is where §3.4's gate lives |
 | `inbox` | `inbox.ask` | Returns nothing useful — see §3.5. `inbox.send` is deliberately absent (§5.8) |
+
+**The scripted fake does not simulate SDK tool dispatch, and does not need to** *(closed
+2026-08-18, asked by the agent that built the fake)*. Because these tools are plain async functions
+and `canUseTool` is a plain callback, AC-4 and AC-5 invoke **the handler and the callback directly**
+rather than driving them through `Runner`. That is not a shortcut: §3.4's whole claim is that the
+handler refuses *regardless of what let the call through*, and a test that could only reach the
+handler via a permitted SDK dispatch could never demonstrate it. Calling both layers directly is the
+only way to assert **which** one refused.
 
 Both are constructed **per session** and close over that session's id and task id. The agent
 therefore has no parameter with which to name a *different* task: the object it can act on is fixed
@@ -358,8 +379,14 @@ Closed unless marked. If a new one surfaces mid-build, **stop** and close it in
    namespace, so a local process can read outside its worktree. **Stated in `FEATURES.md` under
    *Known gaps*, not implied away** — already logged in `docs/BACKLOG.md` from D20.
 7. **Can the agent reach the network?** Only what the SDK itself needs, plus whatever tools it is
-   granted. `WebFetch`/`WebSearch` are **not** in the MVP agent's `allowedTools`. This keeps D19's
-   egress carve-out at "the model API" rather than "the internet".
+   granted. `WebFetch`/`WebSearch` are **stripped from `allowedTools` and forced into
+   `disallowedTools` by `composeOptions`, on every call, whatever the `Agent` row says.** This keeps
+   D19's egress carve-out at "the model API" rather than "the internet".
+   *Tightened 2026-08-18:* this originally read as a fact about the seeded agent's configuration,
+   and was built that way. **An invariant enforced only by seed data is enforced by nobody** — one
+   mistyped row would have widened invariant 1. It is now a floor in code, and its check feeds
+   `composeOptions` a **hostile** agent row that asks for both tools, so the test proves the floor
+   rather than the fixture.
 8. **Can the agent message the human for progress?** No. `inbox.ask` exists; `inbox.send` does not.
    AgentOS-spec §8's foundational prompt says *do not message for routine progress* — a tool that
    cannot be misused beats an instruction not to misuse it. Progress goes to `task.append_activity`.

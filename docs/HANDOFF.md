@@ -36,6 +36,7 @@
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
 | `pnpm verify:stage3` | 3 of 3 (AC-2, AC-9, AC-8a) | `pnpm verify:stage3` |
+| runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
 | Live board severities | **not recorded, by rule** | `pnpm dev` |
 
@@ -125,8 +126,22 @@
   AC-2 and AC-9 passed throughout because neither commits anything. **AC-8a** was added to catch
   it: a run that commits and then crashes must still report its sha before teardown, because
   `--force` removal leaves those commits unreferenced and the sha is the only way back.
-- **Next waves:** T3 (runner + fake) → T4 (MCP + gate) → T5 (`dispatch` + sweep) → T6/T7. Tickets
-  and the wave plan: [`stage-3-tickets.md`](specs/stage-3-tickets.md).
+- **T3 (runner + scripted fake) is built** — `lib/agentos/runner/{runner,local,fake}.ts` plus a
+  hand-run smoke script. `@anthropic-ai/claude-agent-sdk@0.3.233` is now a dependency.
+- **T3's agent read the installed package and found the spec's SDK table wrong in three places** —
+  the section that claimed to be *"verified, not assumed"* had been verified against documentation
+  rather than against the `.d.ts`. `canUseTool`'s signature is materially different, `query()`
+  returns `Query`, and the token fields named in the table do not exist. §3.1 is corrected and
+  carries the correction notice. **The real `canUseTool` is better for us**: a denial *must* carry
+  a `message`, so the SDK enforces the reason §3.4 asked for.
+- **Review found a test asserting its own fixture.** The check that `WebFetch`/`WebSearch` stay out
+  of an agent's tools was fed a row that already excluded them, and `composeOptions` simply
+  forwarded configuration. Now a floor in code, checked against a **hostile** row that asks for
+  both. *An invariant enforced only by seed data is enforced by nobody.*
+- **Next waves:** T4 (MCP + gate) → T5 (`dispatch` + sweep) → T6/T7. Tickets and the wave plan:
+  [`stage-3-tickets.md`](specs/stage-3-tickets.md). **T4's question is already answered** in §3.3:
+  the fake does not simulate SDK tool dispatch, and AC-4/AC-5 call the handler and `canUseTool`
+  directly — which is the only way to assert *which* layer refused.
 
 ## How to pick up
 

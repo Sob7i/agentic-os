@@ -128,6 +128,23 @@ belongs in `docs/DECISIONS.md` instead.
 
 ## Verification
 
+- (2026-08-18) **A spec section that boasted "verified, not assumed" was verified against the wrong
+  artifact.** Stage 3 §3.1 tabulated the Agent SDK's surface and said explicitly that it was fetched
+  rather than recalled. It was fetched — from the **documentation**. When an agent finally installed
+  the package and read its `.d.ts`, three rows were wrong: `canUseTool`'s signature was materially
+  different, `query()` returned a `Query` object rather than a bare generator, and the token fields
+  named in the table **do not exist**. **Documentation is a claim about an API; the package is the
+  API.** The project's own rule — `external-API-fields-are-guilty-until-verified` — was satisfied in
+  form and missed in substance, because "verified" was allowed to mean "read somewhere reputable"
+  instead of "checked against the artifact that will run".
+- (2026-08-18) **A test that fed itself the answer.** T3's check that `WebFetch`/`WebSearch` stay out
+  of an agent's tools passed an `Agent` row that already excluded them — so it asserted its fixture,
+  not any behaviour, and would have kept passing if the code had simply forwarded configuration
+  (which it did). This is Stage 1 AC-2's *specimen-not-behaviour* failure in a new costume, found
+  in review rather than by the suite. **Two fixes, and the second matters more:** the check now
+  feeds a *hostile* row that asks for both denied tools, and the exclusion became a floor in code.
+  **An invariant enforced only by seed data is enforced by nobody.**
+
 - (2026-08-15) **An acceptance test hardcoded the weather and failed 19 days later.** Stage 1's
   AC-2 asserts *"itqan is green"* by name; itqan simply stopped committing, DC7 correctly fired at
   25 days, and `pnpm verify` went red with **nothing wrong**. We already knew this rule — *"live

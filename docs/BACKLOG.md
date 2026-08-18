@@ -203,6 +203,23 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   time, because they checked. Unblocked by: it happening again — worth re-verifying the base commit
   at the start of any future agent brief.
 
+### From the Stage 3 build — T3 (2026-08-18)
+
+- **`@anthropic-ai/sdk` is a declared devDependency only because the Agent SDK's types need it.**
+  `claude-agent-sdk`'s own `sdk.d.ts` imports `BetaMessage`/`BetaUsage` from it, so anything
+  constructing a full `SDKAssistantMessage` — the scripted fake — needs it declared rather than
+  transitively hoisted. It is **not** a second runtime SDK and must not become one; D-decisions
+  §5.2 chose one package deliberately. Unblocked by: the Agent SDK inlining those types, at which
+  point the dependency can go.
+- **Stage 7's cost work will not find the token fields the spec named.** There are no
+  `total_input_tokens` / `total_output_tokens` on the result message; the real shape is
+  `usage: NonNullableUsage` plus a per-model `modelUsage` breakdown. §3.1 is corrected, but Stage 7
+  is where it bites. Unblocked by: Stage 7.
+- **The runner's smoke checks are not in `pnpm verify`.** `lib/agentos/runner/runner.smoke.mts`
+  proves four properties and is run by hand. That is correct for now — T6 owns folding runner
+  coverage into `verify:stage3` — but until then a regression in `composeOptions` would be silent.
+  Unblocked by: T6.
+
 ### Product / design
 
 - **Propose structured claim markers upstream to itqan** — D5 chose prose heuristics so the tool
