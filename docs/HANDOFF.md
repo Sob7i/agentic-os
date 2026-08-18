@@ -19,12 +19,18 @@
 > exists because "PR #6 is open" survived in three places across two files for three days after #6
 > merged; one place to update is one place to check.
 >
+> **Two rows deliberately hold no value.** *Live board severities* was the original instance of the
+> compute-or-omit rule. *Open PRs* joined it after a reviewer pointed out that **this file ships
+> inside a pull request** — so any value it states is falsified by the act of stating it, and
+> "none" was already wrong by the time the PR recording it existed. A fact that its own recording
+> changes cannot be recorded; it can only be reproduced.
+>
 > **Checked 2026-08-18.** If today is much later than that, this table is a hypothesis.
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
 | `develop` head | `081ae34` | `git log --oneline -1 origin/develop` |
-| Open PRs | none | `gh pr list` |
+| Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #6, #7, #8 — all 2026-08-15 | `gh pr list --state merged --limit 5` |
 | `pnpm verify` | **18 of 19** | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |

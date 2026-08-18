@@ -23,13 +23,14 @@ Nothing here is gated on an owner decision; it is gated on Stage 3 existing.
 
 **In:**
 
-1. **`TaskTemplate` + `TemplateStep`** — a named, ordered list of steps, each naming an agent, a
-   prompt, and whether it is gated.
+1. **`TaskTemplate` + `TemplateStep`** — a named, ordered list of steps, each naming **an agent or
+   the literal `human`**, a prompt, and whether it is gated.
 2. **Instantiate** — one click turns a template into **N real task cards** in one project, linked
    as a chain, with variables bound.
 3. **Chain advance** — a step reaching `done` dispatches the next step through D24's existing
    funnel with `trigger: 'chain'`. No scheduler, no queue.
-4. **Human-only steps** — a step may name no agent, which makes it a card only a person can move.
+4. **Human-only steps** — a step whose `assigneeAgentName` is the literal `human` becomes a task
+   with `assigneeAgentId = null`: a card only a person can move (§3.5).
 5. **The nine-step `compound-engineer-workflow` seeded** (AgentOS-spec §10), with its two human
    gates at steps 1 and 9.
 6. **Chain halt** — a failed or interrupted step stops the chain and says which step stopped it.
@@ -88,6 +89,13 @@ reconstructible. It also makes AC-8's halt reason meaningful a week later.
 one ships with the product); an agent id is not. Resolution happens at instantiate, and a name that
 resolves to nothing is a refusal there (§3.3), not a null at dispatch time.
 
+**One representation, stated once, because it is easy to get two.** In a **template**, a step names
+`assigneeAgentName` — either an agent's name or the reserved literal **`human`**. On the **task**
+that instantiate writes, that becomes `assigneeAgentId`: the resolved agent's id, or **`null`** for
+`human`. So *"names no agent"* is never a state a template can express, and `null` on a task always
+means human-only rather than unassigned — which is exactly what Stage 3 §7.1 relies on when it
+says defaulting happens at creation and `dispatch` never assigns.
+
 ### 3.2 All N cards are created up front
 
 PRD §10's acceptance is explicit — *"instantiating the template creates nine cards"* — and the
@@ -113,7 +121,10 @@ cards where three have unbound prompts is worse than no cards, because the first
 
 **An unbound variable is never an empty string.** A prompt reading *"create a branch named  and
 implement"* would be executed, cost money, and produce something plausible. This is the same class
-as Stage 1's *"contradict s reality"* — a template hole is a claim about what the agent was asked.
+as the JSX-newline defect that twice shipped a broken word to the Board — *"contradict s reality"*,
+then *"2 file s"* (`docs/LEARNINGS.md`; **quoted verbatim, not a typo**) — a hole where a value was
+supposed to be, rendered as though nothing were missing. A template hole is a claim about what the
+agent was asked.
 
 ### 3.4 The chain advances through `dispatch`, not around it
 
@@ -131,9 +142,12 @@ and D24 declined to build one.
 
 ### 3.5 Human-only steps
 
-Step 9 of the reference template is assigned to `human`. Such a step has `assigneeAgentId = null`
-and is **refused by Stage 3 §7.3's precondition 4** with a reason — no new mechanism, and the
-refusal is already the right words. It sits in `todo` with a `blocked` chip until its predecessor
+Step 9 of the reference template has `assigneeAgentName: 'human'`, so instantiate writes a task
+with `assigneeAgentId = null`, and `dispatch` is **refused by Stage 3 §7.3's precondition 4** with a
+reason — no new mechanism, and the refusal is already the right words. **Stage 3 §7.1 is explicit
+that `dispatch` never assigns an agent**, so a human step cannot fall through to the project's
+default agent; without that rule this step would be executed by an agent, which is the one outcome
+the template's final gate exists to prevent. It sits in `todo` with a `blocked` chip until its predecessor
 finishes, then becomes an ordinary card waiting for a person.
 
 **A human step ends the chain's automation, not the chain.** Nothing dispatches after step 9
@@ -161,8 +175,11 @@ Fixtures only; the model is never called; the scripted `Runner` fake from Stage 
 - **AC-6 — the gate states its consequence.** The approval control's label names the step and agent
   it will start. Asserted on the rendered string, because a bare "Approve" is how an unattended
   five-hour spend gets authorised by accident.
-- **AC-7 — a human step refuses dispatch.** `dispatch` on step 9 returns `started: false` with a
-  reason naming the missing assignee, and writes no session.
+- **AC-7 — a human step refuses dispatch, and does *not* fall through to the default agent.** With
+  `Project.defaultAgentId` **set**, `dispatch` on step 9 returns `started: false` naming the
+  human-only assignee, and writes no session. The non-null default is the point of the fixture: the
+  bug this guards against is a human review step silently executed by the project's default agent,
+  and a test with no default configured would pass while the bug was present.
 - **AC-8 — failure halts and attributes.** A `Runner` fake that throws on step 5 leaves: step 5
   `failed`, `Chain.status = 'halted'`, `haltedAtTaskId` = step 5, and steps 6–9 still blocked with
   a reason naming step 5. **No session exists for step 6.**
