@@ -370,8 +370,11 @@ Closed unless marked. If a new one surfaces mid-build, **stop** and close it in
 10. **Model for the MVP agent?** `claude-opus-5`, default effort. One agent, one job; tiering is a
     Stage 4 concern once several roles exist.
 11. **Which repo do the first real sessions target?** **`fractal-code` — closed as D27.** PRD §12.4 says a low-stakes watched
-    repo, never agentic-os. Both candidates are quiet: `my-personal-website` (last commit 2026-08-06)
-    and `fractal-code` (2026-07-26). **The owner picks**, because it is their repo and the run ends
+    repo, never agentic-os. Both candidates were quiet — `my-personal-website` and `fractal-code`,
+    last committed 2026-08-06 and 2026-07-26 respectively **as measured on 2026-08-18, when this
+    was decided**. Those are evidence for a closed decision, not current facts; recompute with
+    `git -C <repo> log -1 --format=%cI` rather than trusting them.
+    **The owner picks**, because it is their repo and the run ends
     in a commit. *Recommendation: `fractal-code`* — it is the quieter of the two and has no state
     doc for a stray agent to contradict.
 12. **May the MVP agent commit at all?** **`canCommit` ships, seeded `false` — closed as D27.** The thread in PRD §12.4 ends in a commit, and

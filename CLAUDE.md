@@ -153,6 +153,12 @@ If `pnpm build` fails on a missing `pages-manifest.json`, the cause is a stale c
   cannot link to should name the command that produces it (`gh pr list`) rather than the answer.
   This is `docs/LEARNINGS.md`'s *"compute them or omit them"* rule, promoted to a convention after
   it was applied one bullet at a time and kept missing instances.
+  **One exception, and it must be marked:** a **decision record may cite what was true when the
+  decision was taken** — that is evidence, and deleting it would leave the reasoning unsupportable.
+  Write it as history and say when it was measured (*"last committed 2026-07-26, as measured
+  2026-08-18, when this was decided"*), and name the command that recomputes it. A dated
+  measurement inside a closed decision is a fact about the past and does not rot; the same string
+  in a spec's present tense does.
 - Dates are absolute (`2026-07-27`), never "yesterday" or "last week".
 - Prefer markdown links (`[file.ts](lib/file.ts)`) in docs.
 

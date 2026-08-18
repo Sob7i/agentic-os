@@ -30,9 +30,13 @@
 
 ## Standing constraints (all tickets)
 
-- **No network, no model calls, no writes outside this repo.** Every test runs against generated
-  fixtures in a temp dir. **No test may touch a watched project** — Stage 2's suite establishes the
-  pattern and the reason.
+- **No network and no model calls in anything `pnpm verify` runs**, and no writes outside this
+  repo. Every default test runs against generated fixtures in a temp dir. **No test may touch a
+  watched project** — Stage 2's suite establishes the pattern and the reason.
+  **The one exception is T6's AC-12**, which spawns a genuine session behind an env flag and is
+  deliberately excluded from the default run. It is the only proof the other eighteen checks are
+  testing something real (spec §4), which is why it exists — and why it must never be reachable by
+  `pnpm verify`.
 - **`lib/reconcile/` must never import `lib/agentos/`.** D19 makes the layer boundary an enforcement
   boundary. The reverse direction is permitted and is used deliberately (spec §7.5).
 - **No ORM.** Nine tables, plain SQL (spec §6.1).
