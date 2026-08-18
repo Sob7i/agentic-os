@@ -118,6 +118,14 @@ belongs in `docs/DECISIONS.md` instead.
 
 ## Verification
 
+- (2026-08-18) **A structural check that only knew one spelling of the thing it forbade.** Stage
+  3a's AC-3 asserts nothing imports `buildBoard` except the cached accessor, and matched module
+  specifiers containing `reconcile/board`. A file *inside* `lib/reconcile/` writing
+  `import { buildBoard } from "./board"` would have passed — the one directory where that spelling
+  is the natural one. Caught by review, and confirmed by writing the violating file and watching
+  the check stay green. **A guard is only as wide as the syntax it recognises; prove it by
+  committing the sin and watching it fail.**
+
 - (2026-08-18) **A structural guard that read the git index instead of the disk.** Stage 3a's AC-3
   asserts nothing imports `buildBoard` directly, and enumerated files with `git ls-files` — which
   lists only **tracked** files. A newly written module doing exactly the forbidden thing would have

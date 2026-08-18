@@ -117,7 +117,14 @@ console.log("\nStage 3a acceptance — the app shell\n");
   for (const f of files) {
     if (f === "lib/reconcile/cached.ts" || f === "lib/reconcile/board.ts") continue;
     const src = readFileSync(f, "utf8");
-    if (/from ["'].*reconcile\/board["']/.test(src)) strays.push(f);
+    // Match both `@/lib/reconcile/board` and a relative `./board` from inside
+    // lib/reconcile/ — the original pattern required the directory name in the
+    // specifier, so a sibling importing "./board" bypassed the whole check.
+    const inReconcile = f.startsWith("lib/reconcile/");
+    const importsBoard =
+      /from ["'][^"']*reconcile\/board["']/.test(src) ||
+      (inReconcile && /from ["']\.\/board["']/.test(src));
+    if (importsBoard) strays.push(f);
     const calls = (src.match(/\bboardOnce\(/g) ?? []).length;
     if (calls > 1) multi.push(`${f} (${calls}×)`);
   }

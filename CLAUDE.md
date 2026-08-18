@@ -128,7 +128,7 @@ cache arrives with Stage 7 (derived and disposable). *Corrected 2026-08-18: this
 |---|---|
 | `pnpm install` | Install. |
 | `pnpm dev` | The Board at `localhost:3000` (falls back to `:3001` if the port is taken). |
-| `pnpm verify` | **Every** acceptance suite — Stage 1, 2, 3a. Runs all of them and exits non-zero if **any** failed; it does **not** stop at the first red one (`docs/LEARNINGS.md`). Deliberately a flag, not a sum of exit codes — status is mod 256, so summing can land on 0 and report a false green, which is the one thing a verification harness may never do. Counts: `HANDOFF.md` §Verified state. |
+| `pnpm verify` | **Every** acceptance suite, via [`scripts/verify-all.mts`](scripts/verify-all.mts). Runs all of them, prints a summary, and exits non-zero if **any** failed; it does **not** stop at the first red one (`docs/LEARNINGS.md`). A flag, not a sum of exit codes — status is mod 256, so summing can land on 0 and report a false green. Counts: `HANDOFF.md` §Verified state. |
 | `pnpm verify:stage1` | Stage 1 only. Runs against the **real** watched repos, read-only. |
 | `pnpm verify:stage2` | Stage 2 only. Runs against **generated fixture repos in a temp dir** — never a watched project. |
 | `pnpm verify:stage3a` | Stage 3a (the shell) only. Pure-function fixtures, plus the Stage 1/2 suites re-run as a regression oracle. |

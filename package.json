@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "verify": "r=0; pnpm verify:stage1 || r=1; pnpm verify:stage2 || r=1; pnpm verify:stage3a || r=1; exit $r",
+    "verify": "tsx scripts/verify-all.mts",
     "verify:stage1": "tsx scripts/verify-acceptance.mts",
     "verify:stage2": "tsx scripts/verify-stage2.mts",
     "verify:stage3a": "tsx scripts/verify-stage3a.mts"
