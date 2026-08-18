@@ -72,12 +72,18 @@ export interface DispatchDeps {
   /** Overrides the process boot id — the sweep's own seam (§7.7, §9), reused here so a test can
    *  dispatch and then simulate a restart without a real one. */
   bootId?: string;
+  /** Overrides worktree teardown. Exists so AC-9a can drive the one failure path that has no
+   *  other way in: `removeWorktree` throws only when `git worktree remove` **and** `git worktree
+   *  prune` both fail, which a fixture cannot arrange without corrupting a real repo. */
+  removeWorktree?: (wt: Worktree) => Promise<void>;
 }
 
 /**
- * Minted once per module load — "a uuid minted once per server process" (§7.7). `sweep.ts`
- * imports this same constant so dispatch's new sessions and the sweep's idea of "the current
- * process" can never disagree without a deliberate override (the `bootId` deps hook above).
+ * Minted once per module load — "a uuid minted once per server process" (§7.7). `sweep.ts` does
+ * **not** import this: `runBootSweep(db, currentBootId)` takes the boot id as a parameter, so
+ * whoever wires app startup passes this constant in and the two cannot disagree. Keeping the
+ * dependency pointed that way is what lets a test sweep against an arbitrary boot id (and what
+ * the `bootId` deps hook above overrides) without reaching into module state.
  */
 export const PROCESS_BOOT_ID = randomUUID();
 
@@ -92,13 +98,6 @@ function refuse(refusedBy: Precondition, reason: string): DispatchResult {
 /** Mirrors `lib/reconcile/checks.ts`'s own (unexported) severity ranking — duplicated rather
  *  than imported because it is four literals, not a shared algorithm, and importing an
  *  unexported symbol across the layer boundary is exactly the wrong direction to reach for. */
-const SEVERITY_RANK: Record<ProjectReport["severity"], number> = {
-  drift: 3,
-  attention: 2,
-  unverifiable: 1,
-  "in-sync": 0,
-};
-
 /**
  * Projects the portfolio layer's `ProjectReport` for this project onto the session-record shape
  * §7.5 wants. **Never returns null** — an in-sync or unverifiable project still gets a record,
@@ -277,7 +276,7 @@ export async function dispatch(
   // §7.4: "the run then proceeds in the Next.js Node process" — started here, awaited by
   // nothing. The request returns at the line below; this promise settles on its own time.
   const prompt = `Task: ${task.name}\n\n${task.description}`;
-  void runSessionToCompletion({ db, runner, session, agent, taskId, worktree: wt, prompt }).catch((err) => {
+  void runSessionToCompletion({ db, runner, session, agent, taskId, worktree: wt, prompt, removeWt: deps.removeWorktree }).catch((err) => {
     // A last-resort net: runSessionToCompletion already records failure state onto the Session
     // row itself. Reaching here means that bookkeeping threw too, which must not become an
     // unhandled rejection that crashes the process the run is supposed to survive.
@@ -301,6 +300,8 @@ interface RunSessionParams {
   prompt: string;
   /** Set only when resuming a paused session (§3.5) — the prior run's `sdkSessionId`. */
   resume?: string;
+  /** Injected teardown (`DispatchDeps.removeWorktree`), defaulting to the real one. */
+  removeWt?: (wt: Worktree) => Promise<void>;
 }
 
 function buildSessionSurface(ctx: SessionCtx): {
@@ -323,7 +324,33 @@ function buildSessionSurface(ctx: SessionCtx): {
  * either the agent's own `task_update_status` call (T4) or, on a genuine failure, this
  * function's own `doing -> todo` transition below (§7.6's table).
  */
+/**
+ * Teardown that cannot strand a session.
+ *
+ * `removeWorktree` throws when `git worktree remove --force` **and** `git worktree prune` both
+ * fail. Awaiting it before the terminal `updateSession` meant a teardown failure left the row
+ * saying `running` (or `waiting-inbox`) forever, with no `endedAtISO` and no reason — **a stored
+ * claim contradicted by reality, inside the product whose subject is exactly that** (§7.7). The
+ * boot sweep would only notice after a restart.
+ *
+ * So teardown is best-effort and the terminal write always happens. On failure the session
+ * **keeps its `worktreePath`**, because the path is the only pointer to a directory that may
+ * still exist — nulling it would lose the one thing needed to clean it up later.
+ */
+async function tearDownBestEffort(
+  wt: Worktree,
+  remove: (wt: Worktree) => Promise<void>,
+): Promise<string | null> {
+  try {
+    await remove(wt);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
 async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
+  const removeWt = params.removeWt ?? removeWorktree;
   const { db, runner, session, agent, taskId, worktree, prompt, resume } = params;
   const ctx: SessionCtx = { db, sessionId: session.id, taskId };
   const { mcpServers, canUseTool } = buildSessionSurface(ctx);
@@ -356,11 +383,12 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
   if (latest?.status === "waiting-inbox") {
     // §3.5: the worktree is removed once the paused turn ends, whatever it did or didn't
     // commit — the tool's own description is what tells the agent to commit before asking.
-    await removeWorktree(worktree);
+    const teardownError = await tearDownBestEffort(worktree, removeWt);
     updateSession(db, session.id, {
-      worktreePath: null,
+      worktreePath: teardownError ? worktree.path : null,
       sdkSessionId: outcome?.sdkSessionId ?? latest.sdkSessionId,
       costUsd: outcome?.costUsd ?? latest.costUsd,
+      failureReason: teardownError ? `worktree teardown failed: ${teardownError}` : latest.failureReason,
     });
     return;
   }
@@ -374,15 +402,23 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
     // Best-effort: a failed read here must not block teardown from happening at all.
   }
   if (commitShas.length) recordCommitShas(db, session.id, commitShas);
-  await removeWorktree(worktree);
+  const teardownError = await tearDownBestEffort(worktree, removeWt);
+
+  // Both facts are recorded, and neither is allowed to hide the other: `status` reports what the
+  // *run* did, and a teardown failure is appended to the reason rather than reclassifying a
+  // completed run as failed.
+  const reasons = [
+    runError ? runError.message : null,
+    teardownError ? `worktree teardown failed: ${teardownError}` : null,
+  ].filter((r): r is string => r !== null);
 
   updateSession(db, session.id, {
-    worktreePath: null,
+    worktreePath: teardownError ? worktree.path : null,
     sdkSessionId: outcome?.sdkSessionId ?? latest?.sdkSessionId ?? null,
     costUsd: outcome?.costUsd ?? latest?.costUsd ?? null,
     status: runError ? "failed" : "completed",
     endedAtISO: new Date().toISOString(),
-    failureReason: runError ? runError.message : null,
+    failureReason: reasons.length > 0 ? reasons.join("; ") : null,
   });
 
   // §7.6: "doing -> todo, system, the session failed or was interrupted; reason recorded." Only
@@ -442,6 +478,7 @@ export async function resumeSession(
   void runSessionToCompletion({
     db,
     runner,
+    removeWt: deps.removeWorktree,
     session: resumed,
     agent,
     taskId: task.id,

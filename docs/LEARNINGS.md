@@ -223,6 +223,18 @@ belongs in `docs/DECISIONS.md` instead.
   fail** — write the bypass, watch it go red, delete it, and report the failure message. A check
   demonstrated only in the passing direction has demonstrated nothing.
 
+- (2026-08-19) **A cleanup step awaited before the write that records the outcome can strand the
+  record it was supposed to complete.** `dispatch` did `await removeWorktree(wt)` and *then*
+  `updateSession({status, endedAtISO, failureReason})`. `removeWorktree` throws when `git worktree
+  remove` and `git worktree prune` both fail — so a teardown failure left a `Session` row saying
+  `running` with no end time and no reason: **exactly the stored-claim-contradicted-by-reality this
+  product exists to catch, occurring inside it**, and invisible until the next restart. AC-2 and
+  AC-9 both passed throughout, because both assert the *successful* teardown path. **The rule:
+  cleanup is best-effort; the record of what happened is not.** Write the outcome first or catch
+  around the cleanup, and when cleanup fails keep the handle to whatever was not cleaned up —
+  nulling `worktreePath` would have discarded the only pointer to the directory left behind.
+  Found by review on #14, not by the suite.
+
 ## Tooling
 
 - (2026-07-27) **`.pen` files (Pencil) are plain UTF-8 JSON** — readable directly with any JSON

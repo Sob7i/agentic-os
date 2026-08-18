@@ -15,6 +15,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
   getProject,
+  getSession,
   getTask,
   listSessionsByStatus,
   updateSession,
@@ -90,7 +91,11 @@ export async function runBootSweep(db: DatabaseSync, currentBootId: string): Pro
       });
     }
 
-    swept.push(session);
+    // Re-read rather than pushing the pre-sweep row: `listSessionsByStatus` handed us a snapshot
+    // taken *before* any of the writes above, so pushing it would return rows still saying
+    // `status: 'running'` from a function whose whole job is that they no longer do. A caller
+    // (T7's UI) would render the lie this sweep exists to remove.
+    swept.push(getSession(db, session.id) ?? session);
   }
 
   return { swept };

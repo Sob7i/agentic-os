@@ -25,18 +25,18 @@
 > "none" was already wrong by the time the PR recording it existed. A fact that its own recording
 > changes cannot be recorded; it can only be reproduced.
 >
-> **Checked 2026-08-18 (late evening, after T5).** If today is much later than that, this table is a hypothesis.
+> **Checked 2026-08-19 (after the #13/#14 review).** If today is much later than that, this table is a hypothesis.
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
 | `develop` head | `250ab5d` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #9, #10, #11, #12 — all 2026-08-18 | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **45 of 46** — measured 2026-08-18 after building T5 | `pnpm verify` |
+| `pnpm verify` | **46 of 47** — measured 2026-08-19 after the #13/#14 review | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
-| `pnpm verify:stage3` | 19 of 19 (T2–T5; AC-14…AC-19 among them) | `pnpm verify:stage3` |
+| `pnpm verify:stage3` | 20 of 20 (T2–T5; AC-14…AC-19 and AC-9a among them) | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
@@ -195,6 +195,15 @@
   and proved by writing that exact file and watching it go red. **Four waves, four checks that
   passed for the wrong reason, none caught by the agent that wrote it** — see the review note in
   `docs/LEARNINGS.md`.
+- **The #13/#14 review found two real defects, both on paths no check reached.** (i) The gate's
+  refusal text told the model to *"use inbox.ask"* — a tool D29 had renamed out of existence, in a
+  string returned to the agent on every denial. (ii) `removeWorktree` was awaited *before* the
+  terminal `updateSession`, so a teardown failure left the session saying `running` forever with no
+  `endedAtISO` and no reason — **§7.7's own subject matter, reintroduced by an error path**, and one
+  the boot sweep would only notice after a restart. Teardown is now best-effort, the terminal write
+  always happens, and a failure keeps `worktreePath` because it is the only pointer to a directory
+  that may still exist. **AC-9a** covers it, driven through a new `DispatchDeps.removeWorktree` seam
+  because the real function throws only when `git worktree remove` *and* `prune` both fail.
 - **Next waves:** T6 (complete the suite: AC-1, AC-3, AC-6…AC-8, AC-10…AC-13, plus opt-in AC-12) →
   T7 (UI, and the first ticket that owns app startup — `runBootSweep` still has no call site,
   `docs/BACKLOG.md`).

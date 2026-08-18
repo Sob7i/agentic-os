@@ -266,9 +266,9 @@ function makeDbFixture(approvalGate: boolean) {
   // AC-19): a session may move 'doing' -> 'review', never 'todo' -> 'review' directly — in real
   // usage dispatch() always writes todo -> doing (actorType 'session') before a session's run
   // even starts, so this fixture's task would never actually be sitting in 'todo' by the time an
-  // agent calls task_update_status. Mirror that here via a human-actorType setup transition
-  // (always legal, and excluded from AC-4's own assertions below, which only read the LAST
-  // event) rather than leaving the fixture at its old, now-unrealistic starting state.
+  // agent calls task_update_status. Mirror that here with the same session-actor transition
+  // dispatch itself writes — excluded from AC-4's own assertions below, which read only the LAST
+  // event — rather than leaving the fixture at its old, now-unrealistic starting state.
   writeTaskTransition(db, { taskId: task.id, toStatus: "doing", actorType: "session", actorId: session.id, reason: "setup — mirrors dispatch's own todo->doing" });
   const ctx = { db, sessionId: session.id, taskId: task.id };
   const result = await createTaskUpdateStatusTool(ctx).handler(
@@ -818,7 +818,10 @@ function makeDriftFixtureRepo(opts: { backdateDays?: number } = {}): { dir: stri
   const toolCalls = listToolCallsBySession(db, session.id);
 
   const ok =
-    swept.some((s) => s.id === session.id) &&
+    // Not just "the id is in the list": the returned ROW must carry post-sweep state. It was read
+    // before the sweep's own writes, so a function whose job is to end a lie would otherwise hand
+    // its caller `status: 'running'` — the lie itself (review of #14).
+    swept.some((s) => s.id === session.id && s.status === "interrupted") &&
     after.status === "interrupted" &&
     typeof after.failureReason === "string" && after.failureReason.length > 0 &&
     after.worktreePath === null &&
@@ -866,7 +869,10 @@ function makeDriftFixtureRepo(opts: { backdateDays?: number } = {}): { dir: stri
   const toolCalls = listToolCallsBySession(db, session.id);
 
   const ok =
-    swept.some((s) => s.id === session.id) &&
+    // Not just "the id is in the list": the returned ROW must carry post-sweep state. It was read
+    // before the sweep's own writes, so a function whose job is to end a lie would otherwise hand
+    // its caller `status: 'running'` — the lie itself (review of #14).
+    swept.some((s) => s.id === session.id && s.status === "interrupted") &&
     after.status === "interrupted" &&
     typeof after.failureReason === "string" && after.failureReason.length > 0 &&
     after.worktreePath === null &&
@@ -941,9 +947,68 @@ function makeDriftFixtureRepo(opts: { backdateDays?: number } = {}): { dir: stri
 
 for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
 
+// ── AC-9a · a teardown failure still writes a terminal status ──────────────────────────────
+// AC-9 covers "the run threw, the worktree is gone". This covers the inverse and nastier case:
+// the run finished but TEARDOWN threw. `removeWorktree` was awaited before the terminal
+// updateSession, so a throw left the row saying 'running' forever, with no endedAtISO and no
+// reason — a stored claim contradicted by reality, inside the product whose subject is exactly
+// that (§7.7), and one the boot sweep would only notice after a restart. Found in review of #14.
+//
+// Driven through DispatchDeps.removeWorktree, because the real function throws only when
+// `git worktree remove` AND `git worktree prune` both fail, which a fixture cannot arrange
+// without corrupting a real repo.
+{
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  const runner = new FakeRunner({ messages: [] });
+
+  const result = await dispatch(task.id, "manual", {
+    db,
+    runner,
+    removeWorktree: async () => {
+      throw new Error("git worktree remove and prune both failed (fixture)");
+    },
+  });
+
+  if (!result.started) {
+    fail("AC-9a", `dispatch refused before the teardown path could be reached: ${JSON.stringify(result)}`);
+  } else {
+    // The continuation is unawaited by design (§7.4); poll for it to settle rather than sleeping
+    // a fixed amount, so the check is not timing-tuned.
+    const deadline = Date.now() + 5000;
+    let session = getSession(db, result.sessionId)!;
+    while (session.endedAtISO === null && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+      session = getSession(db, result.sessionId)!;
+    }
+
+    const ok =
+      session.endedAtISO !== null &&
+      session.status === "completed" &&
+      typeof session.failureReason === "string" &&
+      session.failureReason.includes("teardown") &&
+      // The path is the only pointer to a directory that may still exist — nulling it would lose
+      // the one thing needed to clean it up later.
+      session.worktreePath !== null;
+
+    if (!ok) {
+      fail("AC-9a", `teardown failure left the session unterminated or lost its worktree path: ${JSON.stringify(session)}`);
+    } else {
+      pass(
+        "AC-9a",
+        `teardown threw, and the session still reached a terminal status ('${session.status}') with the reason recorded ` +
+          `and worktreePath kept — no row left claiming to be running`,
+      );
+    }
+  }
+  db.close();
+}
+
 console.log(
   failures === 0
-    ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b, AC-14, AC-15a…e, AC-16, AC-17a/b, AC-18a/b, AC-19a/b).\n"
+    ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b, AC-14, AC-15a…e, AC-16, AC-17a/b, AC-18a/b, AC-19a/b, AC-9a).\n"
     : `\n${failures} FAILING.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);
