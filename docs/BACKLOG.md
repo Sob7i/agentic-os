@@ -183,6 +183,33 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   second surface needing the same data with a different composition — which is when the split earns
   itself rather than being asserted.
 
+### From the Stage 3a build (2026-08-18)
+
+- **`pnpm verify` runs the Stage 1 and Stage 2 suites twice.** Stage 3a's AC-1 spawns them as a
+  regression oracle — that is the point of it, and it is why they are *not* extended — but the
+  aggregate `verify` also runs them directly, so a full run executes them once each on its own and
+  once more inside AC-1. Costs a few seconds and no correctness. Unblocked by: the suites becoming
+  slow enough to notice, at which point AC-1 can read a machine-readable result instead of
+  spawning.
+- **The `⌘1` shortcut is unverified by the suite.** It is a five-line client component and AC-7 is
+  satisfied by loading a page and pressing the key. Automating it needs a browser driver, which is
+  a dependency this repo does not have for one binding. Unblocked by: a second keyboard shortcut,
+  or any other reason to add a browser test.
+- **`/p/<slug>` uses the project's display name as its slug.** `slugFor` is identity today, which
+  works because every watched name is already URL-safe. A project named with a space or a slash
+  would break the route. Unblocked by: adding such a project — or D21's multi-repo work, which is
+  the natural moment to give `ProjectConfig` an explicit slug.
+
+### From the review of Stage 3a (2026-08-18)
+
+- **`⌘1` collides with every browser's "switch to tab 1".** The shortcut comes from the round-3
+  design (frame `B′2`) and is implemented as drawn, now with editable elements excluded so it cannot
+  fire while someone is typing. But Chrome, Safari and Firefox all bind `⌘1`/`Ctrl+1` to the first
+  tab, and this page calls `preventDefault()` on it. Many web apps do override it; it is still a
+  real cost the design may not have weighed. Unblocked by: the first time you reach for tab 1 and
+  land on the Board instead — at which point `g b` or `⌘⇧B` are the obvious alternatives, and it is
+  a one-line change plus a wireframe note.
+
 ### Product / design
 
 - **Propose structured claim markers upstream to itqan** — D5 chose prose heuristics so the tool

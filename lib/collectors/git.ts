@@ -51,3 +51,14 @@ export async function collectGit(repo: string): Promise<GitResult> {
     lastCommitAgeDays: ageInDays(iso),
   };
 }
+
+/**
+ * Git's own view of what an approval left behind. Never our summary of it.
+ *
+ * Moved here from `app/page.tsx` in Stage 3a — it is a collector, and it was
+ * only ever in the page because that was the one file that existed.
+ */
+export async function porcelain(repoPath: string): Promise<string[] | null> {
+  const out = await run("git", ["status", "--porcelain"], repoPath);
+  return out === null ? null : out.split("\n").filter(Boolean);
+}

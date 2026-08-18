@@ -4,13 +4,15 @@
 > anything, to answer "does it already do X?" Write to it after building, in the same PR as the
 > code. Planned behaviour lives in `docs/PRD.md`; it does not belong here until it runs.
 
-**Status as of 2026-07-27: Stages 1 and 2 run** — the reconciliation Board, and gated fix
+**Status as of 2026-08-18: Stages 1, 2 and 3a run** — the reconciliation Board, and gated fix
 proposals that write into a watched repo only on an explicit per-proposal click. Every row below
 was verified by running it, not by reading the code. The `Verify` column is the command or action
 that was actually executed.
 
-**Run it:** `pnpm install && pnpm dev` → the Board. `pnpm verify` runs both acceptance suites
-(8 checks for Stage 1, 11 for Stage 2); `pnpm verify:stage2` runs Stage 2's alone.
+**Run it:** `pnpm install && pnpm dev` → the Board. `pnpm verify` runs **every** acceptance suite
+and no longer stops at the first red one — it did until 2026-08-18, which meant Stage 1's known
+AC-2 failure had been hiding Stage 2's results in the aggregate. Counts live in
+`docs/HANDOFF.md` §Verified state.
 
 ## How to read a row
 
@@ -71,13 +73,40 @@ one document, unstaged, after one click, and never marks its own work done.
 | Acknowledges a drift locally | "Leave as is" mutes the card; survives reload; expires when the claim changes | `pnpm verify:stage2` → AC-9 | Stage 2 |
 | Reports a refusal in the UI | Banner: **Nothing was written.** + the verbatim reason | Load `/?error=…` | Stage 2 |
 
+### The app shell (Stage 3a — D23)
+
+**The mode switch.** The portfolio home is the Board with a rail; entering a project replaces that
+rail and puts a **persistent portfolio ribbon** across the top.
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Routes a project | `/p/<name>` renders that project in the shell | Load `/p/nadim` | Stage 3a |
+| Keeps the portfolio visible inside a project | Ribbon carries all 6 projects as glyph + name, plus the Board's freshness | `pnpm verify:stage3a` → AC-2 | Stage 3a |
+| Reads one collector run per request | Every surface goes through `boardOnce`; nothing imports `buildBoard` directly | **AC-3** | Stage 3a |
+| Refuses to guess when collectors fail | Ribbon shows **no** severities and says why — never 6 glyphs it cannot vouch for | **AC-4** | Stage 3a |
+| Shows drift only where it is | Band renders on `/p/nadim`, absent on the other five; ribbon still carries their severity | **AC-5** | Stage 3a |
+| Quotes the Board rather than re-deriving | Band shows the claim and counter-fact verbatim, and links back | Load `/p/nadim` | Stage 3a |
+| Gives a watched-only project a full screen | Its findings, git/PR facts, and one sentence on how to opt in | AC-6 | Stage 3a |
+| Offers no work surfaces without an execution layer | No Tasks/Goals/Inbox/Sessions/Costs; the rail says so | **AC-6** | Stage 3a |
+| Detects opt-in from disk | `agentos.yml` at a project root → 5 tabs appear (D18) | AC-6 | Stage 3a |
+| Refuses an unknown project | `/p/does-not-exist` → 404, not an empty shell | AC-8 | Stage 3a |
+| Returns to the Board from anywhere | `← All projects` link and `⌘1` | Load `/p/nadim`, press ⌘1 | Stage 3a |
+| Says the Overview is not built | One sentence naming Stage 6 and why; no skeleton | Load `/overview` | Stage 3a |
+| Says a project tab is not built | `/p/<slug>/<tab>` names the spec that will build it | Load with an opted-in project | Stage 3a |
+
+**The Board is unchanged.** `app/page.tsx` was decomposed into `components/board/` and the
+severity vocabulary moved to `lib/severity.ts` so the ribbon uses the *same* mapping rather than a
+copy. `pnpm verify` returns the same result as before the slice — that is AC-1, and it is asserted
+by running the Stage 1 and Stage 2 suites unmodified as a regression oracle.
+
 ### The Overview
 
-*Not built.* Planned: PRD §6.8, Stage 3. Round-2 wireframes not yet drafted.
+*Not built.* Planned: PRD §6.8, **Stage 6** (re-scoped by D22 to read two sources). `/overview`
+renders one honest sentence saying so.
 
 ### Usage & cost
 
-*Not built.* Planned: PRD §6.3, Stage 4.
+*Not built.* Planned: PRD §6.3, **Stage 7**.
 
 ## Invariants in force
 
@@ -111,6 +140,16 @@ Stated in full in `CLAUDE.md` §Invariants.
 - Cloud sync, telemetry, accounts, multi-user views.
 
 ## Known gaps in this map
+
+- **⚠ AC-10 (does the ribbon fit?) is measured but not *observed*.** Stage 3a's one manual
+  acceptance asks whether six real project names survive a 40px ribbon at 1280px. The rendered
+  ribbon is **116 characters** — `← All projects ⌘1 · ⚠ nadim · ○ agentic-os · ○ itqan ·
+  ◌ fractal-code · ◌ my-personal-website · ◌ salla-apps · verified 1:18:47 PM` — which computes to
+  roughly **890px of the 1280px available**. That is comfortable, and it is an **estimate from
+  character counts, not a browser measurement**; nobody has looked at it yet. The failure mode is
+  bounded either way: the ribbon is `overflow-x: auto`, so if it does not fit it **scrolls rather
+  than truncating a project name** — it degrades instead of lying. **The owner should look once**,
+  and if it is cramped, D23 named the fallback in advance (Concept C, a persistent spine).
 
 - **⚠ AC-2 currently fails, and the code is right.** The check asserts *"itqan renders `✓ in sync`"*
   **by name**; itqan has not committed since 2026-07-21, so DC7 correctly reports it stalled and the
