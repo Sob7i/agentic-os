@@ -300,11 +300,14 @@ SDK, and it is opt-in.
 - **AC-13 — no MCP inheritance.** The composed options set `strictMcpConfig: true` and list exactly
   the two in-process servers. §3.1(b): without it an agent inherits the owner's authenticated MCP
   servers.
-- **AC-14 — `dispatch` is the only door.** A source-level assertion that `runner.run` is referenced
-  nowhere outside `lib/agentos/dispatch.ts`, and that no `INSERT INTO Session` exists outside it
-  either. Structural rather than behavioural, deliberately: D24's funnel is worth exactly as much as
-  the guarantee that nothing bypasses it, and the second path will be added by someone in a hurry
-  who never reads §7.2. Cheap to write, and it fails at the moment the mistake is made.
+- **AC-14 — `dispatch` is the only door.** Session creation is exposed as **one exported function**,
+  `createSession()` in `lib/agentos/db.ts`; the assertion is that `createSession` and `runner.run`
+  are each imported by **exactly one module, `lib/agentos/dispatch.ts`**. Structural rather than
+  behavioural, deliberately: D24's funnel is worth exactly as much as the guarantee that nothing
+  bypasses it, and the second path will be added by someone in a hurry who never reads §7.2.
+  **Assert the import graph, not the SQL text** — a grep for `INSERT INTO Session` breaks on
+  quoting, line wrapping, or a prepared-statement helper, and would then fail while the invariant
+  holds, which is the failure mode that teaches people to delete a check.
 - **AC-15 — every refusal is stated and writes nothing.** Each of §7.3's five preconditions is
   driven to failure in turn. Each returns `started: false`, names the precondition that stopped it,
   and leaves **zero new `Session` rows and zero new `TaskEvent` rows**. Following Stage 2's lesson,
@@ -433,9 +436,16 @@ a run when the browser goes away.* All three are closed by **D24**.
 ### 7.1 Agents do not pick — they are picked
 
 There is **no scanner, no poller, and no queue-worker**. Nothing in this system looks at the `todo`
-column and decides to start something. Every `Task` names exactly one agent in `assigneeAgentId`
-(falling back to `Project.defaultAgentId`), and that assignment is made when the task is created —
-by a human in Stage 3, by a template step in Stage 4, by the goal orchestrator in Stage 5.
+column and decides to start something. Every `Task` carries its agent in `assigneeAgentId`, and
+**that assignment is made when the task is created** — by a human in Stage 3, by a template step in
+Stage 4, by the goal orchestrator in Stage 5.
+
+**`dispatch` never assigns an agent.** If a task is created without one, `Project.defaultAgentId`
+is applied **at creation time and written to the row**; a task that reaches `dispatch` with
+`assigneeAgentId = null` is therefore not an unassigned task but a **deliberately human-only** one,
+and precondition 4 refuses it (§7.3). The distinction is load-bearing from Stage 4 onward: the
+reference template's step 9 is *"human review of deployment / PR"*, and a dispatch-time fallback
+would run it under the default agent — the exact outcome the approval gate exists to prevent.
 
 This is the single biggest divergence from the source reference and it is deliberate. AgentOS-spec
 §9.4 says *"completing step N enqueues step N+1 (`todo` → runner picks it up)"*, and §3.4 suggests
@@ -486,9 +496,11 @@ the two can never disagree.
 2. **The task is dispatchable** — status `todo`, and no session of its own currently `running` or
    `waiting-inbox`. Re-running a `doing` card is the mistake this catches.
 3. **The project is under its concurrency cap** — `maxConcurrentSessions`, default **1** (§5.14).
-4. **The agent resolves** — it exists, and its `allowedTools` / `disallowedTools` / `canCommit`
-   grants can be composed into SDK options. An agent that cannot be composed must fail here, loudly,
-   rather than silently spawning with default permissions.
+4. **The agent resolves** — `assigneeAgentId` is **not null**, the agent exists, and its
+   `allowedTools` / `disallowedTools` / `canCommit` grants can be composed into SDK options. A null
+   assignee means **human-only** (§7.1) and is refused with that reason, never defaulted. An agent
+   that cannot be composed must fail here, loudly, rather than silently spawning with default
+   permissions.
 5. **The base ref resolves** — `git rev-parse <baseRef>` succeeds in the primary repo, so §3.2's
    `worktree add` cannot fail halfway.
 
@@ -504,7 +516,7 @@ A run takes minutes to hours. An HTTP request cannot hold it, so:
 ```
 server action ─▶ dispatch()
                    ├─ preconditions          (synchronous)
-                   ├─ INSERT Session(status='running', pid, bootId, driftAtSpawn)
+                   ├─ INSERT Session(status='running', pid, bootId, driftAtSpawnJson)
                    ├─ TaskEvent  todo → doing, actorType='session'
                    ├─ start the run, unawaited          ◀── the request returns HERE
                    └─ return { started: true, sessionId }

@@ -531,6 +531,6 @@ post-mortem answerable — *"was this session started on a stale premise?"* — 
 either layer could answer.
 
 **Consequence:** `lib/agentos/dispatch.ts` is the single entry point and the acceptance suite
-asserts it (spec §7, AC-14…AC-18). `Session` gains `triggerKind`, `driftAtSpawn`, `pid` and
-`bootId`. A goal-level pre-flight that *does* block is still open for Stage 5 (PRD §12.6) and is
+asserts it (spec §7, AC-14…AC-18). `Session` gains `triggerKind`, `driftAtSpawnJson`, `pid`
+and `bootId`. A goal-level pre-flight that *does* block is still open for Stage 5 (PRD §12.6) and is
 not pre-empted by this decision.
