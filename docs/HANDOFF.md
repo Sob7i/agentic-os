@@ -157,9 +157,11 @@
 - **T4 (the two MCP servers + the gate) is built** — `lib/agentos/mcp/{names,context,gate,agentos-server,inbox-server}.ts`
   plus AC-4, AC-5 and AC-5b. `zod` is now a direct dependency: it is a *peer* of the Agent SDK and
   was present in the pnpm store but **not resolvable from the project root**, so `createSdkMcpServer`
-  could not have been called without it. Pinned to the 4.4.x line the SDK is already resolved
-  against, because two zod instances would break `instanceof` inside the MCP server and would look
-  like a schema bug.
+  could not have been called without it. Declared as `^4.4.3` — which is a floor, not a pin, and
+  the wording here said "pinned" until a reviewer caught it. What actually prevents the failure
+  mode is that our range and the SDK's peer range (`^4.0.0`) intersect, so pnpm resolves **one**
+  instance; two would break `instanceof` inside the MCP server and would look like a schema bug
+  rather than a resolution one.
 - **The gate's first layer was one string away from being dead on arrival.** `canUseTool` is handed
   the *fully-qualified* name (`mcp__agentos__task_update_status`), not the bare one — and a callback
   matching the bare name would never fire while **AC-5 still passed**, because layer 2 refuses on its
