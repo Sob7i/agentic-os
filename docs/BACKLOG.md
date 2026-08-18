@@ -170,6 +170,19 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   already opens. Unblocked by: Stage 3 shipping — DC9 is small, but adding a check now competes with
   the execution layer for the same attention, and the *Verified state* block holds the line meanwhile.
 
+### From the shell inventory (2026-08-18)
+
+- **`app/board.css` and CSS Modules will coexist indefinitely.** Stage 3a §5.2 leaves the Board's
+  539-line global stylesheet alone and gives new surfaces CSS Modules, because rewriting working,
+  dark-mode-verified CSS to prove a convention risks AC-1 for no behavioural gain. The cost is two
+  styling idioms in one app, sharing tokens from `globals.css`. Unblocked by: the Board needing a
+  real visual change anyway — convert it then, when the risk is already being taken.
+- **`app/page.tsx` keeps its data-fetching shape after the component extraction.** Stage 3a moves
+  `Row`, `FixSection` and `AckForm` out but deliberately does not touch the server action or the
+  fix path (§5.3), so the page still both fetches and composes. Fine at one route. Unblocked by: a
+  second surface needing the same data with a different composition — which is when the split earns
+  itself rather than being asserted.
+
 ### Product / design
 
 - **Propose structured claim markers upstream to itqan** — D5 chose prose heuristics so the tool

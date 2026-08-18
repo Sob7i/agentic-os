@@ -577,3 +577,50 @@ say so. **The design pressure points the right way**, which a single boolean `me
 command keeps an item unmet **even when the model says it is met**; and frame `G1` is superseded in
 this one respect. It cannot be retrofitted after the goal UI is built, which is why it is closed
 now rather than during Stage 5.
+
+## D26 — The shell is split out of Stage 3 and built first, as Stage 3a (2026-08-18)
+
+**Amends the build order in `docs/PRD.md` §10**, which is gated, so moving work across a gate is a
+decision rather than a scheduling preference.
+
+**Decision:** the app shell — routing, the portfolio ribbon, the drift band, the project rail, and
+the decomposition of `app/page.tsx` that they require — is removed from Stage 3's build-note item 7
+and becomes **Stage 3a**, built **before** Stage 3's internals. Stage 3 keeps the Tasks board, the
+session view and the inbox, which are the parts that need an execution layer to exist.
+
+**Rationale — four reasons, in the order they convinced.**
+
+1. **The shell is portfolio-layer work, and it is not gated.** Stage 3 is blocked on two owner
+   decisions (§5.11, §5.12) about which repo an agent may touch and whether it may commit. The
+   shell touches neither: it renders the six projects the Board already renders, from
+   `buildBoard()`, which shipped in Stage 1. **Work that is ready should not sit behind a gate that
+   does not apply to it.**
+2. **It is the cheapest available test of D23.** D23 chose Concept B′ against the design agent's own
+   recommendation, and the recorded weakness of B′ is precisely a space constraint — *"horizontal
+   space forces the six names to compete with the ribbon's own controls, and severity has to survive
+   at 11px."* That is answered by building it with the six real project names, not by discussion.
+   Doing it **before** five surfaces mount inside the shell means the fallback (Concept C) is a
+   layout change over shared components rather than a rewrite.
+3. **There is no foundation today, and the second page would invent one badly.** The app is one
+   route, a fifteen-line root layout that only renders `<body>`, and a **448-line `app/page.tsx`**
+   holding the Board, the fix-proposal UI and the roster together, over 539 lines of global
+   `board.css`. Tasks, Goals, Sessions, Inbox and Costs would each arrive with their own answer to
+   the same questions. **The conventions are cheapest to set while there is one consumer.**
+4. **It ships two complete screens with real data.** The portfolio home, and a watched-only project
+   view — four of the six watched projects have no execution layer, so frame `C3` is fully
+   buildable today. This is not a frame around nothing.
+
+**Why this is a split rather than a new stage.** None of PRD §10's Stage 3 acceptance criteria
+concern navigation, and none of the shell's concerns are execution-layer. Stage 3's criteria are
+unchanged and it still cannot be called done without them.
+
+**The risk accepted:** building a container before its main occupant, so the Kanban's real width
+demand is inferred from the design rather than measured. Mitigated by §5.4 of the shell spec — the
+pane is given no maximum width and the Tasks board is the first thing built after it, so the
+measurement arrives one slice later rather than never. **If the ribbon does not fit, D23 named the
+fallback in advance**, which is the reason it was designed.
+
+**Consequence:** `docs/specs/stage-3a-shell.spec.md`; PRD §10 gains Stage 3a; Stage 3's build note 7
+narrows to the surfaces that need an execution layer. `pnpm verify` must be **unchanged** by the
+decomposition — that is the shell spec's AC-1, and it is what makes refactoring a 448-line file
+covered by eleven acceptance checks a safe move rather than a brave one.

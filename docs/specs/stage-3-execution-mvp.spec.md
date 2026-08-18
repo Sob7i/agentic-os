@@ -412,8 +412,10 @@ Order matters; the risk is concentrated in the first three.
    file in the slice: it is the only door to a session (AC-14), it owns the five preconditions, and
    it is where D24's drift record is written. Write AC-14…AC-19 with it.
 6. **`scripts/verify-stage3.mts`** — AC-1…AC-19 against fixtures, before any UI.
-7. **UI last**: the `B′2` shell (D23), then `/p/<slug>/tasks` per §8, then the session view with its
-   tool-call log, then the inbox.
+7. **UI last**: `/p/<slug>/tasks` per §8, then the session view with its tool-call log, then the
+   inbox. **The shell is no longer built here** — D26 split it out as
+   [`stage-3a-shell.spec.md`](stage-3a-shell.spec.md), which is ungated and goes first, so these
+   surfaces mount into routing and chrome that already exist.
 
 **Reuse rather than re-derive:** `lib/collectors/git.ts` for repo facts, `lib/collectors/exec.ts`
 for subprocess plumbing, and the `app/actions.ts` pattern where the server rebuilds the request

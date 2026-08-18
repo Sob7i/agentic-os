@@ -96,7 +96,15 @@
   closing the round-2 review's one blocking item.
 - **Round-2 designs delivered, reviewed, and now partly consumed.** Overview direction is closed
   as **D16** (Concept A, tabbed/by-band, plus Concept B's "blocked on you" spotlight band).
-- **All product decisions closed** — `docs/DECISIONS.md` **D1–D25**. The newest are D23 (the
+- **All product decisions closed** — `docs/DECISIONS.md` **D1–D26**. D26 splits the app shell out
+  of Stage 3 as **Stage 3a** and builds it first: it is portfolio-layer work against Stage 1 data,
+  so it is not gated by Stage 3's two owner decisions, and it is the cheapest available test of
+  D23's one known weakness (whether six project names actually fit in a 40px ribbon).
+- **There is no app shell today, and that was the gap.** Inventoried 2026-08-18: one route, a
+  15-line root layout, a **448-line `app/page.tsx`** holding the Board, the fix UI and the roster
+  together, over 539 lines of global CSS. The design tokens are the exception — `app/globals.css`
+  already carries the validated palette in both schemes, so Stage 3a inherits it.
+- **Older decisions** — `docs/DECISIONS.md` D1–D25. The newest are D23 (the
   shell), D24 (dispatch, never pull) and **D25** (a DoD item carries the *kind* of evidence that
   closed it — which supersedes what frame `G1` drew); D18–D22 are the re-scope.
 
@@ -125,7 +133,13 @@
    recommendation: ship the capability, default the seeded agent to `canCommit: false`). Both are
    owner calls because both end in a write to someone's repo. Answering them flips the glyph to `☑`.
    Everything else in §5, including the shell (D23) and the dispatch model (D24), is closed.
-3. **Specs for Stages 4 and 5 are written** —
+3. **Build Stage 3a — the shell.** [`stage-3a-shell.spec.md`](specs/stage-3a-shell.spec.md) is
+   **`☑` buildable now** and is the only slice in the queue that is not waiting on anything. Build
+   order is its §6, and step 1 is deliberately *"extract components with the Board still at `/`,
+   then run `pnpm verify`"* — because AC-1 is that the suite result is **unchanged**, and running it
+   before any routing exists means a failure has exactly one possible cause. Then take the AC-10
+   measurement (does the ribbon fit at 1280px with six real names) and record it either way.
+4. **Specs for Stages 4 and 5 are written** —
    [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) is **`☑`
    buildable** (no owner gate; it is sequenced behind Stage 3), and
    [`stage-5-goals.spec.md`](specs/stage-5-goals.spec.md) is **`☐`**, gated on one owner call in
@@ -133,13 +147,13 @@
    been watched once. Stage 6 (the rewritten Overview) and Stage 7 (portfolio cost) are **not**
    specced yet, deliberately: both read data that Stages 3–5 produce, and speccing them now would
    be guessing at shapes that do not exist.
-4. **Build Stage 3.** Build order is in the spec's §6 — now seven items, with
+5. **Build Stage 3.** Build order is in the spec's §6 — now seven items, with
    `lib/agentos/dispatch.ts` added as **5**. Risk is concentrated in the first three (schema,
    worktree, runner-plus-fake) and in dispatch, which is small but is the only door to a session;
    the acceptance suite goes in before the UI, exactly as Stage 2 did. Then Stage 4 templates →
    Stage 5 goals → Stage 6 the rewritten Overview → Stage 7 portfolio cost. PRD §10 has the
    acceptance criterion for each.
-5. **Commit `design/wireframes2.pen`** — it arrived untracked, and there is a stray
+6. **Commit `design/wireframes2.pen`** — it arrived untracked, and there is a stray
    `pencil-new.pen` (1 MB) at the repo root, which is the same autosave pattern `docs/BACKLOG.md`
    already recorded once. Decide whether it is a design artefact or debris before the next commit.
 
@@ -164,6 +178,14 @@
   screen that decides whether to keep spending. Split into `command` / `judged` / `human`, which
   also makes writing a DoD an exercise in *"how would I know?"*. **Also restructured `HANDOFF.md`**
   so volatile facts live in one *Verified state* block — see below.
+
+- **2026-08-18 (later still)** — Asked whether the dashboard skeleton had been planned, and it had
+  not: the shell was sitting inside Stage 3's build-note item 7, **behind two owner gates that have
+  nothing to do with navigation**. Inventoried what exists (one route, a 15-line layout, a 448-line
+  page, no components directory) and split the shell out as **Stage 3a** — D26. Two things fell out
+  of the inventory: the validated palette is already in `globals.css`, so tokens are not a gap; and
+  `buildBoard()` is already a single entry point, so *"the ribbon and the Board cannot disagree"* is
+  a matter of not adding a second call rather than of building a sharing mechanism.
 
 **Deliberately not next:** the Overview as previously specced (cancelled by D22 — it must read the
 execution layer's tasks and goals, which do not exist yet), and everything in PRD §12.7.

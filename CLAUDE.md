@@ -26,9 +26,11 @@ failure** — Stage 1's AC-2 hardcodes itqan as the green project and itqan stop
 DC7 correctly reports it stalled; the check is right and the fixture rotted, and the fix needs a
 decision (`docs/BACKLOG.md`). **Re-scoped 2026-08-15** to two layers (D18–D22) — `docs/PRD.md` §12.
 **Round-3 design closed 2026-08-18** — D23 (the shell), D24 (work is dispatched, never picked up),
-D25 (a DoD item carries the kind of evidence that closed it). Next build step: **Stage 3**, the
-execution MVP, gated on two owner decisions in its spec's §5.11 and §5.12; Stages 4 and 5 are
-specced behind it. Behaviour today: `docs/FEATURES.md`. **Counts, PR states and branch heads are
+D25 (a DoD item carries the kind of evidence that closed it) and D26 (the app shell splits out of
+Stage 3 as **Stage 3a** and is built first). Next build step: **Stage 3a, the shell** — ungated and
+buildable now, because it is portfolio-layer work against Stage 1 data. Stage 3, the execution MVP,
+follows and is gated on two owner decisions in its spec's §5.11 and §5.12; Stages 4 and 5 are
+specced behind that. Behaviour today: `docs/FEATURES.md`. **Counts, PR states and branch heads are
 deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state* block, once.
 
 ---
