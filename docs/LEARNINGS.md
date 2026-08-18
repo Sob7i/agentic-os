@@ -66,6 +66,29 @@ belongs in `docs/DECISIONS.md` instead.
   entry above, where the doc **asserted a number that was already known to be wrong**. The first
   costs a minute; the second costs the next session's judgement. **Worth keeping separate, because
   treating every stale line as a process failure is how a real process failure stops standing out.**
+- (2026-08-18) **Applying a good rule one instance at a time is how you keep re-finding it.**
+  *"Live facts must never be hardcoded in a document; compute them or omit them"* has been in this
+  file since 2026-07-27, and since then it has been applied to the PRD's reference table, then to
+  HANDOFF's board-state bullet, then to an acceptance test, then to two "19 passing" claims, then to
+  a PR-state claim that survived in **three places across two files**. Every application was
+  correct; every one was retail. **The rule was never given a mechanism** — a single place where
+  volatile facts live, so that "update the volatile facts" is one edit and one check instead of a
+  search. Fixed 2026-08-18 with `docs/HANDOFF.md`'s *Verified state* block and a `CLAUDE.md`
+  convention forbidding restatement elsewhere. **A lesson that keeps recurring is not a lesson
+  anyone forgot — it is a lesson with no mechanism attached.** *Postscript, same day:* the commit
+  that introduced the convention **violated it three times** — a suite count in `CLAUDE.md`'s
+  command table (self-caught), and a *"`pnpm verify` is RED"* status in `HANDOFF.md` plus a
+  *"has one known failure"* in `CLAUDE.md` (both caught by a reviewer). **A convention is not in
+  force over the change that introduces it** unless you re-read that change against it — writing the
+  rule feels like compliance, and it is not.
+- (2026-08-18) **Some facts cannot be written down at all, because writing them down changes
+  them.** The new *Verified state* block opened with `Open PRs | none`, which was true when
+  `gh pr list` returned `[]` and false twenty minutes later — falsified **by the pull request that
+  carried the block**. A PR reviewer caught it. Every future PR would do the same, so no amount of
+  care fixes it: the row can only ever name its command. **This is a third category** beside the
+  predicted and asserted staleness above — not a value that rots on someone else's schedule, but one
+  whose own recording is the event that invalidates it. Before writing a fact into a doc that ships
+  through review, ask whether shipping it is one of the things that could make it false.
 - (2026-07-26) A doc that references a sibling section by number (`"the brief for §6.1–6.4"`)
   goes stale the moment a section is added. Prefer naming the thing over numbering it, or
   accept that the pair must be re-read on every edit.

@@ -525,6 +525,17 @@ rounded up — this document does not get to claim a verification that has not r
 > back. Nothing was dropped, and the re-order has one reason: **the Overview cannot be built
 > before the thing half its rows will come from.**
 
+**Stage 3a — The app shell** *(split out of Stage 3 on 2026-08-18 by D26)*. Routing, the portfolio
+ribbon, the conditional drift band, the project rail, the watched-only project view, and the
+decomposition of `app/page.tsx` that they require. **Portfolio-layer only** — it reads `buildBoard()`
+and writes no execution-layer code, which is why it is not gated behind Stage 3's two owner
+decisions and can be built first.
+*Acceptance:* `pnpm verify` returns the **same result as before the slice** — the decomposition
+changes no behaviour; the ribbon and the Board render from **one** collector run, and a degraded run
+produces no confident glyphs; the drift band appears only for a drifted project while the ribbon
+still carries every project's severity; a watched-only project gets a complete screen with no
+execution tabs.
+
 **Stage 3 — The execution MVP: one thread, one project** (§12.4). Create a task, assign an agent,
 spawn a local session in an ephemeral worktree, watch its tool calls, answer its inbox question,
 see it commit and destroy itself. Per-session cost recorded. One project, opted in.

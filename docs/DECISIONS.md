@@ -497,9 +497,11 @@ note are adopted unchanged **except position 1** (architecture), which this deci
 
 **Decision:** Three parts, all load-bearing for the execution layer.
 
-1. **No agent chooses its work.** Every `Task` names exactly one agent; a task with none uses the
-   project's default. There is no scanner, no poller, and no queue-worker that looks for `todo`
-   cards and starts them. **Nothing runs unless something explicitly asks for it by task id.**
+1. **No agent chooses its work.** Every `Task` carries its agent in `assigneeAgentId`, written
+   **when the task is created** — `Project.defaultAgentId` is applied there, never at dispatch, so a
+   `null` assignee reaching `dispatch` means deliberately human-only work and is refused (spec
+   §7.1, §7.3). There is no scanner, no poller, and no queue-worker that looks for `todo` cards and
+   starts them. **Nothing runs unless something explicitly asks for it by task id.**
 2. **One funnel.** A single `dispatch(taskId, trigger)` is the only path in the system that may
    create a `Session`. Run-now (Stage 3), chain steps (Stage 4), cron and webhooks (deferred, →
    `docs/BACKLOG.md`) are **callers of that function**, not mechanisms of their own.
@@ -534,3 +536,93 @@ either layer could answer.
 asserts it (spec §7, AC-14…AC-18). `Session` gains `triggerKind`, `driftAtSpawnJson`, `pid`
 and `bootId`. A goal-level pre-flight that *does* block is still open for Stage 5 (PRD §12.6) and is
 not pre-empted by this decision.
+
+## D25 — A Definition of Done item carries the *kind* of evidence that closed it (2026-08-18)
+
+**Amends the round-3 design** (frame `G1` in [`design/wireframes2.pen`](../design/wireframes2.pen)),
+and applies D22's provenance ladder to the execution layer's own completion signal.
+
+**Decision:** `DoDItem` gains a `verification` field with three values, and the UI renders each
+differently:
+
+| `verification` | What actually happened | Renders as |
+|---|---|---|
+| `command` | a declared `verificationCmd` ran in the worktree and exited 0 | **`✓ verified`**, naming the command and when it ran |
+| `judged` | the orchestrator's model call read the progress log and concluded it | **`◆ derived`** — *"the orchestrator's reading"* — with the session id |
+| `human` | a person ticked it | quoted italic, naming them |
+
+A goal's completion banner states the split — *"3 of 5 verified by command, 2 by the orchestrator's
+reading"* — so a goal that declared itself finished looks different from one that was checked.
+
+**Rationale.** AgentOS-spec §11 has the orchestrator *"mark DoD checkboxes that are satisfied"*, and
+frame `G1` draws a met item with `▶ s_8f21c4 · b71f04d` beside it. In this product `▶ executed`
+means *a session produced this and here is the commit that proves it* (D22). **It does not prove
+it.** The session produced the work; the judgement that the work satisfies the item is a model
+reading a log. Rendering a model's reading with the glyph reserved for verified execution is the
+claim-as-fact collapse invariant 3 exists to prevent — committed by this product, on the one screen
+that decides whether to keep spending money.
+
+The fix is cheap because the vocabulary already exists. D22 built a four-level ladder precisely so
+that things of different evidentiary weight could stop looking alike; a DoD item is simply the first
+place inside the execution layer where two of those levels collide. **`~ suspect` is deliberately
+not used** — a judged item is not doubtful, it is *derived*, and reserving `suspect` for the Board's
+drift state keeps its meaning sharp.
+
+**The second-order effect is the valuable one.** Because a `verificationCmd` upgrades an item from
+`judged` to `verified`, writing a DoD becomes an exercise in asking *"how would I know?"* —
+*"covered by an integration test"* becomes `pnpm test path/to/spec`, and completion becomes a fact.
+Items that genuinely cannot be commanded (*"the key is never written to a log"*) stay `judged` and
+say so. **The design pressure points the right way**, which a single boolean `met` could never do.
+
+**Consequence:** the schema in `docs/specs/stage-5-goals.spec.md` §3.1 carries `verification`,
+`verificationCmd`, `metBySessionId`, `metSha` and `evidenceNote`; AC-5 asserts that a failing
+command keeps an item unmet **even when the model says it is met**; and frame `G1` is superseded in
+this one respect. It cannot be retrofitted after the goal UI is built, which is why it is closed
+now rather than during Stage 5.
+
+## D26 — The shell is split out of Stage 3 and built first, as Stage 3a (2026-08-18)
+
+**Amends the build order in `docs/PRD.md` §10**, which is gated, so moving work across a gate is a
+decision rather than a scheduling preference.
+
+**Decision:** the app shell — routing, the portfolio ribbon, the drift band, the project rail, and
+the decomposition of `app/page.tsx` that they require — is removed from Stage 3's build-note item 7
+and becomes **Stage 3a**, built **before** Stage 3's internals. Stage 3 keeps the Tasks board, the
+session view and the inbox, which are the parts that need an execution layer to exist.
+
+**Rationale — four reasons, in the order they convinced.**
+
+1. **The shell is portfolio-layer work, and it is not gated.** Stage 3 is blocked on two owner
+   decisions (§5.11, §5.12) about which repo an agent may touch and whether it may commit. The
+   shell touches neither: it renders the six projects the Board already renders, from
+   `buildBoard()`, which shipped in Stage 1. **Work that is ready should not sit behind a gate that
+   does not apply to it.**
+2. **It is the cheapest available test of D23.** D23 chose Concept B′ against the design agent's own
+   recommendation, and the recorded weakness of B′ is precisely a space constraint — *"horizontal
+   space forces the six names to compete with the ribbon's own controls, and severity has to survive
+   at 11px."* That is answered by building it with the six real project names, not by discussion.
+   Doing it **before** five surfaces mount inside the shell means the fallback (Concept C) is a
+   layout change over shared components rather than a rewrite.
+3. **There is no foundation today, and the second page would invent one badly.** The app is one
+   route, a fifteen-line root layout that only renders `<body>`, and a **448-line `app/page.tsx`**
+   holding the Board, the fix-proposal UI and the roster together, over 539 lines of global
+   `board.css`. Tasks, Goals, Sessions, Inbox and Costs would each arrive with their own answer to
+   the same questions. **The conventions are cheapest to set while there is one consumer.**
+4. **It ships two complete screens with real data.** The portfolio home, and a watched-only project
+   view — four of the six watched projects have no execution layer, so frame `C3` is fully
+   buildable today. This is not a frame around nothing.
+
+**Why this is a split rather than a new stage.** None of PRD §10's Stage 3 acceptance criteria
+concern navigation, and none of the shell's concerns are execution-layer. Stage 3's criteria are
+unchanged and it still cannot be called done without them.
+
+**The risk accepted:** building a container before its main occupant, so the Kanban's real width
+demand is inferred from the design rather than measured. Mitigated by §5.4 of the shell spec — the
+pane is given no maximum width and the Tasks board is the first thing built after it, so the
+measurement arrives one slice later rather than never. **If the ribbon does not fit, D23 named the
+fallback in advance**, which is the reason it was designed.
+
+**Consequence:** `docs/specs/stage-3a-shell.spec.md`; PRD §10 gains Stage 3a; Stage 3's build note 7
+narrows to the surfaces that need an execution layer. `pnpm verify` must be **unchanged** by the
+decomposition — that is the shell spec's AC-1, and it is what makes refactoring a 448-line file
+covered by eleven acceptance checks a safe move rather than a brave one.

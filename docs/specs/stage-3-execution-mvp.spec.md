@@ -238,7 +238,7 @@ Agent(id, projectId, name, monogram, model, rolePrompt,          -- JSON columns
       allowedTools, disallowedTools, canCommit, maxTurns, maxBudgetUsd)
 Task(id, projectId, name, description, status, blockedReason,
      approvalGate, assigneeAgentId, scheduleKind, createdAt)     -- scheduleKind: 'manual' in Stage 3
-TaskEvent(id, taskId, from, to, actorType, actorId, reason, atISO)
+TaskEvent(id, taskId, fromStatus, toStatus, actorType, actorId, reason, atISO)
                                                                  -- actorType: 'session' | 'human' | 'system'
 Session(id, taskId, agentId, sdkSessionId, status, triggerKind,
         worktreePath, baseRef, costUsd, pid, bootId,
@@ -412,8 +412,10 @@ Order matters; the risk is concentrated in the first three.
    file in the slice: it is the only door to a session (AC-14), it owns the five preconditions, and
    it is where D24's drift record is written. Write AC-14…AC-19 with it.
 6. **`scripts/verify-stage3.mts`** — AC-1…AC-19 against fixtures, before any UI.
-7. **UI last**: the `B′2` shell (D23), then `/p/<slug>/tasks` per §8, then the session view with its
-   tool-call log, then the inbox.
+7. **UI last**: `/p/<slug>/tasks` per §8, then the session view with its tool-call log, then the
+   inbox. **The shell is no longer built here** — D26 split it out as
+   [`stage-3a-shell.spec.md`](stage-3a-shell.spec.md), which is ungated and goes first, so these
+   surfaces mount into routing and chrome that already exist.
 
 **Reuse rather than re-derive:** `lib/collectors/git.ts` for repo facts, `lib/collectors/exec.ts`
 for subprocess plumbing, and the `app/actions.ts` pattern where the server rebuilds the request
@@ -464,7 +466,7 @@ algorithm. A reader who assumes Stage 3 has it will look for code that is not th
 // lib/agentos/dispatch.ts — the ONLY function in the system that may create a Session
 dispatch(taskId: string, trigger: TriggerKind): Promise<DispatchResult>
 
-type TriggerKind = 'manual' | 'chain' | 'cron' | 'webhook'
+type TriggerKind = 'manual' | 'chain' | 'goal' | 'cron' | 'webhook'
 type DispatchResult =
   | { started: true;  sessionId: string }
   | { started: false; refusedBy: Precondition; reason: string }
@@ -477,8 +479,15 @@ function**, not future mechanisms:
 |---|---|---|
 | `manual` | the *Run now* control on a card | **3** |
 | `chain` | the `done` transition handler, when step N+1 exists | 4 |
+| `goal` | the goal orchestrator choosing the next specialist | 5 |
 | `cron` | a scheduler tick | deferred → `docs/BACKLOG.md` |
 | `webhook` | the trigger receiver | deferred → `docs/BACKLOG.md` |
+
+**Each caller gets its own kind, even when the code path is identical.** `goal` and `chain` both
+advance work without a human, and it would be tempting to let goals reuse `chain`. They are kept
+apart because `triggerKind` exists to record **what asked for this run** — a chain step was decided
+in advance by a template a human instantiated, a goal step was chosen by a model mid-loop, and a
+session record that cannot tell those apart has lost the distinction the funnel was built to keep.
 
 The value of deciding this now is that cron — the first caller that can start work while nobody is
 watching — inherits §7.3's preconditions and §7.5's drift record **by construction**, instead of

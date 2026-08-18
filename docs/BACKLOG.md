@@ -148,6 +148,41 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   resolved and whose chip lies about it — which is this product's own subject matter appearing on
   its own board, so it should be caught early.
 
+### From the staleness fix (2026-08-18)
+
+- **`pnpm verify:docs` — make a stale claim fail the suite.** The *Verified state* block
+  (`docs/HANDOFF.md`) reduces the surface to one place; it does not detect when that one place is
+  wrong. A small `scripts/verify-docs.mts` in `pnpm verify` would close it with two rules, both
+  cheap and both precise: **(1)** every `#N` a doc describes as *open* is open per `gh pr view`;
+  **(2)** every `N of M` suite claim matches what the suites actually report. **It must check, never
+  rewrite** — a script that silently refreshes a doc is an auto-fix, and invariant 4 forbids those
+  even when the target is our own repo. One caveat found while scoping it: **CI cannot run Stage 1's
+  suite**, which reads the real watched repos and would find none; a hook or a local `verify` is the
+  only place this can run. Unblocked by: the *Verified state* block itself going stale once — at
+  which point the block was necessary but insufficient, and this is the missing half.
+- **DC9 — a state document asserts a PR state that GitHub contradicts.** The real fix, and it is
+  product scope rather than housekeeping. DC1 already checks the *frontier* claim (*"PRs #1 through
+  #22 merged"*); DC9 would check **individual** PR-state claims (*"PR #6 is still open"*, *"not yet
+  merged"*), which is the exact drift that bit this repo — and it generalises to every watched
+  project rather than only to us. Same collector, same card, same confidence rendering; DC1's
+  extraction guards (negation traps, `unmerged`) apply and would need extending. **Eating our own
+  dog food is the argument**: the Board would have caught this on its own, on the surface the owner
+  already opens. Unblocked by: Stage 3 shipping — DC9 is small, but adding a check now competes with
+  the execution layer for the same attention, and the *Verified state* block holds the line meanwhile.
+
+### From the shell inventory (2026-08-18)
+
+- **`app/board.css` and CSS Modules will coexist indefinitely.** Stage 3a §5.2 leaves the Board's
+  539-line global stylesheet alone and gives new surfaces CSS Modules, because rewriting working,
+  dark-mode-verified CSS to prove a convention risks AC-1 for no behavioural gain. The cost is two
+  styling idioms in one app, sharing tokens from `globals.css`. Unblocked by: the Board needing a
+  real visual change anyway — convert it then, when the risk is already being taken.
+- **`app/page.tsx` keeps its data-fetching shape after the component extraction.** Stage 3a moves
+  `Row`, `FixSection` and `AckForm` out but deliberately does not touch the server action or the
+  fix path (§5.3), so the page still both fetches and composes. Fine at one route. Unblocked by: a
+  second surface needing the same data with a different composition — which is when the split earns
+  itself rather than being asserted.
+
 ### Product / design
 
 - **Propose structured claim markers upstream to itqan** — D5 chose prose heuristics so the tool
