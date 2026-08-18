@@ -1,10 +1,10 @@
 /**
- * The `inbox` MCP server — spec §3.3's table: `inbox.ask` only. `inbox.send` is deliberately
+ * The `inbox` MCP server — spec §3.3's table: `inbox_ask` only. `inbox.send` is deliberately
  * absent (§5 decision 8): a tool that cannot be misused beats an instruction not to misuse it, and
  * AgentOS-spec §8's foundational prompt already says not to message for routine progress —
- * `task.append_activity` is where that goes instead.
+ * `task_append_activity` is where that goes instead.
  *
- * **Design B, not the obvious one (§3.5).** `inbox.ask` records the question and returns
+ * **Design B, not the obvious one (§3.5).** `inbox_ask` records the question and returns
  * immediately, ending the turn — it does **not** hold a promise open until a human answers.
  * Blocking inside the handler is less code and is wrong: it holds a live subprocess and an
  * unresolved promise for as long as the human takes, which can be overnight; it does not survive a
@@ -19,7 +19,7 @@ import { z } from "zod";
 import { createSdkMcpServer, tool, type McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import { createInboxMessage, updateSession } from "../db";
 import type { SessionCtx } from "./context";
-import { INBOX_ASK, INBOX_SERVER } from "./names";
+import { INBOX_ASK, INBOX_SERVER, TASK_APPEND_ACTIVITY } from "./names";
 
 /**
  * §3.5 / §5.9: the conversation resumes on answer, but the filesystem does not — the worktree is
@@ -34,7 +34,7 @@ const INBOX_ASK_DESCRIPTION =
   "CRITICAL: commit any work-in-progress before calling this tool. The worktree you are running in " +
   "is deleted the moment this call returns, and a fresh one is created from the same base ref when " +
   "the human's answer resumes the session — uncommitted changes do not survive the pause. Do not " +
-  "use this for routine progress updates; use task.append_activity for those instead.";
+  `use this for routine progress updates; use ${TASK_APPEND_ACTIVITY} for those instead.`;
 
 export function createInboxAskTool(ctx: SessionCtx) {
   return tool(

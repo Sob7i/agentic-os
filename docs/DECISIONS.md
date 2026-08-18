@@ -686,3 +686,38 @@ clear one. Nothing in the repo declared `engines` before this.
 **Consequence:** `docs/BACKLOG.md` carries the swap condition — if the experimental API moves under
 us twice, or a second machine on an older Node needs to run this, `better-sqlite3` behind the same
 accessors is a contained change.
+
+## D29 — MCP tool names use underscores, not dots (2026-08-18)
+
+**Decision:** the four in-process MCP tools are named **`task_read`, `task_update_status`,
+`task_append_activity`, `inbox_ask`** — not the dotted form
+(`task.read`, `inbox.ask`, …) that `stage-3-execution-mvp.spec.md` §3.3 carried from the day it was
+written until T4 was built against it.
+
+**Why the dotted names were wrong.** They register perfectly well at the MCP protocol layer —
+confirmed empirically while building T4: the server's `_registeredTools` map keeps the dot verbatim,
+and nothing rejects it. But the Anthropic Messages API's own tool-definition `name` field is
+documented as `^[a-zA-Z0-9_-]{1,64}$`, which excludes the dot, and nothing in the installed
+`@anthropic-ai/claude-agent-sdk@0.3.233` was found to rewrite the **tool** half of the
+`mcp__<server>__<tool>` pair before it reaches that API. The SDK normalizes *server* names
+(`sdk.d.ts:3763`); the tool name it passes through.
+
+**Why this was invisible, which is the part worth remembering.** §3.3's closed decision has AC-4 and
+AC-5 call the tool handler and `canUseTool` **directly**, deliberately — it is the only way to prove
+that the handler refuses *regardless of what let the call through* (§3.4). The consequence is that
+**no check in `pnpm verify` crosses the model API boundary at all**, so the one place this
+constraint is enforced is the one place the suite never reaches. The first thing to hit it would
+have been AC-12, the single opt-in real session — which is precisely the role §4 assigns AC-12
+("the only proof the other eighteen are testing something real"), arriving one ticket too late to be
+cheap.
+
+**Rejected: rely on the SDK sanitizing it.** It may well do so somewhere the grep missed. But
+`external-API-fields-are-guilty-until-verified` is a standing rule, and the alternative — a rename
+that costs four string constants and is unambiguously valid under both charsets — has no downside
+to trade against an unverified assumption. The qualified names stay far inside the 64-character
+limit (`mcp__agentos__task_append_activity` is 34).
+
+**Consequence:** `AC-5b` asserts the charset structurally, over every name in
+`lib/agentos/mcp/names.ts` and its qualified form, so the suite now catches this class without a
+real dispatch. Verified by reverting one name to the dotted form and watching it fail. `names.ts`
+is the wire-name authority; prose in the specs still uses dots where it describes the concept.

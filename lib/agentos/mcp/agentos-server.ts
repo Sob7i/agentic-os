@@ -1,6 +1,6 @@
 /**
- * The `agentos` MCP server — spec §3.3's table: `task.read`, `task.update_status`,
- * `task.append_activity`. In-process (`createSdkMcpServer`), constructed per session, closing over
+ * The `agentos` MCP server — spec §3.3's table: `task_read`, `task_update_status`,
+ * `task_append_activity` (D29 renamed them from the spec's dotted form — see `names.ts`). In-process (`createSdkMcpServer`), constructed per session, closing over
  * that session's `taskId` — no tool here takes a task id parameter, so the agent has no way to name
  * a *different* task to act on (§3.3, §7.1's guard-derives-its-own-bounds lesson applied a layer
  * up).
@@ -16,12 +16,12 @@ import { getTask, updateSession, writeTaskTransition } from "../db";
 import type { TaskStatus } from "../types";
 import { gateRefusalReason } from "./gate";
 import type { SessionCtx } from "./context";
-import { AGENTOS_SERVER, TASK_APPEND_ACTIVITY, TASK_READ, TASK_UPDATE_STATUS } from "./names";
+import { AGENTOS_SERVER, INBOX_ASK, TASK_APPEND_ACTIVITY, TASK_READ, TASK_UPDATE_STATUS } from "./names";
 
 const TASK_STATUSES: [TaskStatus, ...TaskStatus[]] = ["todo", "doing", "review", "done"];
 
 // ---------------------------------------------------------------------------
-// task.read
+// task_read
 // ---------------------------------------------------------------------------
 
 export function createTaskReadTool(ctx: SessionCtx) {
@@ -59,7 +59,7 @@ export function createTaskReadTool(ctx: SessionCtx) {
 }
 
 // ---------------------------------------------------------------------------
-// task.update_status — where spec §3.4's gate lives (layer 2)
+// task_update_status — where spec §3.4's gate lives (layer 2)
 // ---------------------------------------------------------------------------
 
 export function createTaskUpdateStatusTool(ctx: SessionCtx) {
@@ -116,7 +116,7 @@ export function createTaskUpdateStatusTool(ctx: SessionCtx) {
 }
 
 // ---------------------------------------------------------------------------
-// task.append_activity — no table of its own (spec §8.6 forbids an activity feed). Every tool
+// task_append_activity — no table of its own (spec §8.6 forbids an activity feed). Every tool
 // call already becomes a ToolCall row (AC-3), written by the caller from onMessage, so the
 // tool-call log *is* the record here: this handler validates its input and acknowledges without
 // a write of its own.
@@ -126,8 +126,8 @@ export function createTaskAppendActivityTool(ctx: SessionCtx) {
   return tool(
     TASK_APPEND_ACTIVITY,
     "Log a short progress note for this task. This is for routine progress only — it does not " +
-      "notify a human and nothing reads it back to you. Use inbox.ask instead if you actually need " +
-      "a human's input to continue.",
+      `notify a human and nothing reads it back to you. Use ${INBOX_ASK} instead if you actually ` +
+      "need a human's input to continue.",
     { note: z.string() },
     async (args) => {
       return {

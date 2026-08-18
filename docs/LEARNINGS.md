@@ -197,6 +197,18 @@ belongs in `docs/DECISIONS.md` instead.
   `.mjs` extension or an ESM package. Its report rows are `[name, state, detail]` where `state`
   is `true`/`false`/`"pass"`/`"floor"`/`"fail"` — not a plain string.
 
+- (2026-08-18) **A tool name that satisfies MCP's registration is not the same claim as satisfying
+  the model API's charset — and only one of those two boundaries the suite can reach.** The Stage 3
+  spec named its MCP tools `task.read`, `inbox.ask` and so on. Dots register fine at the MCP layer
+  (verified: the server keeps them verbatim), but the Messages API's tool-name field is
+  `^[a-zA-Z0-9_-]{1,64}$`. The trap is the *reason it stayed invisible*: §3.3 deliberately has the
+  acceptance checks call the handler and `canUseTool` **directly**, because that is the only way to
+  prove the handler refuses independently — with the consequence that **no check in the suite
+  crosses the model API boundary at all**, so the one place the constraint is enforced is the one
+  place nothing looks. It would have surfaced at the first real dispatch. **When a test seam is
+  chosen to bypass a boundary, write down what that boundary was still validating** — and assert it
+  structurally instead (`AC-5b`). Closed as D29.
+
 ## Tooling
 
 - (2026-07-27) **`.pen` files (Pencil) are plain UTF-8 JSON** — readable directly with any JSON
@@ -212,6 +224,17 @@ belongs in `docs/DECISIONS.md` instead.
   was its step 2 — *sketch the seams you will test at; prefer existing seams; the ideal number is
   one* — which our spec template has no slot for even though Stage 3 does it implicitly (the
   injectable `Runner`). **Evaluate a skill by what it does at the end, not by its template.**
+
+- (2026-08-18) **Every sub-agent worktree was provisioned onto a base predating the entire build,
+  and the cause was structural, not luck.** Four agents in a row started at `3ea05a0`. The isolated
+  worktree option branches from **`origin/main`**, and this project's workflow says `main` receives
+  only `develop`, only from the owner — so while `main` lags, *every* auto-provisioned agent starts
+  before Stage 1 exists. Three earlier agents built against it anyway; the fourth stopped because
+  its brief told it to check the sha first. **Fix: create the worktree by hand from `develop` and
+  hand the agent the path**, and give the brief a second, cheaper base check than a sha comparison
+  (`ls lib/agentos/` — a missing directory is a faster tell than a matching hash). A base check in
+  the brief is worth more than it looks: it is the only thing that turned a silent wrong build into
+  a two-minute correction.
 
 ## Workflow
 

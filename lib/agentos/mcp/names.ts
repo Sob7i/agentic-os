@@ -14,16 +14,17 @@
  * constant rather than each hardcoding the string — a test that builds its own qualified name
  * proves nothing about whether the gate's own idea of that name agrees with it.
  *
- * **A load-bearing caveat this file does not resolve — see the T4 report.** The Anthropic Messages
- * API's own tool-definition `name` field is documented (platform.claude.com, fetched during this
- * build) as `^[a-zA-Z0-9_-]{1,64}$` — no dot. The spec names these tools with dots (`task.read`,
- * `task.update_status`, `task.append_activity`, `inbox.ask`), and nothing in the installed SDK
- * rewrites a dotted tool name before it would reach that API. This file keeps the spec's literal
- * names because renaming a spec-named surface is not this ticket's call to make (T4 brief §2b) —
- * it registers correctly at the MCP-protocol layer (confirmed empirically: `_registeredTools` keeps
- * the dot verbatim) and every check `pnpm verify:stage3` runs calls the handler and the callback
- * directly, per §3.3's closed decision, so it never crosses the API boundary where the character
- * set is enforced. A **real** dispatch (`LocalRunner`, AC-12) would be the first thing to hit it.
+ * **Why these names use underscores and the spec's tables say dots (D29, 2026-08-18).** The spec
+ * named these tools `task.read`, `task.update_status`, `task.append_activity` and `inbox.ask`.
+ * Dots register fine at the MCP-protocol layer — confirmed empirically during T4: the server's
+ * `_registeredTools` keeps the dot verbatim — but the Anthropic Messages API's own tool-definition
+ * `name` field is documented as `^[a-zA-Z0-9_-]{1,64}$`, which excludes the dot, and nothing in the
+ * installed SDK was found to rewrite the **tool** half of the pair before it reaches that API.
+ * Because §3.3's closed decision has AC-4 and AC-5 call the handler and `canUseTool` **directly**,
+ * no check in `pnpm verify` ever crosses that boundary — the first thing to hit it would have been
+ * a real dispatch (AC-12). Renamed rather than relying on a sanitization step no one has verified
+ * exists: `external-API-fields-are-guilty-until-verified`. The qualified names stay well inside the
+ * 64-character limit (`mcp__agentos__task_append_activity` is 34).
  */
 
 /** The two in-process MCP servers this ticket builds (spec §3.3's table). */
@@ -31,12 +32,12 @@ export const AGENTOS_SERVER = "agentos";
 export const INBOX_SERVER = "inbox";
 
 /** `agentos` server's tools. */
-export const TASK_READ = "task.read";
-export const TASK_UPDATE_STATUS = "task.update_status";
-export const TASK_APPEND_ACTIVITY = "task.append_activity";
+export const TASK_READ = "task_read";
+export const TASK_UPDATE_STATUS = "task_update_status";
+export const TASK_APPEND_ACTIVITY = "task_append_activity";
 
 /** `inbox` server's only tool. `inbox.send` is deliberately absent (spec §5 decision 8). */
-export const INBOX_ASK = "inbox.ask";
+export const INBOX_ASK = "inbox_ask";
 
 /**
  * Builds the fully-qualified wire name `canUseTool` actually receives: `mcp__<server>__<tool>`.

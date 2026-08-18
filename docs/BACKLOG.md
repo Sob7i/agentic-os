@@ -10,6 +10,17 @@ and things explicitly punted with a reason.
 
 ## Open
 
+- **Fast-forward `main` to `develop`, or stop provisioning sub-agents from it** *(added
+  2026-08-18)*. `origin/main` sits at `3ea05a0` — the PRD/design-brief commit, before Stage 1 —
+  because the workflow says `main` receives only `develop` and only from the owner. The isolated
+  worktree option branches from `origin/main`, so **every auto-provisioned sub-agent starts before
+  the execution layer exists**; it happened four times, and three of those agents built against it
+  before anyone noticed. The current mitigation is to create the worktree by hand from `develop`
+  and hand the agent the path, which works but has to be remembered every time.
+  **Unblock condition:** the owner merges `develop` into `main` (an owner-only gate, and a real
+  release decision — not a housekeeping chore, which is why it is here rather than done). Until
+  then, the hand-made worktree stands and `CLAUDE.md` §Git carries the rule.
+
 ### From the itqan install (2026-07-27)
 
 - **CHANGELOG.md + release ritual** — deferred at install (interview Q2/Q6): no versions, no

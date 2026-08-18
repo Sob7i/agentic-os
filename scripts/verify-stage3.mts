@@ -35,7 +35,15 @@ import {
 } from "../lib/agentos/db";
 import { createApprovalGate } from "../lib/agentos/mcp/gate";
 import { createTaskUpdateStatusTool } from "../lib/agentos/mcp/agentos-server";
-import { AGENTOS_SERVER, TASK_UPDATE_STATUS, qualify } from "../lib/agentos/mcp/names";
+import {
+  AGENTOS_SERVER,
+  INBOX_ASK,
+  INBOX_SERVER,
+  TASK_APPEND_ACTIVITY,
+  TASK_READ,
+  TASK_UPDATE_STATUS,
+  qualify,
+} from "../lib/agentos/mcp/names";
 
 let failures = 0;
 const pass = (id: string, msg: string) => console.log(`  PASS  ${id} — ${msg}`);
@@ -198,7 +206,7 @@ function makeDbFixture(approvalGate: boolean) {
   const task = createTask(db, {
     projectId: project.id,
     name: "fixture task",
-    description: "exercises task.update_status",
+    description: "exercises task_update_status",
     approvalGate,
     assigneeAgentId: agent.id,
   });
@@ -222,7 +230,7 @@ function makeDbFixture(approvalGate: boolean) {
   return { db, project, agent, task, session };
 }
 
-// ── AC-4 · a scripted task.update_status("review") moves the card and records the actor ────
+// ── AC-4 · a scripted task_update_status("review") moves the card and records the actor ────
 {
   const { db, task, session } = makeDbFixture(false);
   const ctx = { db, sessionId: session.id, taskId: task.id };
@@ -246,7 +254,7 @@ function makeDbFixture(approvalGate: boolean) {
       `TaskEvent did not record the session as actor: actorType=${lastEvent.actorType} actorId=${lastEvent.actorId}`,
     );
   } else {
-    pass("AC-4", `task.update_status("review") moved the card and recorded session ${session.id.slice(0, 8)} as actor`);
+    pass("AC-4", `task_update_status("review") moved the card and recorded session ${session.id.slice(0, 8)} as actor`);
   }
   db.close();
 }
@@ -333,9 +341,40 @@ function makeDbFixture(approvalGate: boolean) {
   db.close();
 }
 
+// ── AC-5b · every tool name survives the Messages API's own charset (D29) ──────────────────
+// Structural, and deliberately so. §3.3's closed decision has AC-4 and AC-5 call the handler and
+// canUseTool DIRECTLY, so no check in this suite ever crosses the model API boundary — which is
+// the one place a tool name's character set is enforced (`^[a-zA-Z0-9_-]{1,64}$`, and no dot).
+// The spec's original dotted names registered fine at the MCP layer and would have failed at the
+// first real dispatch (AC-12), invisibly until then. This asserts the charset here instead.
+{
+  const API_TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
+  const tools: Array<[string, string]> = [
+    [AGENTOS_SERVER, TASK_READ],
+    [AGENTOS_SERVER, TASK_UPDATE_STATUS],
+    [AGENTOS_SERVER, TASK_APPEND_ACTIVITY],
+    [INBOX_SERVER, INBOX_ASK],
+  ];
+  const bad = tools.flatMap(([server, toolName]) => {
+    const qualified = qualify(server, toolName);
+    const offenders: string[] = [];
+    if (!API_TOOL_NAME.test(toolName)) offenders.push(toolName);
+    if (!API_TOOL_NAME.test(qualified)) offenders.push(qualified);
+    return offenders;
+  });
+
+  if (bad.length > 0) {
+    fail("AC-5b", `tool names the Messages API would reject: ${bad.join(", ")}`);
+  } else {
+    pass("AC-5b", `all ${tools.length} tool names and their qualified forms match the API charset (longest: ${
+      Math.max(...tools.map(([s2, t]) => qualify(s2, t).length))
+    } chars)`);
+  }
+}
+
 console.log(
   failures === 0
-    ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5).\n"
+    ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b).\n"
     : `\n${failures} FAILING.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);
