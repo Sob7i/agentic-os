@@ -438,3 +438,99 @@ project, the Kanban already answers the question with better data.
 unchanged — arranged by band, with a dedicated "blocked on you" spotlight above the columns; what
 changes is where the rows come from and that a fourth provenance level must be designed.
 `~ suspect` keeps its rule: sourced from the Board's drift state, never re-derived.
+
+## D23 — The shell is a mode switch with a persistent portfolio ribbon (2026-08-18)
+
+**Closes round-3 design.** Chooses between the four architectures in
+[`docs/DESIGN-BRIEF-EXECUTION.md`](DESIGN-BRIEF-EXECUTION.md) §4.2, answered by
+[`design/wireframes2.pen`](../design/wireframes2.pen).
+
+**Decision:** **Concept B′ — the mode switch** (frames `B′1`, `B′2`), not the design's own
+recommendation of Concept C. Inside a project the shell is three stacked pieces:
+
+| Piece | Present | Carries |
+|---|---|---|
+| **Portfolio ribbon**, 40px | **always** | all six projects as glyph + name, the Board's own freshness timestamp, `← All projects` (`⌘1`) |
+| **Project drift band** | **only when *this* project is in drift** | the drift sentence verbatim from the Board's check, and `open on Board` |
+| Project rail + pane | always | `Tasks · Goals · Inbox · Sessions · Costs`, and `configuration` for everything else |
+
+**Rationale — why B′ over C.** The design agent recommended C (a persistent 268px spine) and its
+argument is good: the portfolio becomes peripheral vision rather than a destination. It is
+rejected on the surface it costs the most. The Kanban is the screen this product will be used in
+for hours, it carries four columns of cards that already stack a title, a claim line, an agent, a
+schedule chip and an evidence line, and C spends 268px of that width permanently to keep five
+projects visible that the owner is, by construction, not working on. B′'s own rationale note
+concedes the fallback explicitly: *"B′ is the right answer if the Kanban proves cramped in build."*
+We are deciding before the build rather than after, which is cheaper and reversible — the two
+concepts share every component and differ only in where the portfolio list is mounted.
+
+**What we accept by choosing it:** switching projects costs two actions rather than one, and
+entering a project is a real visual swap rather than a pane change. Both are stated in B′'s
+rationale as its sacrifices, and both are accepted.
+
+**The ribbon is always present — the amendment.** The owner's instruction was *"the ribbon is
+important at a project view level only when the project itself has drifted."* That instruction is
+adopted for **the drift band** and rejected for **the ribbon**, because the two were one object in
+the wireframe and are two different things:
+
+- **A conditional ribbon makes its own absence a claim.** No ribbon would mean *"nothing here has
+  drifted"* — a fact, asserted, with nothing stating when it was checked. That is invariant 2, and
+  the Board already refuses exactly this shape: *"Distinguishes 'nothing to check' from 'checked
+  and fine'"* is a shipped Stage 1 behaviour ([`docs/FEATURES.md`](FEATURES.md)). A silent
+  execution layer would be indistinguishable from an execution layer whose collectors had failed.
+- **The ribbon is the only thing that makes B′ survivable.** B′ beats plain B solely because the
+  portfolio does not vanish on entry. A ribbon that appears only on drift deletes that property
+  and reduces B′ to the concept the design brief already ruled out.
+- **The intent behind the instruction is correct and is honoured** — nothing about the portfolio
+  should shout while you work. It is honoured by weight, not by absence: the ribbon is glyph +
+  name only, no counts, no sentences, no deltas (the resolution B′ and C share), and the loud
+  object — the drift band, in words, in `$drift` — appears **only when this project is the one in
+  drift**, which is what was asked for.
+
+**Consequence:** frame `B′2` is the shell to build, with the ribbon and the drift band separated
+into two rows. `C1`–`C5` become reference for everything that is *not* the shell — the provenance
+ladder (`C5`), the running treatment, and the agent monograms are unaffected by this choice and
+are adopted as drawn. The ten positions in the design's *"Positions on the ten open questions"*
+note are adopted unchanged **except position 1** (architecture), which this decision overrides.
+
+## D24 — Work is dispatched, never picked up (2026-08-18)
+
+**Decision:** Three parts, all load-bearing for the execution layer.
+
+1. **No agent chooses its work.** Every `Task` names exactly one agent; a task with none uses the
+   project's default. There is no scanner, no poller, and no queue-worker that looks for `todo`
+   cards and starts them. **Nothing runs unless something explicitly asks for it by task id.**
+2. **One funnel.** A single `dispatch(taskId, trigger)` is the only path in the system that may
+   create a `Session`. Run-now (Stage 3), chain steps (Stage 4), cron and webhooks (deferred, →
+   `docs/BACKLOG.md`) are **callers of that function**, not mechanisms of their own.
+3. **Every session records the project's drift state at spawn**, as evidence on the session row —
+   the claim, the check that produced it, and when it was checked. Recorded, not blocked.
+
+**Rationale.** (1) and (2) are one argument. AgentOS-spec §9.4 describes the opposite —
+*"completing step N enqueues step N+1 (`todo` → runner picks it up)"* — a durable job queue with a
+worker, and §3.4 suggests pg-boss or Inngest for it. That is the right shape for a hosted product
+with webhooks firing 600 times. It is the wrong shape here, for a reason specific to this
+product: **a process that scans for work and starts it is the exact failure PRD §12.1 says we are
+building the portfolio layer to catch** — hours and real money spent against a premise nobody
+re-read. A queue makes that failure autonomous and repeatable; explicit dispatch keeps a namable
+cause behind every session. It is also less code, has no daemon, and survives a `pnpm dev`
+restart without a scheduler to recover.
+
+The cost is real and accepted: **nothing happens while you are asleep** until cron exists, and
+cron will then be the first caller that can start work unattended. When it arrives it inherits the
+preconditions and the drift record rather than getting a second path — which is the whole point of
+the funnel, and why it is decided now rather than when the second caller appears.
+
+(3) is the differentiator made concrete. The portfolio layer's finding — *this document contradicts
+git* — is worth most at the moment work **starts**, and an execution layer that runs a task without
+recording what its project claimed at that instant throws that away. This is deliberately **a
+record, not a rail**: blocking dispatch on drift would make the most common state of a real
+project (`⚠`, for twelve days) into a modal people learn to dismiss, and the design's position 7
+already rejects that shape for the goal pre-flight. The record costs one column and makes a
+post-mortem answerable — *"was this session started on a stale premise?"* — which today nothing in
+either layer could answer.
+
+**Consequence:** `lib/agentos/dispatch.ts` is the single entry point and the acceptance suite
+asserts it (spec §7, AC-14…AC-18). `Session` gains `triggerKind`, `driftAtSpawnJson`, `pid`
+and `bootId`. A goal-level pre-flight that *does* block is still open for Stage 5 (PRD §12.6) and is
+not pre-empted by this decision.

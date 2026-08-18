@@ -19,15 +19,16 @@ from a twelve-day-stale document and trip none of its own safety rails — they 
 never its premise. The portfolio layer is the check that catches exactly that, and it already
 works. Full rationale: `docs/PRD.md` §12.1.
 
-**Status: Stages 1 and 2 are built** (2026-07-27) — the reconciliation Board runs and gated fix
-proposals write on an explicit click. Stage 2 is on the **open** PR `#6`
-(`feat/stage-2-fix-proposals`), not yet merged to `develop`, and its acceptance criterion (one
-real drift corrected) is unmet. **`pnpm verify` is currently RED: 18 of 19** — Stage 1's AC-2
-fails because it hardcodes itqan as the green project and itqan has not committed since
-2026-07-21, so DC7 correctly reports it stalled. The check is right and the fixture rotted; the
-fix needs a decision, see `docs/BACKLOG.md`. **Re-scoped 2026-08-15** to two layers (D18–D22) —
-`docs/PRD.md` §12. Next build step: Stage 3, the execution MVP. Behaviour today:
-`docs/FEATURES.md`.
+**Status: Stages 1 and 2 are built and merged** — the reconciliation Board runs and gated fix
+proposals write on an explicit click. PRs #6–#8 merged into `develop` on 2026-08-15, but Stage 2's
+acceptance criterion (**one real drift corrected**) is still unmet: no proposal has ever been
+approved. **`pnpm verify` is RED: 18 of 19** — Stage 1's AC-2 fails because it hardcodes itqan as
+the green project and itqan has not committed since 2026-07-21, so DC7 correctly reports it
+stalled. The check is right and the fixture rotted; the fix needs a decision, see
+`docs/BACKLOG.md`. **Re-scoped 2026-08-15** to two layers (D18–D22) — `docs/PRD.md` §12.
+**Round-3 design closed 2026-08-18** — D23 (the shell) and D24 (work is dispatched, never picked
+up). Next build step: Stage 3, the execution MVP, gated on two owner decisions in its spec's §5.11
+and §5.12. Behaviour today: `docs/FEATURES.md`.
 
 ---
 
@@ -70,6 +71,7 @@ fix needs a decision, see `docs/BACKLOG.md`. **Re-scoped 2026-08-15** to two lay
 | `docs/DESIGN-BRIEF-EXECUTION.md` | Design | Execution layer + app shell — round 3 |
 | `docs/specs/AgentOS-spec.md` | Reference | Reconstructed source spec for the execution layer — **a reconstruction, not a contract** |
 | `design/wireframes.pen` | Design | Round-1/2 wireframes (Pencil; plain JSON, readable directly) |
+| `design/wireframes2.pen` | Design | **Round-3** wireframes — the shell, Tasks, Goals, Sessions, Inbox, plus six rationale notes. Shell closed as D23 |
 
 **Paired docs** — these update in the same PR, never one without the other:
 `docs/PRD.md` ⇄ `docs/DESIGN-BRIEF.md` **and** `docs/DESIGN-BRIEF-EXECUTION.md` (PRD §12 pairs
