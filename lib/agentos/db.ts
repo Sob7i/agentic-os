@@ -425,16 +425,37 @@ export function setTaskBlockedReason(db: DatabaseSync, taskId: string, blockedRe
 }
 
 /**
- * Moves a task's status and writes the paired `TaskEvent` in one transaction — the data-layer
- * guarantee AC-10 needs (no `Task.status` without a matching `TaskEvent`).
+ * §7.6's table — which `(from, to)` arrows exist, per actor. **Closed here, by T5**, per T1's own
+ * note above (kept for history in git blame) that this was left open on purpose: `writeTaskTransition`
+ * is the *only* path that writes `Task.status` (every caller — T4's MCP tool handler, `dispatch.ts`,
+ * `sweep.ts` — funnels through it), so this is the one place a check can hold for every caller at
+ * once, including ones this ticket is not allowed to edit directly (`lib/agentos/mcp/*`).
  *
- * **This function does not judge whether the transition is legal.** §7.6's table (which `From/To`
- * pairs exist, and the `approvalGate` carve-out on `doing → done`) is enforced elsewhere: the two
- * layers of §3.4's gate belong to the MCP tool handler (T4), and `dispatch.ts` (T5) is where the
- * rest of the state machine's legality is meant to live per the build order in §6. Deciding here,
- * in T1, which of those layers owns "is this move even in the table" is exactly the kind of
- * decision the spec leaves open — see the T1 report. Callers that need that check must do it
- * themselves before calling this.
+ * A human may always move a card (§7.6: "any → any, human, … hand-moved"), so there is no `human`
+ * row — every pair is legal for that actor and the check below short-circuits before consulting
+ * this table at all. The `doing → done` carve-out on `approvalGate` is **not** re-encoded here:
+ * that is §3.4's gate, already enforced independently by the MCP tool handler (T4) before it ever
+ * reaches this function, and this table only judges the arrow's *shape*, not the task's own flags.
+ */
+const LEGAL_TRANSITIONS: Record<Exclude<ActorType, "human">, ReadonlySet<string>> = {
+  session: new Set(["todo>doing", "doing>review", "doing>done"]),
+  system: new Set(["doing>todo"]),
+};
+
+function assertLegalTransition(from: TaskStatus, to: TaskStatus, actorType: ActorType): void {
+  if (actorType === "human") return;
+  if (!LEGAL_TRANSITIONS[actorType].has(`${from}>${to}`)) {
+    throw new Error(
+      `illegal transition: '${from}' -> '${to}' by actorType '${actorType}' is not in spec §7.6's table`,
+    );
+  }
+}
+
+/**
+ * Moves a task's status and writes the paired `TaskEvent` in one transaction — the data-layer
+ * guarantee AC-10 needs (no `Task.status` without a matching `TaskEvent`), and now also the
+ * guarantee AC-19 needs (an illegal arrow — e.g. `todo → done` from a session — is rejected here,
+ * before either write happens, regardless of which module called this).
  */
 export function writeTaskTransition(
   db: DatabaseSync,
@@ -448,6 +469,7 @@ export function writeTaskTransition(
 ): TaskEventRow {
   const task = getTask(db, params.taskId);
   if (!task) throw new Error(`writeTaskTransition: no Task ${params.taskId}`);
+  assertLegalTransition(task.status, params.toStatus, params.actorType);
   const event: TaskEventRow = {
     id: randomUUID(),
     taskId: params.taskId,
@@ -485,6 +507,15 @@ export function listTaskEvents(db: DatabaseSync, taskId: string): TaskEventRow[]
 // ---------------------------------------------------------------------------
 
 export interface CreateSessionInput {
+  /**
+   * Caller-supplied primary key. Optional and defaults to a fresh `randomUUID()` for any
+   * existing caller that doesn't pass one (T4's fixtures). `dispatch.ts` (T5) always supplies
+   * one: it must know the session id *before* this call, to name the worktree directory
+   * `<tmp>/agentos/<sessionId>` (`worktree.ts`'s own docstring: "the session id is the caller's
+   * identity to assign") — `worktreePath` below is required, so the worktree has to exist first,
+   * which means the id has to exist before that.
+   */
+  id?: string;
   taskId: string;
   agentId: string;
   triggerKind: TriggerKind;
@@ -504,7 +535,7 @@ export interface CreateSessionInput {
  */
 export function createSession(db: DatabaseSync, input: CreateSessionInput): SessionRow {
   const row: SessionRow = {
-    id: randomUUID(),
+    id: input.id ?? randomUUID(),
     taskId: input.taskId,
     agentId: input.agentId,
     sdkSessionId: null,
