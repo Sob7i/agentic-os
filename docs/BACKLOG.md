@@ -200,6 +200,16 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   would break the route. Unblocked by: adding such a project — or D21's multi-repo work, which is
   the natural moment to give `ProjectConfig` an explicit slug.
 
+### From the review of Stage 3a (2026-08-18)
+
+- **`⌘1` collides with every browser's "switch to tab 1".** The shortcut comes from the round-3
+  design (frame `B′2`) and is implemented as drawn, now with editable elements excluded so it cannot
+  fire while someone is typing. But Chrome, Safari and Firefox all bind `⌘1`/`Ctrl+1` to the first
+  tab, and this page calls `preventDefault()` on it. Many web apps do override it; it is still a
+  real cost the design may not have weighed. Unblocked by: the first time you reach for tab 1 and
+  land on the Board instead — at which point `g b` or `⌘⇧B` are the obvious alternatives, and it is
+  a one-line change plus a wireframe note.
+
 ### Product / design
 
 - **Propose structured claim markers upstream to itqan** — D5 chose prose heuristics so the tool

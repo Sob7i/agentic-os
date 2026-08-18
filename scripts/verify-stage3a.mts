@@ -9,7 +9,7 @@
  * check "the page did not throw" would be theatre.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BoardReport, ProjectReport, Severity } from "../lib/types.ts";
@@ -54,7 +54,8 @@ const driftCheck = {
 const tmp = mkdtempSync(join(tmpdir(), "agentos-3a-"));
 const plainPath = join(tmp, "plain");
 const optedPath = join(tmp, "opted");
-spawnSync("mkdir", ["-p", plainPath, optedPath]);
+mkdirSync(plainPath, { recursive: true });
+mkdirSync(optedPath, { recursive: true });
 writeFileSync(join(optedPath, "agentos.yml"), "project: opted\n");
 
 const board: BoardReport = {
@@ -99,9 +100,17 @@ console.log("\nStage 3a acceptance — the app shell\n");
 // import graph instead is the same move AC-14 makes in Stage 3: a check that
 // fails while the invariant holds is the kind people learn to delete.
 {
-  const files = spawnSync("git", ["ls-files", "app", "components", "lib"], { encoding: "utf8" })
-    .stdout.split("\n")
-    .filter((f) => /\.(ts|tsx)$/.test(f));
+  // Walk the filesystem, not the git index. `git ls-files` lists only *tracked*
+  // files, so a newly written module that imported buildBoard directly would pass
+  // this check until someone committed it — a structural guard you can bypass by
+  // not having committed yet is not a guard.
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) return walk(full);
+      return /\.(ts|tsx)$/.test(e.name) ? [full] : [];
+    });
+  const files = ["app", "components", "lib"].flatMap(walk);
 
   const strays: string[] = [];
   const multi: string[] = [];

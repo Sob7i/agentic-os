@@ -118,6 +118,15 @@ belongs in `docs/DECISIONS.md` instead.
 
 ## Verification
 
+- (2026-08-18) **A structural guard that read the git index instead of the disk.** Stage 3a's AC-3
+  asserts nothing imports `buildBoard` directly, and enumerated files with `git ls-files` — which
+  lists only **tracked** files. A newly written module doing exactly the forbidden thing would have
+  passed until someone committed it, meaning the check was weakest at the moment it mattered most:
+  while the mistake was being made. Noticed only because the reported file count jumped from 13 to
+  27 after a commit, and the number looked wrong. **A guard over source must walk the source, not
+  an index of it** — and a check that prints what it scanned is how you find out it was scanning
+  the wrong thing.
+
 - (2026-08-18) **A test asserted a framework's behaviour outside the runtime that provides it.**
   Stage 3a's AC-3 checked that the ribbon and the Board share one collector run by calling React's
   `cache()` three times in a plain Node script and asserting one execution. It saw three: `cache`
