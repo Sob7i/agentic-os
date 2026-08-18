@@ -98,13 +98,33 @@ export function createTaskUpdateStatusTool(ctx: SessionCtx) {
         };
       }
 
-      writeTaskTransition(ctx.db, {
-        taskId: ctx.taskId,
-        toStatus: args.status,
-        actorType: "session",
-        actorId: ctx.sessionId,
-        reason: args.reason ?? null,
-      });
+      // T5 made `writeTaskTransition` throw on an arrow outside §7.6's table (AC-19's data-layer
+      // enforcement). An agent asking for one — `review -> todo`, say — is making an ordinary
+      // mistake, not crashing the system, and an uncaught throw here would take down the whole
+      // session over it. Caught and returned as a tool error instead, matching how both refusals
+      // above already behave: the agent reads the reason and adapts, which is the entire point of
+      // handing it a message rather than a stack trace. Raised in review of #14; AC-19c covers it.
+      try {
+        writeTaskTransition(ctx.db, {
+          taskId: ctx.taskId,
+          toStatus: args.status,
+          actorType: "session",
+          actorId: ctx.sessionId,
+          reason: args.reason ?? null,
+        });
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                `cannot move task ${ctx.taskId} from '${task.status}' to '${args.status}': ` +
+                `${err instanceof Error ? err.message : String(err)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
 
       return {
         content: [

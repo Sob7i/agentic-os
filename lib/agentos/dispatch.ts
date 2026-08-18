@@ -468,6 +468,27 @@ export async function resumeSession(
   const project = getProject(db, task.projectId);
   if (!project) throw new Error(`resumeSession: no Project ${task.projectId}`);
 
+  // A paused session normally has no worktree — §3.5 removes it when the turn ends. It can still
+  // have one if that teardown FAILED, in which case `worktreePath` was deliberately kept as the
+  // only pointer to the directory left behind (see `tearDownBestEffort`). Creating the new
+  // worktree without clearing it first would collide: `createWorktree` derives the same path from
+  // the same session id, so `git worktree add` would fail with a low-level error naming neither
+  // the cause nor the fix. Clear it here, and if it still will not go, say so in terms a human can
+  // act on. Raised in review of #14 — an interaction created by the teardown fix in the same PR.
+  if (session.worktreePath !== null) {
+    const stale = await tearDownBestEffort(
+      { path: session.worktreePath, repoPath: project.primaryRepoPath, baseRef: session.baseRef },
+      deps.removeWorktree ?? removeWorktree,
+    );
+    if (stale !== null) {
+      throw new Error(
+        `resumeSession: session ${sessionId} still holds a worktree at ${session.worktreePath} ` +
+          `that could not be removed (${stale}). Remove it by hand, then resume again.`,
+      );
+    }
+    updateSession(db, sessionId, { worktreePath: null });
+  }
+
   // A fresh worktree from the SAME base ref (§3.5) — the conversation resumes, the filesystem
   // does not. Uncommitted work from the paused turn is gone; the inbox tool's own description is
   // what told the agent to commit first.

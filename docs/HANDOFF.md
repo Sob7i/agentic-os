@@ -32,11 +32,11 @@
 | `develop` head | `250ab5d` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #9, #10, #11, #12 — all 2026-08-18 | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **46 of 47** — measured 2026-08-19 after the #13/#14 review | `pnpm verify` |
+| `pnpm verify` | **47 of 48** — measured 2026-08-19 after the second #13/#14 review | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
-| `pnpm verify:stage3` | 20 of 20 (T2–T5; AC-14…AC-19 and AC-9a among them) | `pnpm verify:stage3` |
+| `pnpm verify:stage3` | 21 of 21 (T2–T5; AC-14…AC-19, AC-19c and AC-9a among them) | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
@@ -204,6 +204,14 @@
   always happens, and a failure keeps `worktreePath` because it is the only pointer to a directory
   that may still exist. **AC-9a** covers it, driven through a new `DispatchDeps.removeWorktree` seam
   because the real function throws only when `git worktree remove` *and* `prune` both fail.
+- **The second review round found two more, both on paths the first fix opened.** T5 made
+  `writeTaskTransition` throw on an illegal arrow, and T4's MCP handler called it **uncaught** — so
+  an agent making an ordinary mistake (`review -> todo`) would have taken the whole session down.
+  It returns a tool error now (**AC-19c**), matching how both of the handler's other refusals
+  already behave. And the teardown fix's own decision to keep `worktreePath` created a collision on
+  resume, since `createWorktree` derives the same path from the same session id; `resumeSession`
+  clears it first and otherwise fails with an error naming the path. **That resume path has no test
+  yet — it is AC-6, which is T6's** (`docs/BACKLOG.md`).
 - **Next waves:** T6 (complete the suite: AC-1, AC-3, AC-6…AC-8, AC-10…AC-13, plus opt-in AC-12) →
   T7 (UI, and the first ticket that owns app startup — `runBootSweep` still has no call site,
   `docs/BACKLOG.md`).

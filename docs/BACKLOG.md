@@ -10,6 +10,15 @@ and things explicitly punted with a reason.
 
 ## Open
 
+- **T6's AC-6 must cover resuming a session whose teardown failed** *(added 2026-08-19)*. The
+  #14 teardown fix deliberately keeps `Session.worktreePath` when `removeWorktree` throws, because
+  the path is the only pointer to a directory left behind. That creates an interaction on resume:
+  `createWorktree` derives the same path from the same session id, so a stale directory would
+  collide. `resumeSession` now clears it first and, if it cannot, throws an error naming the path
+  in terms a human can act on — but **nothing tests that path**, because the resume flow itself is
+  AC-6 and belongs to T6. **Unblock condition:** T6, which must drive AC-6 with a non-null
+  `worktreePath` on the paused session, not only the clean case.
+
 - **`runBootSweep` has no call site** *(added 2026-08-18)*. T5 built the boot sweep of §7.7 and
   AC-18 proves it works, but nothing calls it on server start — the hook would live in
   `instrumentation.ts` or equivalent, which is outside `lib/agentos/` and was outside T5's file

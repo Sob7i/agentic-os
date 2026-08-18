@@ -1006,9 +1006,44 @@ for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
   db.close();
 }
 
+// ── AC-19c · an illegal transition from an agent is a tool error, not a crashed session ─────
+// AC-19a/b assert the data layer REJECTS the arrow. This asserts what the agent experiences when
+// it asks for one. T5 made writeTaskTransition throw, and T4's handler called it uncaught — so an
+// agent making an ordinary mistake ('review' -> 'todo') would have taken the whole session down
+// with an unhandled rejection. Raised in review of #14.
+{
+  const { db, task, session } = makeDbFixture(false);
+  writeTaskTransition(db, { taskId: task.id, toStatus: "doing", actorType: "session", actorId: session.id, reason: "setup" });
+  writeTaskTransition(db, { taskId: task.id, toStatus: "review", actorType: "session", actorId: session.id, reason: "setup" });
+  const ctx = { db, sessionId: session.id, taskId: task.id };
+
+  let threw: unknown = null;
+  let result: Awaited<ReturnType<ReturnType<typeof createTaskUpdateStatusTool>["handler"]>> | null = null;
+  try {
+    result = await createTaskUpdateStatusTool(ctx).handler({ status: "todo" }, {} as never);
+  } catch (err) {
+    threw = err;
+  }
+
+  const after = getTask(db, task.id)!;
+  const text = result?.content?.[0] as { text?: string } | undefined;
+  const ok =
+    threw === null &&
+    (result as { isError?: boolean } | null)?.isError === true &&
+    after.status === "review" &&
+    typeof text?.text === "string" && text.text.length > 0;
+
+  if (!ok) {
+    fail("AC-19c", `expected a tool error and an unmoved card; threw=${String(threw)} result=${JSON.stringify(result)} status=${after.status}`);
+  } else {
+    pass("AC-19c", `an illegal 'review' -> 'todo' from a session returned a tool error the agent can read, and did not throw — card stayed in 'review'`);
+  }
+  db.close();
+}
+
 console.log(
   failures === 0
-    ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b, AC-14, AC-15a…e, AC-16, AC-17a/b, AC-18a/b, AC-19a/b, AC-9a).\n"
+    ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b, AC-14, AC-15a…e, AC-16, AC-17a/b, AC-18a/b, AC-19a/b, AC-19c, AC-9a).\n"
     : `\n${failures} FAILING.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);
