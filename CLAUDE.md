@@ -73,6 +73,7 @@ deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state*
 | `docs/DECISIONS.md` | Decisions | Why we chose X — don't re-litigate |
 | `docs/LEARNINGS.md` | Lessons | What we must not re-buy |
 | `docs/FEATURES.md` | Behaviour | What the system does **today** |
+| `docs/HUMAN-TEST.md` | Walkthrough | What it does **in plain language**, with things to try by hand — for a human checking the system without reading code |
 | `docs/BACKLOG.md` | — | Deferred work, with unblock conditions |
 | git history | Record | What changed, when |
 | `docs/PRD.md` | Product | The problem, the features, the build order |
