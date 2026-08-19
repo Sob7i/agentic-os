@@ -209,6 +209,32 @@ belongs in `docs/DECISIONS.md` instead.
   chosen to bypass a boundary, write down what that boundary was still validating** — and assert it
   structurally instead (`AC-5b`). Closed as D29.
 
+- (2026-08-18) **Four sub-agent waves, four acceptance checks that passed for the wrong reason —
+  and not once did the agent that wrote the check catch it.** T1/T2: `withWorktree` recorded no
+  commits while AC-2 and AC-9 stayed green, because neither commits. T3: the WebFetch check was fed
+  a fixture that already excluded the tools it was checking for. T4: `canUseTool` would have matched
+  a bare tool name and never fired, with AC-5 still passing because the second layer refuses on its
+  own. T5: AC-14 matched named imports only, so a namespace import bypassed the very funnel it
+  exists to protect. **The agents are reliably good at finding contradictions between a document and
+  the code, and reliably weak at a test that is green for the wrong reason** — the two are not the
+  same skill, and only the first is something reading carefully can catch. **Consequences, both
+  now standard practice here:** specify the *shape of each assertion* in the ticket brief rather
+  than naming the criterion, and **require every new structural check to be proved by making it
+  fail** — write the bypass, watch it go red, delete it, and report the failure message. A check
+  demonstrated only in the passing direction has demonstrated nothing.
+
+- (2026-08-19) **A cleanup step awaited before the write that records the outcome can strand the
+  record it was supposed to complete.** `dispatch` did `await removeWorktree(wt)` and *then*
+  `updateSession({status, endedAtISO, failureReason})`. `removeWorktree` throws when `git worktree
+  remove` and `git worktree prune` both fail — so a teardown failure left a `Session` row saying
+  `running` with no end time and no reason: **exactly the stored-claim-contradicted-by-reality this
+  product exists to catch, occurring inside it**, and invisible until the next restart. AC-2 and
+  AC-9 both passed throughout, because both assert the *successful* teardown path. **The rule:
+  cleanup is best-effort; the record of what happened is not.** Write the outcome first or catch
+  around the cleanup, and when cleanup fails keep the handle to whatever was not cleaned up —
+  nulling `worktreePath` would have discarded the only pointer to the directory left behind.
+  Found by review on #14, not by the suite.
+
 ## Tooling
 
 - (2026-07-27) **`.pen` files (Pencil) are plain UTF-8 JSON** — readable directly with any JSON
@@ -235,6 +261,17 @@ belongs in `docs/DECISIONS.md` instead.
   (`ls lib/agentos/` — a missing directory is a faster tell than a matching hash). A base check in
   the brief is worth more than it looks: it is the only thing that turned a silent wrong build into
   a two-minute correction.
+
+- (2026-08-18) **`tsx` runs `.mts` and `.ts` through two different module registries, so shared
+  module-level state silently duplicates.** This repo has no `"type": "module"`, so an `.mts`
+  acceptance script loads as native ESM while every plain `.ts` it imports resolves through tsx's
+  CommonJS-compat path. A top-level `import { PROJECTS } from "../projects.config"` in the script
+  and the same array as reached from `lib/`'s own import chain are **two different array objects** —
+  confirmed by identity check, and by splicing one and observing the other unchanged. A fixture that
+  swaps the project list to isolate a test therefore mutates a copy nothing under test can see, and
+  the test passes or fails for reasons unrelated to its subject. **Fix:** reach shared state from an
+  `.mts` script via `createRequire(import.meta.url)("../module")`, which puts it on the same
+  registry as `lib/`. Found while building T5's AC-17 drift fixture.
 
 ## Workflow
 

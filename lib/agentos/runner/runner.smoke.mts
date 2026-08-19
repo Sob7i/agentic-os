@@ -14,6 +14,7 @@ import { composeOptions } from "./local";
 import { FakeRunner, type RunnerScript } from "./fake";
 import type { RunParams } from "./runner";
 import type { AgentRow } from "../types";
+import { AGENTOS_SERVER, TASK_UPDATE_STATUS, qualify } from "../mcp/names";
 
 let failures = 0;
 const pass = (id: string, msg: string) => console.log(`  PASS  ${id} — ${msg}`);
@@ -133,7 +134,7 @@ function resultMessage(
   const script: RunnerScript = {
     messages: [
       initMessage(sessionId),
-      assistantToolUseMessage(sessionId, "mcp__agentos__task.update_status", { status: "review" }),
+      assistantToolUseMessage(sessionId, qualify(AGENTOS_SERVER, TASK_UPDATE_STATUS), { status: "review" }),
       resultMessage(sessionId, { subtype: "success" }, 0.0842),
     ],
   };

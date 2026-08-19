@@ -25,18 +25,18 @@
 > "none" was already wrong by the time the PR recording it existed. A fact that its own recording
 > changes cannot be recorded; it can only be reproduced.
 >
-> **Checked 2026-08-18 (late evening, after T4).** If today is much later than that, this table is a hypothesis.
+> **Checked 2026-08-19 (after the #13/#14 review).** If today is much later than that, this table is a hypothesis.
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
 | `develop` head | `250ab5d` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #9, #10, #11, #12 — all 2026-08-18 | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **32 of 33** — measured 2026-08-18 after building T4 | `pnpm verify` |
+| `pnpm verify` | **47 of 48** — measured 2026-08-19 after the second #13/#14 review | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
-| `pnpm verify:stage3` | 6 of 6 (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b) | `pnpm verify:stage3` |
+| `pnpm verify:stage3` | 21 of 21 (T2–T5; AC-14…AC-19, AC-19c and AC-9a among them) | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
@@ -124,7 +124,7 @@
   shell), D24 (dispatch, never pull) and **D25** (a DoD item carries the *kind* of evidence that
   closed it — which supersedes what frame `G1` drew); D18–D22 are the re-scope.
 
-## Stage 3 — waves 1 and 2 landed (2026-08-18)
+## Stage 3 — T1–T5 landed (2026-08-18)
 
 - **T1 (schema) and T2 (worktree) are built**, by two Sonnet agents in isolated worktrees, reviewed
   against the spec before integration. `lib/agentos/{db,types,worktree}.ts` and
@@ -176,10 +176,45 @@
   provisioned onto `3ea05a0` because isolated worktrees branch from **`origin/main`**, which this
   workflow leaves behind `develop` by design. The fourth stopped instead of building, because its
   brief made it check first. Worktrees are now created by hand from `develop` — `docs/LEARNINGS.md`.
-- **Next waves:** T5 (`dispatch` + sweep) → T6/T7. Tickets and the wave plan:
-  [`stage-3-tickets.md`](specs/stage-3-tickets.md). T5 is the single most consequential file in the
-  slice: it is the only door to a session (AC-14), owns the five preconditions, and writes D24's
-  drift record.
+- **T5 (`dispatch()` + the boot sweep) is built** — `lib/agentos/{dispatch,sweep}.ts`, plus
+  AC-14…AC-19 (13 sub-assertions). `pnpm verify:stage3` is **19 of 19**. The five preconditions each
+  refuse by name, the cap is proved per project rather than global, the drift snapshot records an
+  explicit `in-sync` severity for a clean project (**not `null`** — an absent record and a clean
+  project must not look alike), and the sweep keys on *no live owner* so a `waiting-inbox` session
+  is swept too.
+- **The state machine landed in `db.ts`, not `dispatch.ts`, and the reason is worth keeping.** T1's
+  own docstring deferred "is this move even in the table" to T5 and predicted it would live in
+  `dispatch.ts`. It cannot: the real illegal-write path is T4's MCP tool handler, which calls
+  `writeTaskTransition` directly. That function is the only thing anything writes `Task.status`
+  through, so it is the only place a check holds for **every** caller at once — which is also the
+  plain reading of AC-19's own *"rejected at the data layer"*. **Which ticket owns a check and which
+  file the check must live in are not always the same answer.**
+- **Review found the one hole again, and it was in AC-14** — the check the funnel's whole guarantee
+  rests on. It matched named imports only, so `import * as db from "./db"` followed by
+  `db.createSession(...)` bypassed the funnel with AC-14 still green. Now also flagged as a bypass,
+  and proved by writing that exact file and watching it go red. **Four waves, four checks that
+  passed for the wrong reason, none caught by the agent that wrote it** — see the review note in
+  `docs/LEARNINGS.md`.
+- **The #13/#14 review found two real defects, both on paths no check reached.** (i) The gate's
+  refusal text told the model to *"use inbox.ask"* — a tool D29 had renamed out of existence, in a
+  string returned to the agent on every denial. (ii) `removeWorktree` was awaited *before* the
+  terminal `updateSession`, so a teardown failure left the session saying `running` forever with no
+  `endedAtISO` and no reason — **§7.7's own subject matter, reintroduced by an error path**, and one
+  the boot sweep would only notice after a restart. Teardown is now best-effort, the terminal write
+  always happens, and a failure keeps `worktreePath` because it is the only pointer to a directory
+  that may still exist. **AC-9a** covers it, driven through a new `DispatchDeps.removeWorktree` seam
+  because the real function throws only when `git worktree remove` *and* `prune` both fail.
+- **The second review round found two more, both on paths the first fix opened.** T5 made
+  `writeTaskTransition` throw on an illegal arrow, and T4's MCP handler called it **uncaught** — so
+  an agent making an ordinary mistake (`review -> todo`) would have taken the whole session down.
+  It returns a tool error now (**AC-19c**), matching how both of the handler's other refusals
+  already behave. And the teardown fix's own decision to keep `worktreePath` created a collision on
+  resume, since `createWorktree` derives the same path from the same session id; `resumeSession`
+  clears it first and otherwise fails with an error naming the path. **That resume path has no test
+  yet — it is AC-6, which is T6's** (`docs/BACKLOG.md`).
+- **Next waves:** T6 (complete the suite: AC-1, AC-3, AC-6…AC-8, AC-10…AC-13, plus opt-in AC-12) →
+  T7 (UI, and the first ticket that owns app startup — `runBootSweep` still has no call site,
+  `docs/BACKLOG.md`).
 
 ## How to pick up
 
