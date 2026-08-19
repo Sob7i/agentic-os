@@ -25,18 +25,18 @@
 > "none" was already wrong by the time the PR recording it existed. A fact that its own recording
 > changes cannot be recorded; it can only be reproduced.
 >
-> **Checked 2026-08-19 (after the #13/#14 review).** If today is much later than that, this table is a hypothesis.
+> **Checked 2026-08-19 (after T6).** If today is much later than that, this table is a hypothesis.
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
 | `develop` head | `250ab5d` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #9, #10, #11, #12 — all 2026-08-18 | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **47 of 48** — measured 2026-08-19 after the second #13/#14 review | `pnpm verify` |
+| `pnpm verify` | **55 of 56** — measured 2026-08-19 after T6 | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
-| `pnpm verify:stage3` | 21 of 21 (T2–T5; AC-14…AC-19, AC-19c and AC-9a among them) | `pnpm verify:stage3` |
+| `pnpm verify:stage3` | 29 of 29 — **AC-1…AC-19 complete**, plus AC-12 opt-in (skipped by default) | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
@@ -212,9 +212,20 @@
   resume, since `createWorktree` derives the same path from the same session id; `resumeSession`
   clears it first and otherwise fails with an error naming the path. **That resume path has no test
   yet — it is AC-6, which is T6's** (`docs/BACKLOG.md`).
-- **Next waves:** T6 (complete the suite: AC-1, AC-3, AC-6…AC-8, AC-10…AC-13, plus opt-in AC-12) →
-  T7 (UI, and the first ticket that owns app startup — `runBootSweep` still has no call site,
-  `docs/BACKLOG.md`).
+- **T6 is built: Stage 3's acceptance suite is complete.** AC-1…AC-19 all present, **29 checks
+  passing**, plus **AC-12** — the one real session — written, documented, and deliberately outside
+  `pnpm verify`: it sits behind `AGENTOS_REAL_SESSION=1` under a `stage3:real-session` script, which
+  the `verify:*` discovery cannot pick up, so the default run can never spend money. **It has never
+  been run for real** — that is an owner decision, and §4 calls it *"the only proof the other
+  eighteen are testing something real"*.
+- **The suite found a fragility in itself.** Stage 1 is **not hermetic** — its AC-1 needs a live
+  `gh` call through DC1 — and both AC-11 and Stage 3a's AC-1 hard-assert its exact pass count. AC-11
+  reports **SKIP** on a degraded upstream now rather than a false regression; Stage 3a's AC-1 has
+  the identical exposure and is logged in `docs/BACKLOG.md`. Confirmed by putting a failing `gh` on
+  `PATH` and reproducing the exact message T6's agent had seen and could not explain.
+- **Next: T7** — the UI, and the first ticket that owns app startup, so `runBootSweep` finally gets
+  a call site (`docs/BACKLOG.md`). It also owns the §7.7 *Known gap* row in `docs/FEATURES.md`, and
+  must drive AC-6's resume with a **non-null** `worktreePath`.
 
 ## How to pick up
 

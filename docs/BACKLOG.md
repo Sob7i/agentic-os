@@ -10,6 +10,15 @@ and things explicitly punted with a reason.
 
 ## Open
 
+- **`verify-stage3a.mts`'s AC-1 can go red because GitHub is down** *(added 2026-08-19)*. It spawns
+  `verify:stage1` and hard-asserts `7P/1F`. Stage 1 is not hermetic — its AC-1 depends on a live
+  `gh` call through DC1 — so an offline or rate-limited moment returns 6P/2F and the oracle reports
+  a portfolio regression that did not happen (`docs/LEARNINGS.md`). T6's **AC-11** fixed this for
+  itself by reporting **SKIP** on a degraded upstream rather than FAIL; AC-1 in the Stage 3a suite
+  still needs the same treatment. Not done here because it edits a shipped suite's check, which is
+  its own change with its own review surface. **Unblock condition:** none — this is a small,
+  self-contained fix that just needs its own PR; copy AC-11's `degradedUpstream` branch.
+
 - **T6's AC-6 must cover resuming a session whose teardown failed** *(added 2026-08-19)*. The
   #14 teardown fix deliberately keeps `Session.worktreePath` when `removeWorktree` throws, because
   the path is the only pointer to a directory left behind. That creates an interaction on resume:

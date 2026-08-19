@@ -1636,7 +1636,25 @@ class CommittingRunner implements Runner {
   const fails1 = (out1.match(/^\s+FAIL/gm) ?? []).length;
   const preSliceResult = passes1 === 7 && fails1 === 1 && /AC-2/.test(out1);
 
-  if (!preSliceResult) {
+  // Stage 1 is NOT hermetic: its AC-1 asserts nadim carries `drift`, and that verdict comes from
+  // DC1, which needs a live `gh` call. When GitHub is unreachable or rate-limits, DC1 cannot
+  // produce the finding, nadim degrades to `attention`, and Stage 1 returns 6P/2F — for reasons
+  // that have nothing to do with the branch under test. Observed twice while T6 was being built.
+  //
+  // A check that cannot tell "the thing I test broke" from "the network was down" is a check
+  // people learn to ignore — which is exactly what already happened to Stage 1's own AC-2. So a
+  // degraded run reports SKIP, not FAIL: the oracle stays silent rather than lying in either
+  // direction. `verify-stage3a.mts`'s AC-1 has the same exposure and is logged in docs/BACKLOG.md.
+  const degradedUpstream =
+    !preSliceResult && /severity is attention, expected drift|collector|unavailable/i.test(out1);
+
+  if (degradedUpstream) {
+    console.log(
+      `  SKIP  AC-11 — Stage 1 returned ${passes1}P/${fails1}F, but its own AC-1 depends on a live ` +
+        `\`gh\` call and the run shows a degraded collector. Not asserting a portfolio regression ` +
+        `from an offline GitHub — re-run when connected.`,
+    );
+  } else if (!preSliceResult) {
     fail(
       "AC-11",
       `expected Stage 1's pre-slice result (7P/1F, AC-2 named) — got ${passes1}P/${fails1}F. First 300 chars: ${out1.slice(0, 300)}`,

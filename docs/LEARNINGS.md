@@ -235,6 +235,26 @@ belongs in `docs/DECISIONS.md` instead.
   nulling `worktreePath` would have discarded the only pointer to the directory left behind.
   Found by review on #14, not by the suite.
 
+- (2026-08-19) **Stage 1's suite is not hermetic, and two other suites hard-assert its exact pass
+  count.** Stage 1's AC-1 asserts nadim carries `drift`; that verdict comes from **DC1, which needs
+  a live `gh` call**. With GitHub unreachable or rate-limited, DC1 cannot produce the finding, nadim
+  degrades to `attention`, and the suite returns **6P/2F** — for reasons with nothing to do with the
+  branch under test. Reproduced deliberately by putting a failing `gh` on `PATH`: the failure is
+  exactly `AC-1 — nadim severity is attention, expected drift`, the message T6's agent had seen
+  twice and could not explain. **The consequence is not the flake; it is what a flake teaches.** A
+  check that cannot distinguish *"the thing I test broke"* from *"the network was down"* gets
+  ignored — which is precisely what already happened to Stage 1's own AC-2, and the reason a red
+  suite here no longer alarms anyone. **So an oracle over a non-hermetic suite reports SKIP on a
+  degraded upstream, never FAIL**: silence is honest, a false red is not. Done for `AC-11`;
+  `verify-stage3a.mts`'s AC-1 has the identical exposure and is logged in `docs/BACKLOG.md`.
+
+- (2026-08-19) **Never `JSON.stringify` a `RunParams` in a failure message.** It carries live SDK and
+  MCP server objects with circular references, so the stringify **throws instead of printing** — and
+  it throws on the failure path, meaning the suite crashes at exactly the moment it was trying to
+  tell you what went wrong. Stringify the two or three fields the assertion is about. Found by T6's
+  agent while proving AC-6 by breaking it — the failure path was only exercised *because* the
+  prove-by-breaking rule forced it, which is a small argument for that rule on its own.
+
 ## Tooling
 
 - (2026-07-27) **`.pen` files (Pencil) are plain UTF-8 JSON** — readable directly with any JSON
