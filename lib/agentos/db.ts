@@ -359,6 +359,41 @@ function hydrateAgent(raw: Record<string, unknown>): AgentRow {
   return { ...(raw as unknown as AgentRow), canCommit: fromSqliteBool(raw.canCommit as number) };
 }
 
+/**
+ * Rewrites every column `createAgent` accepts — there is no partial-update variant, so a
+ * successful edit always writes the whole row the caller built. Lives here, beside `createAgent`,
+ * rather than in the route that calls it: T2 wrote this statement inline in
+ * `app/p/[slug]/config/actions.ts` because `db.ts` was outside its file list, which put schema
+ * knowledge about `Agent` in two places. The failure mode is silent — add a column to `Agent` and
+ * the inline statement quietly stops writing it. Moved in review, 2026-08-19.
+ *
+ * Refusing the edit while a session is live is the **caller's** job (§5.3) and deliberately not
+ * enforced here: this function is the write, not the gate.
+ */
+export function updateAgent(
+  db: DatabaseSync,
+  id: string,
+  input: Omit<CreateAgentInput, "projectId">,
+): void {
+  db.prepare(
+    `UPDATE Agent
+     SET name = ?, monogram = ?, model = ?, rolePrompt = ?,
+         allowedToolsJson = ?, disallowedToolsJson = ?, canCommit = ?, maxTurns = ?, maxBudgetUsd = ?
+     WHERE id = ?`,
+  ).run(
+    input.name,
+    input.monogram,
+    input.model,
+    input.rolePrompt,
+    JSON.stringify(input.allowedTools),
+    JSON.stringify(input.disallowedTools),
+    input.canCommit ? 1 : 0,
+    input.maxTurns ?? null,
+    input.maxBudgetUsd ?? null,
+    id,
+  );
+}
+
 export function getAgent(db: DatabaseSync, id: string): AgentRow | null {
   const raw = db.prepare("SELECT * FROM Agent WHERE id = ?").get(id) as Record<string, unknown> | undefined;
   return raw ? hydrateAgent(raw) : null;

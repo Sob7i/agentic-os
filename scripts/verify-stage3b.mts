@@ -32,7 +32,7 @@
  * Run: pnpm verify:stage3b
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -48,6 +48,8 @@ import {
 import { initializeProject } from "../app/p/[slug]/[tab]/actions";
 import { createAgentForSlug, updateAgentForSlug } from "../app/p/[slug]/config/actions";
 import { parseAgentosYml } from "../lib/agentos/config";
+import { EGRESS_DENIED_TOOLS } from "../lib/agentos/egress";
+import { resolveToolGrants } from "../lib/agentos/agent-form";
 import { loadProjectExecutionData } from "../lib/tasks/data";
 import type { ProjectConfig } from "../projects.config";
 
@@ -424,6 +426,87 @@ console.log("\nStage 3b acceptance — the connector, fixture repos only\n");
       );
   }
   db.close();
+}
+
+// ── AC-8b · one project cannot edit another project's agent ──────────────────────────────
+// Not a spec-numbered criterion — a lead-review addition (2026-08-19). AC-4/5/8 all operate on an
+// agent that legitimately belongs to the project named in the form, so the ownership guard in
+// `updateAgentForSlug` could be deleted outright with all three still green. Verified by doing
+// exactly that: reducing `if (!agent || agent.projectId !== owned.project.id)` to `if (!agent)`
+// changed nothing. That guard is the *only* thing standing between a crafted form post and
+// editing another project's agent — including its tool grants and `canCommit`. T7 shipped three
+// server actions missing this same check and review found all three; the spec warned about it in
+// advance (§6, "including its ownership check"). A security boundary nothing exercises is a
+// boundary that will be removed by a future refactor without a single check going red.
+{
+  const victimRepo = makeConnectorFixtureRepo();
+  const attackerRepo = makeConnectorFixtureRepo();
+  const db = openDb(":memory:");
+
+  for (const [slug, dir] of [["t2-victim", victimRepo.dir], ["t2-attacker", attackerRepo.dir]] as const) {
+    createProject(db, { slug, primaryRepoPath: dir, yamlPath: join(dir, "agentos.yml"), maxConcurrentSessions: 1 });
+  }
+
+  const victimForm = new FormData();
+  victimForm.set("slug", "t2-victim");
+  victimForm.set("name", "Victim Agent");
+  victimForm.set("monogram", "VA");
+  victimForm.set("model", "claude-opus-5");
+  victimForm.set("rolePrompt", "Belongs to the victim project.");
+  victimForm.append("tools", "Read");
+  const victim = await withOnlyProject(fixtureConfig("t2-victim", victimRepo.dir), () =>
+    createAgentForSlug("t2-victim", victimForm, { db }),
+  );
+
+  // The crafted post: the attacker's own slug, the victim's agent id, and a wide grant.
+  const craftedForm = new FormData();
+  craftedForm.set("slug", "t2-attacker");
+  craftedForm.set("name", "Owned");
+  craftedForm.set("monogram", "XX");
+  craftedForm.set("model", "claude-opus-5");
+  craftedForm.set("rolePrompt", "Rewritten by another project.");
+  craftedForm.append("tools", "Bash");
+  craftedForm.set("canCommit", "on");
+
+  const attempt = victim.agentId
+    ? await withOnlyProject(fixtureConfig("t2-attacker", attackerRepo.dir), () =>
+        updateAgentForSlug("t2-attacker", victim.agentId!, craftedForm, { db }),
+      )
+    : null;
+  const after = victim.agentId ? getAgent(db, victim.agentId) : null;
+
+  if (!victim.ok || !victim.agentId) fail("AC-8b", `setup: could not create the victim agent: ${victim.reason}`);
+  else if (!attempt) fail("AC-8b", "setup: no attempt was made");
+  else if (attempt.ok) fail("AC-8b", "one project edited another project's agent");
+  else if (!attempt.reason?.includes(victim.agentId))
+    fail("AC-8b", `the refusal did not name the agent it refused: ${JSON.stringify(attempt.reason)}`);
+  else if (after?.name !== "Victim Agent" || after.canCommit !== false)
+    fail("AC-8b", `the victim's row changed despite the refusal — name "${after?.name}", canCommit ${after?.canCommit}`);
+  else pass("AC-8b", `refused: "${attempt.reason}" — the victim's row is untouched (name "${after.name}", canCommit false)`);
+  db.close();
+}
+
+// ── AC-5b · the egress floor has exactly one definition ───────────────────────────────────
+// Not spec-numbered — a lead-review addition (2026-08-19). T2 shipped a second copy of the denied
+// list in `lib/agentos/agent-form.ts`, with a comment accepting "two independent lists that must
+// agree" as a cost. A security boundary with two definitions is a second source of truth whose
+// divergence is silent (invariant 5). Review extracted `lib/agentos/egress.ts`; this asserts the
+// extraction holds — the floor is enforced at two moments, from one list.
+{
+  const files = ["lib/agentos/agent-form.ts", "lib/agentos/runner/local.ts"];
+  const redefiners = files.filter((f) =>
+    /(const|let|var)\s+\w*EGRESS\w*\s*[:=]/.test(readFileSync(join(process.cwd(), f), "utf8")),
+  );
+  const floorHolds =
+    resolveToolGrants(["Read", "WebFetch", "WebSearch"]).allowed.join(",") === "Read" &&
+    EGRESS_DENIED_TOOLS.length === 2;
+
+  if (redefiners.length > 0)
+    fail("AC-5b", `the egress list is redefined outside lib/agentos/egress.ts: [${redefiners.join(", ")}]`);
+  else if (!floorHolds)
+    fail("AC-5b", `the single shared list does not actually deny egress: ${JSON.stringify(resolveToolGrants(["Read", "WebFetch", "WebSearch"]))}`);
+  else
+    pass("AC-5b", `one definition (lib/agentos/egress.ts), imported by both enforcement points; [${EGRESS_DENIED_TOOLS.join(", ")}] denied at write time and at spawn`);
 }
 
 for (const t of TEMPS) rmSync(t, { recursive: true, force: true });

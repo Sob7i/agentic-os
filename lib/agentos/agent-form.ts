@@ -10,6 +10,7 @@
 
 import type { CreateAgentInput } from "./db";
 import type { SessionRow } from "./types";
+import { EGRESS_DENIED_TOOLS, isEgressDenied } from "./egress";
 
 // ---------------------------------------------------------------------------
 // Tool grants — §5.4: a fixed checkbox list, never free text.
@@ -29,17 +30,14 @@ export type ToolGrantOption = (typeof TOOL_GRANT_OPTIONS)[number];
 /**
  * The egress floor, re-enforced at the moment an `Agent` row is **written**.
  *
- * `lib/agentos/runner/local.ts`'s `composeOptions` enforces the same floor at *spawn* — the
- * moment a session actually starts — and that is not what AC-5 tests. An invariant enforced only
- * by the fact that nobody has ever stored a row asking for these is enforced by nobody (spec
- * §4). This list is intentionally **not** shared code with `runner/local.ts`'s own
- * `EGRESS_DENIED`: that file is out of this ticket's file list
- * (docs/specs/stage-3b-tickets.md T2, "Must not touch … `lib/agentos/runner/`"), and its constant
- * is private to a function, not exported. Two independent lists that must agree is the accepted
- * cost of a floor that holds at both write time and spawn time rather than one trusting the
- * other never to have been wrong.
+ * `lib/agentos/runner/local.ts`'s `composeOptions` enforces the same floor at *spawn* — and that
+ * is not what AC-5 tests. An invariant enforced only by the fact that nobody has ever stored a row
+ * asking for these is enforced by nobody (spec §4). Two enforcement points, **one list**: T2
+ * originally declared a second copy here, which review replaced with the shared constant in
+ * `lib/agentos/egress.ts` — a security boundary with two definitions is a second source of truth
+ * whose divergence is silent (invariant 5).
  */
-export const EGRESS_DENIED_TOOLS = ["WebFetch", "WebSearch"] as const;
+export { EGRESS_DENIED_TOOLS } from "./egress";
 
 export interface ToolGrantResolution {
   /** Survives both the egress floor and the fixed-list filter. */
@@ -62,10 +60,8 @@ export interface ToolGrantResolution {
  * something the honest form never offers as a checkbox.
  */
 export function resolveToolGrants(requested: readonly string[]): ToolGrantResolution {
-  const deniedByFloor = requested.filter((t) =>
-    (EGRESS_DENIED_TOOLS as readonly string[]).includes(t),
-  );
-  const pastFloor = requested.filter((t) => !(EGRESS_DENIED_TOOLS as readonly string[]).includes(t));
+  const deniedByFloor = requested.filter(isEgressDenied);
+  const pastFloor = requested.filter((t) => !isEgressDenied(t));
   // Anything not on the fixed list is unrecognized — silently dropped, same as a checkbox that
   // was never rendered. §5.4: "a free-text field invites a typo that silently grants nothing —
   // or, worse, silently grants something"; this is the "grants nothing" half, enforced here too

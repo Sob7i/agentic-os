@@ -171,6 +171,32 @@ default; an empty file is a valid bare opt-in, since D18 already made the file's
 signal. The guilty-until-verified posture still applies to every field: each is validated, and a
 bad value refuses rather than being coerced.
 
+### Agents, behind configuration (Stage 3b T2 — spec §1.2, §5.2–§5.4)
+
+**The first configuration surface**, at `/p/<slug>/config`, reached from a link in the project rail
+**outside the five tabs**. D23 fixed the rail at five and said the cap is load-bearing; a sixth tab
+would have been a decision against it, so `EXECUTION_TABS` is untouched.
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Creates an agent | Name, monogram, model, role prompt, tool grants, `canCommit`, `maxTurns`, `maxBudgetUsd` — every field read back unchanged, `canCommit` as a boolean and not `1` | `pnpm verify:stage3b` → AC-4 | 3b T2 |
+| Refuses tool grants that would widen egress | `WebFetch`/`WebSearch` are stripped from `allowedToolsJson`, forced into `disallowedToolsJson`, **and the UI says which were denied** — never silently accepted | `pnpm verify:stage3b` → AC-5 | 3b T2 |
+| The egress floor has exactly one definition | `lib/agentos/egress.ts`, imported by both enforcement points — write time and spawn | `pnpm verify:stage3b` → AC-5b | 3b T2 |
+| Tool grants are a fixed list, not free text | An unrecognized name is dropped rather than stored; there is no field to type one into | `pnpm verify:stage3b` → AC-5 | 3b T2 |
+| Refuses to edit an agent with a live session | Stated reason **naming the session**; the row is unchanged. Live means `running` or `waiting-inbox` — the same pair `dispatch` uses | `pnpm verify:stage3b` → AC-8 | 3b T2 |
+| One project cannot edit another's agent | A crafted post naming a foreign agent id is refused; that agent's row is untouched | `pnpm verify:stage3b` → AC-8b | 3b T2 |
+
+**The floor is enforced twice, from one list, and neither point is redundant.** A row written before
+a floor existed still has to be stripped at spawn; a floor that ran only at spawn would leave the
+stored row lying about what the agent may reach. What *was* redundant — two copies of the denied
+list — is gone, and AC-5b keeps it gone. The spec's reason for testing write time at all:
+*an invariant enforced only by seed data is enforced by nobody.*
+
+**An agent is not versioned, and does not need to be** (§5.3). A session composes its SDK options
+from the `Agent` row at spawn and records nothing about what that row said, so editing underneath a
+live one would make the session's own record unreadable — you could not answer *"what was this
+agent allowed to do when it ran?"*. Editing **between** runs is fine.
+
 ### The Overview
 
 *Not built.* Planned: PRD §6.8, **Stage 6** (re-scoped by D22 to read two sources). `/overview`

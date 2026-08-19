@@ -25,7 +25,7 @@
 > "none" was already wrong by the time the PR recording it existed. A fact that its own recording
 > changes cannot be recorded; it can only be reproduced.
 >
-> **Checked 2026-08-19 (on `feat/stage-3b-t1-connector`, after Stage 3b T1).** The suite counts
+> **Checked 2026-08-19 (on `feat/stage-3b-t2-agents`, after Stage 3b T2).** The suite counts
 > below were measured on that branch, not on `develop` — it is the branch this file ships in, and a
 > count measured somewhere else would be a claim about code nobody ran. If today is much later than
 > that, this table is a hypothesis.
@@ -35,13 +35,13 @@
 | `develop` head | `8643ef7` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #16, #17 (2026-08-19), #18 (2026-08-19) | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **64 of 65** — measured 2026-08-19 on the T1 branch | `pnpm verify` |
+| `pnpm verify` | **69 of 70** — measured 2026-08-19 on the T2 branch | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
 | `pnpm verify:stage3` | 33 of 33 — AC-1…AC-19 plus T7-1…T7-4; AC-12 opt-in (skipped by default) | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
-| `pnpm verify:stage3b` | 5 of 5 — AC-1, AC-1b, AC-2, AC-2b, AC-3 (the connector only; AC-4…AC-9 land with T2–T4) | `pnpm verify:stage3b` |
+| `pnpm verify:stage3b` | 10 of 10 — T1's AC-1/1b/2/2b/3 plus T2's AC-4, AC-5, AC-5b, AC-8, AC-8b (AC-6, AC-7, AC-9 land with T3–T4) | `pnpm verify:stage3b` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
 | Live board severities | **not recorded, by rule** | `pnpm dev` |
@@ -278,8 +278,21 @@
   at all. **AC-1b** and **AC-2b** close both, and each was proved by making it fail. That is the
   T7-2 failure recurring one ticket later (`docs/LEARNINGS.md`, 2026-08-19), which is the reason
   the practice is now standing rather than advisory.
-- **Next: T2** — agent create and edit, behind *configuration*. **Branch it off T1, not
-  `develop`** — the four tickets stack.
+- **Stage 3b T2 — agents, behind configuration — is built** (`feat/stage-3b-t2-agents`,
+  2026-08-19). `/p/<slug>/config`, reached from a rail link **outside the five tabs** —
+  `EXECUTION_TABS` is untouched, because a sixth tab would be a decision against D23. Create and
+  edit an agent; a fixed checkbox list for grants; the egress floor applied and **stated** at write
+  time; editing refused while a session is live, naming it. Five checks, not the three the spec
+  numbered. **Lead review found the cross-project ownership guard had no coverage** — deleting
+  `agent.projectId !== owned.project.id` outright left AC-4/5/8 all green, and that guard is the
+  only thing between a crafted post and editing another project's agent, grants and `canCommit`
+  included. **AC-8b** closes it. **AC-5b** closes a second: T2 shipped a second copy of the denied
+  tool list with a comment accepting "two independent lists that must agree" — a security boundary
+  with two definitions is a silent second source of truth, so review extracted
+  [`lib/agentos/egress.ts`](../lib/agentos/egress.ts) and AC-5b asserts nothing redefines it. Also
+  moved in review: T2's inline `UPDATE Agent` left schema knowledge in a route file; it is
+  `updateAgent` in `db.ts` now.
+- **Next: T3** — task create. **Branch it off T2, not `develop`** — the four tickets stack.
 - **Then:** the owner gates. AC-12 (one real session, `AGENTOS_REAL_SESSION=1`) has never been run;
   nadim's fix proposal has never been approved, which is still Stage 2's unmet criterion.
 

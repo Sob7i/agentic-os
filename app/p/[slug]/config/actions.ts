@@ -7,6 +7,7 @@ import {
   getAgent,
   getDb,
   listSessionsByProject,
+  updateAgent,
 } from "@/lib/agentos/db";
 import type { CreateAgentInput } from "@/lib/agentos/db";
 import { boardOnce } from "@/lib/reconcile/cached";
@@ -85,32 +86,6 @@ export interface AgentFormResult {
 
 const EMPTY_RESULT: AgentFormResult = { ok: false, reason: null, agentId: null, deniedByFloor: [] };
 
-/**
- * The one UPDATE this ticket needs, written here rather than in `lib/agentos/db.ts` — that file is
- * outside T2's file list (docs/specs/stage-3b-tickets.md: "`createAgent` already exists and is
- * sufficient"). Every column `createAgent` accepts is rewritten; there is no partial-update
- * variant, so a successful edit always writes the whole row the form submitted.
- */
-function updateAgentRow(db: DatabaseSync, id: string, input: Omit<CreateAgentInput, "projectId">): void {
-  db.prepare(
-    `UPDATE Agent
-     SET name = ?, monogram = ?, model = ?, rolePrompt = ?,
-         allowedToolsJson = ?, disallowedToolsJson = ?, canCommit = ?, maxTurns = ?, maxBudgetUsd = ?
-     WHERE id = ?`,
-  ).run(
-    input.name,
-    input.monogram,
-    input.model,
-    input.rolePrompt,
-    JSON.stringify(input.allowedTools),
-    JSON.stringify(input.disallowedTools),
-    input.canCommit ? 1 : 0,
-    input.maxTurns ?? null,
-    input.maxBudgetUsd ?? null,
-    id,
-  );
-}
-
 /** The create form's testable core (T2). Injectable `db` for `scripts/verify-stage3b.mts`. */
 export async function createAgentForSlug(
   slug: string,
@@ -177,7 +152,7 @@ export async function updateAgentForSlug(
   const built = buildAgentInput(readRawAgentForm(formData));
   if (!built.ok) return { ok: false, reason: built.error, agentId: agent.id, deniedByFloor: [] };
 
-  updateAgentRow(db, agentId, built.input);
+  updateAgent(db, agentId, built.input);
   return {
     ok: true,
     reason: egressFloorNote(built.deniedByFloor),

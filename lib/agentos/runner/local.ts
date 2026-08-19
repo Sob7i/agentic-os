@@ -23,6 +23,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseJsonColumn } from "../db";
 import type { AgentRow } from "../types";
+import { EGRESS_DENIED_TOOLS, isEgressDenied } from "../egress";
 import type { RunOutcome, RunParams, Runner } from "./runner";
 
 /**
@@ -53,12 +54,11 @@ export function composeOptions(params: {
    * excluded them, so it proved the fixture rather than the behaviour — the specimen-not-behaviour
    * trap `docs/LEARNINGS.md` records from Stage 1's AC-2.
    */
-  const EGRESS_DENIED = ["WebFetch", "WebSearch"] as const;
-  const allowed = parseJsonColumn<string[]>(agent.allowedToolsJson).filter(
-    (t) => !EGRESS_DENIED.includes(t as (typeof EGRESS_DENIED)[number]),
-  );
+  // The list itself lives in `lib/agentos/egress.ts` — one definition, two enforcement points
+  // (here at spawn, and at write time in `lib/agentos/agent-form.ts`). Stage 3b review, 2026-08-19.
+  const allowed = parseJsonColumn<string[]>(agent.allowedToolsJson).filter((t) => !isEgressDenied(t));
   const disallowed = Array.from(
-    new Set([...parseJsonColumn<string[]>(agent.disallowedToolsJson), ...EGRESS_DENIED]),
+    new Set([...parseJsonColumn<string[]>(agent.disallowedToolsJson), ...EGRESS_DENIED_TOOLS]),
   );
 
   return {

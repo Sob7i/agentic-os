@@ -223,6 +223,36 @@ belongs in `docs/DECISIONS.md` instead.
   fail** — write the bypass, watch it go red, delete it, and report the failure message. A check
   demonstrated only in the passing direction has demonstrated nothing.
 
+- (2026-08-19) **A correctly-written authorization guard with no adversarial fixture is
+  indistinguishable, to the suite, from no guard at all.** Stage 3b T2 wrote its cross-project
+  ownership check exactly right — `agent.projectId !== owned.project.id`, refusing a crafted post
+  that names another project's agent. Review deleted it and **all three of the ticket's checks
+  stayed green**, because AC-4, AC-5 and AC-8 each operate on an agent that legitimately belongs to
+  the project in the form. The guard is the only thing between a form post and rewriting another
+  project's agent — its tool grants and `canCommit` included. This is the *third* appearance of the
+  same shape in this codebase and the first where the code was already right: T7 shipped **three**
+  server actions missing the check entirely and review found all three; the Stage 3 spec had warned
+  about it in advance; T2 then wrote it and nothing exercised it. **The rule: a guard is not covered
+  by a check that never violates it.** Every authorization boundary needs a fixture that is
+  *hostile by construction* — a second project, a foreign id, a value outside the offered set — and
+  the check must assert both the refusal **and that the protected row is unchanged**, because a
+  refusal that still writes is the worse bug. Same reasoning the spec already applies to the egress
+  floor (*"an invariant enforced only by seed data is enforced by nobody"*), applied to
+  authorization. → **AC-8b**.
+
+- (2026-08-19) **"Two independent lists that must agree" is a second source of truth wearing a
+  justification.** T2 needed the egress-denied tool list at write time; the existing copy at spawn
+  time (`runner/local.ts`) was private to a function and its file was outside the ticket's blast
+  radius, so the ticket declared a second `EGRESS_DENIED_TOOLS` and wrote a careful comment calling
+  the duplication *"the accepted cost of a floor that holds at both write time and spawn time."*
+  The reasoning about **two enforcement points** was right and both are still there. The error was
+  concluding that two enforcement points need two lists. **Divergence here is silent and the
+  boundary is a security one** — invariant 1's carve-out is the model API, not the internet.
+  **The tell:** a comment that argues for a duplication is a duplication that needed arguing for.
+  When a ticket's file list is what forces the copy, that is a finding to report, not a constraint
+  to design around — the lead can widen a file list, and did. → `lib/agentos/egress.ts`, one
+  definition imported by both, asserted by **AC-5b**.
+
 - (2026-08-19) **A cleanup step awaited before the write that records the outcome can strand the
   record it was supposed to complete.** `dispatch` did `await removeWorktree(wt)` and *then*
   `updateSession({status, endedAtISO, failureReason})`. `removeWorktree` throws when `git worktree
