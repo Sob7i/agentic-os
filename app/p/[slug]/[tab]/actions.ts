@@ -7,6 +7,7 @@ import {
   getInboxMessage,
   getSession,
   getTask,
+  parseJsonColumn,
   writeTaskTransition,
 } from "@/lib/agentos/db";
 import { dispatch, resumeSession } from "@/lib/agentos/dispatch";
@@ -112,6 +113,18 @@ export async function answerInboxAction(formData: FormData): Promise<void> {
   const owned = await resolveOwnedTask(slug, session.taskId);
   if (!owned) {
     console.error(`answerInboxAction: refused — session ${sessionId} does not belong to project '${slug}'`);
+    return;
+  }
+
+  // When the question offered choices, the answer must be one of them. The UI renders buttons, so
+  // a value outside that set can only have been crafted — and it goes straight into the agent's
+  // next turn, which makes it the one field on this page an attacker would actually want to
+  // control. A free-text question (no `choicesJson`) accepts anything by design (review of #17).
+  const choices = parseJsonColumn<string[] | null>(message.choicesJson ?? "null");
+  if (Array.isArray(choices) && choices.length > 0 && !choices.includes(answer)) {
+    console.error(
+      `answerInboxAction: refused — answer was not one of the ${choices.length} offered choices`,
+    );
     return;
   }
 

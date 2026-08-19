@@ -87,14 +87,28 @@ export function Card({
  * no line, no placeholder, not even an empty paragraph.
  */
 function Evidence({ card, slug }: { card: CardModel; slug: string }) {
-  const { evidence } = card;
-  if (evidence.kind === "none") return null;
+  const { evidence, register } = card;
 
-  if (evidence.kind === "hand-moved") {
+  // Branch on `register`, not on `evidence.kind`.
+  //
+  // Both were available and this switched on `kind`, which made `registerFor()` — and the check
+  // that asserts it (T7-2) — **dead for rendering**: the pure function could have been wrong and
+  // the page would still have looked right, or been fixed and the page still wrong. A rule the
+  // suite asserts about a value the UI ignores is not enforced, it is decorated. Reading the
+  // register here is what makes T7-2 load-bearing (review of #17).
+  // `register === "none"` is the decision; the `kind` test beside it is a **type guard only** —
+  // TypeScript narrows the union on `kind`, so without it `evidence.text` below is not provably
+  // present. The two can never disagree: `registerFor` returns "none" for exactly that kind.
+  if (register === "none" || evidence.kind === "none") return null;
+
+  if (register === "claim") {
     return <p className={s.evidenceClaim}>&ldquo;{evidence.text}&rdquo;</p>;
   }
 
-  // running / executed / failed — all mono, all name a session id that opens the session view.
+  // register === "mono" — running / executed / failed all name a session id that opens the
+  // session view. `kind` is still consulted *within* this branch for the failure reason, which is
+  // content rather than register.
+  if (!("sessionId" in evidence)) return null;
   return (
     <>
       <p className={s.evidenceMono}>

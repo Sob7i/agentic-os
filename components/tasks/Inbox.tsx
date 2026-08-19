@@ -68,7 +68,14 @@ function InboxRow({
           </button>
         </form>
       ) : (
+        item.answer === null || item.answer === "" ? (
+        // An answered message with no answer is corruption or a hand-edit, not a normal state —
+        // say so rather than rendering the string "null" in quotes as if a human had said it
+        // (review of #17).
+        <p className={s.answeredNote}>answered, but no answer was recorded</p>
+      ) : (
         <p className={s.answeredNote}>&ldquo;{item.answer}&rdquo;</p>
+      )
       )}
     </li>
   );
