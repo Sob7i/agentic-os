@@ -22,6 +22,17 @@ export const runtime = "nodejs";
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // Do not CREATE the store just by booting. `getDb()` opens `data/agentos.sqlite` and runs the
+  // migration, which materializes a 110KB execution-layer database — on an install where no
+  // project has opted into an execution layer at all, and where the portfolio is the only thing
+  // running. That is not invariant 5 (nothing is *stored*: the file has no rows), but D19 asks for
+  // the layer boundary to be real in code, and the portfolio booting should not conjure the
+  // execution layer's store as a side effect. If the file does not exist there are no sessions, so
+  // the sweep is a guaranteed no-op and skipping it costs nothing.
+  const { existsSync } = await import("node:fs");
+  const { DEFAULT_DB_PATH } = await import("./lib/agentos/db");
+  if (!existsSync(DEFAULT_DB_PATH)) return;
+
   const { getDb } = await import("./lib/agentos/db");
   const { runBootSweep } = await import("./lib/agentos/sweep");
   const { PROCESS_BOOT_ID } = await import("./lib/agentos/dispatch");

@@ -135,7 +135,15 @@ verbatim. The seed script and its `projects.config.ts` entry were both reverted 
 **The boot sweep now has a call site (§7.7).** `instrumentation.ts` calls `runBootSweep` once per
 server process, passing `dispatch.ts`'s own `PROCESS_BOOT_ID` so the two can never disagree. Built
 by T5, wired by T7 — until this landed, restarting `pnpm dev` left `running` rows with no process
-behind them, permanently.
+behind them, permanently. Verified against a real boot, not only a fixture: with a stale `running`
+session seeded, starting the server logs `[agentos] boot sweep: interrupted 1 session(s) left
+'running' by a previous process` and the row reads `interrupted` afterwards.
+
+**Booting the portfolio does not create the execution layer's store.** `data/agentos.sqlite` is
+opened only if it already exists — with no execution layer initialized there are no sessions, so the
+sweep is a guaranteed no-op, and running the Board on a machine that has never opted in leaves no
+`data/` directory behind. D19 asks for the layer boundary to be real in code, and the portfolio
+starting up should not conjure the execution layer's database as a side effect.
 
 ### The Overview
 
