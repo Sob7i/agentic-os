@@ -251,9 +251,11 @@
   into a `Project` row, so the only way to create an agent or a task is a seed script. 3b is the
   smallest thing that closes the loop: initialize a project, create an agent, create a task. It is
   sequenced **before Stage 4** because Stage 4's own spec says it introduces no new machinery — it
-  sequences parts that have already run, and right now none of them have run once. **One owner
-  decision is open**, §5.1: what creates the `Project` row. Recommendation is an explicit
-  *Initialize* button on the pane that already says *not initialized*.
+  sequences parts that have already run, and right now none of them have run once. **Its one open
+  decision is closed** — §5.1 became **D30** on 2026-08-19: an explicit *Initialize* button on the
+  pane that already says *not initialized*. A filesystem watcher was rejected on sight and the
+  rejection recorded, because it is the kind of convenience that comes back. **The spec is `☑` and
+  buildable; T-tickets have not been written yet.**
 - **Then:** the owner gates. AC-12 (one real session, `AGENTOS_REAL_SESSION=1`) has never been run;
   nadim's fix proposal has never been approved, which is still Stage 2's unmet criterion.
 

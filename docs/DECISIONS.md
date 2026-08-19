@@ -721,3 +721,30 @@ limit (`mcp__agentos__task_append_activity` is 34).
 `lib/agentos/mcp/names.ts` and its qualified form, so the suite now catches this class without a
 real dispatch. Verified by reverting one name to the dotted form and watching it fail. `names.ts`
 is the wire-name authority; prose in the specs still uses dots where it describes the concept.
+
+## D30 — a project is initialized by an explicit button, never by a watcher (2026-08-19)
+
+**Decision:** an **"Initialize" button** on the Tasks page's *not initialized* pane turns a
+project's `agentos.yml` into a `Project` row. Closes `stage-3b-onboarding.spec.md` §5.1; the spec
+is now buildable.
+
+**Rationale.** The button sits exactly where the confusion already is — the page has already
+detected the state and explained it in a sentence, so the fix belongs beside the explanation rather
+than in a command the reader has to go and find. It also keeps creation an explicit human act,
+which is invariant 4's shape (*nothing is written without a click*) applied to the execution
+layer's own first record.
+
+**Rejected, and recorded so it is not re-proposed.**
+
+- **A CLI command** (`pnpm agentos:init <slug>`) is cheaper to build and trivially scriptable, but
+  it puts the first step of the product's own onboarding outside the product. The owner's stated
+  goal is to exercise the cycle *through the UI*, and a first-run experience that begins in a
+  terminal fails that on its own terms. A command may still be added later as a convenience; it
+  must not be the only path.
+- **Automatic on `agentos.yml` appearing** — a filesystem watcher that creates records. **Rejected
+  on sight.** It is a process that acts without being asked, which is the exact shape D24 refused
+  for dispatch and the exact failure PRD §12.1 describes. That it would be convenient is not in
+  dispute; convenience is how the thing this product exists to catch gets built.
+
+**Consequence:** the button is the only path in Stage 3b, and its refusals are stated in the UI
+verbatim (no `agentos.yml`, malformed yaml, already initialized) — AC-1, AC-2 and AC-3 assert each.

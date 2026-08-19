@@ -1,7 +1,7 @@
 # Spec — Stage 3b: make it reachable
 
-status: ☐ **one owner decision open** — §5.1 (what creates a `Project` row). Everything else is
-closed. Sequenced **between Stage 3 and Stage 4**, and the reason is in the box below.
+status: ☑ **decisions closed — buildable.** §5.1 closed 2026-08-19 as **D30**: an explicit
+*Initialize* button. Sequenced **between Stage 3 and Stage 4**, and the reason is in the box below.
 
 > **Stage 3 is complete and cannot be used.** Every mechanism works and is covered by 33 checks —
 > `dispatch`, the two-layer gate, the inbox pause and resume, the boot sweep, the Tasks board. But
@@ -122,14 +122,13 @@ by hand** — the suite proves the parts connect, not that the product works.
 
 ## §5 — Decisions
 
-### 5.1 What creates a `Project` row? — **OPEN, owner**
+### 5.1 What creates a `Project` row? — **closed 2026-08-19 as D30**
 
-Three readings, and they differ in more than effort:
-
-**(a) An explicit "Initialize" button on the Tasks page's *not initialized* pane.** The page already
-detects the state and says so; the button is next to the sentence explaining the problem.
-*Recommended.* It is one click, it is where the confusion already is, and it keeps creation an
-explicit human act — consistent with invariant 4, where nothing is written without a click.
+**An explicit "Initialize" button on the Tasks page's *not initialized* pane.** The page already
+detects the state and says so; the button goes next to the sentence explaining the problem. One
+click, where the confusion already is, and creation stays an explicit human act — invariant 4's
+shape applied to the execution layer's own first record. The two rejected readings are kept below
+because the second is the kind of idea that comes back.
 
 **(b) A CLI command** (`pnpm agentos:init <slug>`). Cheapest to build and easiest to script, but it
 puts the first step of the product's own onboarding outside the product, and the owner has said the
@@ -139,8 +138,8 @@ goal is to test the cycle *through the UI*.
 a filesystem watcher that creates records is a process that acts without being asked — the exact
 shape D24 refused for dispatch, and PRD §12.1's whole subject.
 
-**This needs the owner because it is the product's first-run experience**, not because it is
-technically hard. Once chosen it is a two-line change either way.
+**This needed the owner because it is the product's first-run experience**, not because it was
+technically hard — see D30 for the full reasoning on both rejections.
 
 ### 5.2 Where does agent configuration live? — closed
 
