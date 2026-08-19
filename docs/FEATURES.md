@@ -159,7 +159,9 @@ exact shape D24 refused for dispatch).
 | Initializes a project that has an `agentos.yml` | One `Project` row; the Tasks page stops saying *not initialized* and shows an empty four-column board | `pnpm verify:stage3b` → AC-1 | 3b T1 |
 | Reads the file's own settings | `slug` and `maxConcurrentSessions` come from `agentos.yml`; **`primaryRepoPath` never can** — it is taken from the Board's own entry (§3.2) | `pnpm verify:stage3b` → AC-1b | 3b T1 |
 | Refuses a project with no `agentos.yml` | Stated reason next to the button, naming the path it looked at; no row written | `pnpm verify:stage3b` → AC-2 | 3b T1 |
-| Refuses a malformed `agentos.yml` | The yaml parser's own message, **verbatim**, never reworded; no partially-created project | `pnpm verify:stage3b` → AC-2b | 3b T1 |
+| Refuses a malformed `agentos.yml` | The yaml parser's own message is carried **unchanged** — never reworded, summarised or truncated — inside a sentence naming the file. AC-2b asserts containment, so a reworded message fails it | `pnpm verify:stage3b` → AC-2b | 3b T1 |
+| Refuses an `agentos.yml` it cannot read | A permission or I/O error is stated as such — **never** as *has not opted in*, which would be a fact nobody checked | `pnpm verify:stage3b` → AC-2d | 3b T1 |
+| Refuses a slug another project already holds | Stated on the screen; `Project.slug` is `UNIQUE` and idempotency is keyed on the repo path, so these are two different guards | `pnpm verify:stage3b` → AC-2c | 3b T1 |
 | Initializing twice is a no-op, not a duplicate | Second click reports *already initialized*; still exactly one row | `pnpm verify:stage3b` → AC-3 | 3b T1 |
 | Opening a page still does not create the store | `dbIfExists()` on the page path, `getDb()` only inside the action — a click asks for the database, a page view does not | Load a tab on an uninitialized project; no `data/` appears | 3b T1 |
 

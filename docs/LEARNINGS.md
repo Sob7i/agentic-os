@@ -331,6 +331,53 @@ belongs in `docs/DECISIONS.md` instead.
   **A side effect that only shows up on a clean machine will not show up in review**; this was found
   by deleting `data/` and booting, not by reading the diff.
 
+- (2026-08-19) **`git merge-file --union` silently eats a shared closing delimiter, and the result
+  type-checks.** Merging four stacked Stage 3b branches that each append checks to one suite file
+  produced the spurious conflicts the stacking rule predicts — every hunk resolved to "keep both".
+  Union is the correct driver for that, and it got the content right twice; both times it also
+  dropped one `}`, because the two sides ended with the identical `}` + blank line at the same
+  offset and a line-based union cannot tell a **shared closing delimiter** from duplicated content.
+  **The failure is quiet in the worst way:** `pnpm type-check` passed — `tsc` reads `.ts`, the
+  suite is `.mts` and only tsx transforms it — so the first symptom was a runtime
+  `Unexpected end of file` with *zero* checks run and *zero* reported. Two hand-resolutions before
+  reaching for the union driver each produced the same shape from a different mistake.
+  **Two rules.** After any union merge of a file built from repeated same-shaped blocks, **count
+  braces** (`sum of "{" minus "}"` must be 0) and **count the checks that actually ran** against
+  what the branches contributed — a suite that reports 0 PASS and 0 FAIL has not passed, and the
+  summary line is what says so. And: **`pnpm type-check` does not cover `scripts/*.mts`**, which is
+  worth knowing on its own.
+
+- (2026-08-19) **A scripted edit that slices between two anchors deleted 50 of 61 backlog entries,
+  and nothing caught it for two commits.** Moving one item in `docs/BACKLOG.md`, the edit took
+  `s[:start] + s[end:]` where `start` was the entry to move and `end` was the next entry it
+  expected to follow. The two were **323 lines apart**, with the `## Done / superseded` heading and
+  fifty unrelated entries between them. The file still looked structurally fine — one heading, a
+  list of entries — so a glance at the result showed nothing wrong, and it survived a commit, a
+  push, and a merge into another branch. It surfaced only because a reviewer asked why a resolved
+  item sat under *Open*: **the heading was gone, so everything was under Open.**
+  **The rule: a text edit that removes a range must assert what it is removing.** Count the items
+  before and after and refuse if the count moved by more than intended, or bound the slice to the
+  entry (*"refuse to cut more than N lines"*). Both are one line. Anchoring on `s.index(next_thing)`
+  is only safe when the two anchors are known to be adjacent, which is exactly the thing the code
+  does not check. Same class as `verify-before-claim`, applied to an edit rather than a claim: the
+  edit asserted "these two anchors are adjacent" and never ran the check that would falsify it.
+
+- (2026-08-19) **`git merge-file --union` silently eats a shared closing delimiter, and the result
+  type-checks.** Merging four stacked Stage 3b branches that each append checks to one suite file
+  produced the spurious conflicts the stacking rule predicts — every hunk resolved to "keep both".
+  Union is the right driver for that, and it got the content right both times; both times it also
+  dropped one `}`, because the two sides ended with the identical `}` + blank line at the same
+  offset and a line-based union cannot tell a **shared closing delimiter** from duplicated content.
+  **The failure is quiet in the worst way:** `pnpm type-check` passed — `tsc` reads `.ts`, the suite
+  is `.mts` and only tsx transforms it — so the first symptom was a runtime `Unexpected end of file`
+  with *zero* checks run and *zero* reported. Two hand-resolutions attempted before reaching for the
+  union driver each produced the same shape from a different mistake.
+  **Two rules.** After any union merge of a file built from repeated same-shaped blocks, **count
+  braces** (`"{"` minus `"}"` must be 0) and **count the checks that actually ran** against what the
+  branches contributed — a suite reporting 0 PASS and 0 FAIL has not passed, and the summary line is
+  what says so. And separately, worth knowing on its own: **`pnpm type-check` does not cover
+  `scripts/*.mts`.**
+
 - (2026-08-19) **A ticket's own file-scope restriction is enforced by the harness, not just the
   brief — plan probes accordingly.** Stage 3b T4's brief forbade touching any `lib/` or `app/` file
   and asked for a delete-a-guard probe in the same shape T2's review had used: edit the production
