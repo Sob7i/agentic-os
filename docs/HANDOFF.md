@@ -255,7 +255,15 @@
   decision is closed** — §5.1 became **D30** on 2026-08-19: an explicit *Initialize* button on the
   pane that already says *not initialized*. A filesystem watcher was rejected on sight and the
   rejection recorded, because it is the kind of convenience that comes back. **The spec is `☑` and
-  buildable; T-tickets have not been written yet.**
+  buildable, and the four T-tickets are written**
+  ([`stage-3b-tickets.md`](specs/stage-3b-tickets.md), 2026-08-19): T1 the connector, T2 agent
+  create/edit behind *configuration*, T3 task create, T4 the full cycle plus the walkthrough. They
+  **stack** — each branches off the one before, because all four append to the same hub docs and to
+  `scripts/verify-stage3b.mts`. Three facts measured on `8643ef7` shape them and are recorded in
+  the tickets' own preamble: **no watched repo has an `agentos.yml`** (so this stage defines the
+  format rather than capturing one, and the *not initialized* pane is unreachable today because a
+  project without the file gets zero tabs), **there is no `configuration` surface yet**, and
+  **`yaml` is not a dependency**.
 - **Then:** the owner gates. AC-12 (one real session, `AGENTOS_REAL_SESSION=1`) has never been run;
   nadim's fix proposal has never been approved, which is still Stage 2's unmet criterion.
 

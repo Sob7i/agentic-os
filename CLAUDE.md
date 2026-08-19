@@ -81,6 +81,7 @@ deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state*
 | `docs/DESIGN-BRIEF-EXECUTION.md` | Design | Execution layer + app shell — round 3 |
 | `docs/specs/stage-3a-shell.spec.md` | Queue | The app shell — **built 2026-08-18** |
 | `docs/specs/stage-3b-onboarding.spec.md` | Queue | **Next to build** — the connector that makes Stage 3 reachable, plus agent and task creation. **Decision-closed (D30)** |
+| `docs/specs/stage-3b-tickets.md` | Queue | Stage 3b's four build tickets — sequencing, file ownership, hand-off contracts. **They stack; T2 branches off T1, not `develop`** |
 | `docs/specs/AgentOS-spec.md` | Reference | Reconstructed source spec for the execution layer — **a reconstruction, not a contract** |
 | `design/wireframes.pen` | Design | Round-1/2 wireframes (Pencil; plain JSON, readable directly) |
 | `design/wireframes2.pen` | Design | **Round-3** wireframes — the shell, Tasks, Goals, Sessions, Inbox, plus six rationale notes. Shell closed as D23 |
