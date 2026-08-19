@@ -27,7 +27,13 @@ export interface ParsedConfig {
 
 export interface ParseFailure {
   ok: false;
-  /** The parser's own message, verbatim — never reworded, so a human can act on it directly. */
+  /**
+ * The parser's own message, **unchanged** — never reworded, summarised or truncated, so a human can
+ * act on it directly. The caller frames it in a sentence naming the file (*"agentos.yml is
+ * malformed: …"*); that is context around the message, not a change to it, and AC-2b asserts
+ * containment precisely so the distinction is enforced rather than trusted. Clarified after review
+ * of #20 read "verbatim" as forbidding the frame.
+ */
   error: string;
 }
 
