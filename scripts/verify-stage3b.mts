@@ -43,12 +43,15 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import {
   openDb,
   listProjects,
   listTasksByProject,
+  listTaskEvents,
+  listInboxMessagesBySession,
   createProject,
   createAgent,
   createTask,
@@ -56,17 +59,25 @@ import {
   updateSession,
   getAgent,
   getTask,
+  getSession,
+  writeTaskTransition,
 } from "../lib/agentos/db";
 import { initializeProject, createTaskForSlug } from "../app/p/[slug]/[tab]/actions";
 import { createAgentForSlug, updateAgentForSlug } from "../app/p/[slug]/config/actions";
 import { parseAgentosYml } from "../lib/agentos/config";
 import { EGRESS_DENIED_TOOLS } from "../lib/agentos/egress";
 import { resolveToolGrants } from "../lib/agentos/agent-form";
-import { showsRunControl } from "../lib/tasks/model";
+import { showsRunControl, evidenceLineFor } from "../lib/tasks/model";
 import { loadProjectExecutionData } from "../lib/tasks/data";
-import { dispatch } from "../lib/agentos/dispatch";
+import { dispatch, resumeSession } from "../lib/agentos/dispatch";
 import { FakeRunner } from "../lib/agentos/runner/fake";
+import { createInboxAskTool } from "../lib/agentos/mcp/inbox-server";
+import { createTaskUpdateStatusTool } from "../lib/agentos/mcp/agentos-server";
+import { AGENTOS_SERVER, INBOX_ASK, INBOX_SERVER, TASK_UPDATE_STATUS, qualify } from "../lib/agentos/mcp/names";
+import type { Runner, RunOutcome, RunParams } from "../lib/agentos/runner/runner";
 import type { ProjectConfig } from "../projects.config";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { BetaMessage, BetaUsage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 
 let failures = 0;
 const pass = (id: string, msg: string) => console.log(`  PASS  ${id} — ${msg}`);
@@ -747,6 +758,332 @@ console.log("\nStage 3b acceptance — the connector, fixture repos only\n");
     fail("AC-7b", "components/tasks/Board.tsx still decides the Run now control from card.agent itself, alongside showsRunControl");
   else
     pass("AC-7b", "Run now shows only on a todo card with an agent; absent (not disabled) when the assignee is deliberately human — and Board.tsx delegates the decision rather than repeating it");
+}
+
+// ── AC-9 fixture plumbing — a scripted SDK message stream, T6's own shape (verify-stage3.mts), ──
+// ── copied rather than imported: each verify-stage*.mts owns its own fixture family (T1's own ──
+// ── comment above), and neither file exports these helpers. ─────────────────────────────────
+function usage(inputTokens: number, outputTokens: number): BetaUsage {
+  return {
+    cache_creation: null,
+    cache_creation_input_tokens: null,
+    cache_read_input_tokens: null,
+    fallback_credit: null,
+    inference_geo: null,
+    input_tokens: inputTokens,
+    iterations: null,
+    output_tokens: outputTokens,
+    output_tokens_details: null,
+    server_tool_use: null,
+    service_tier: null,
+    speed: null,
+  };
+}
+
+function initMessage(sessionId: string): SDKMessage {
+  return {
+    type: "system",
+    subtype: "init",
+    apiKeySource: "user",
+    claude_code_version: "0.0.0-fake",
+    cwd: "/tmp/agentos-fake-worktree",
+    tools: ["Read", "Edit", "Bash"],
+    mcp_servers: [],
+    model: "claude-opus-5",
+    permissionMode: "default",
+    slash_commands: [],
+    output_style: "default",
+    skills: [],
+    plugins: [],
+    uuid: randomUUID(),
+    session_id: sessionId,
+  };
+}
+
+function assistantToolUseMessage(sessionId: string, toolName: string, input: unknown): SDKMessage {
+  const message: BetaMessage = {
+    id: randomUUID(),
+    container: null,
+    content: [{ type: "tool_use", id: randomUUID(), name: toolName, input }],
+    context_management: null,
+    diagnostics: null,
+    model: "claude-opus-5",
+    role: "assistant",
+    stop_details: null,
+    stop_reason: "tool_use",
+    stop_sequence: null,
+    type: "message",
+    usage: usage(120, 40),
+  };
+  return { type: "assistant", message, parent_tool_use_id: null, uuid: randomUUID(), session_id: sessionId };
+}
+
+function resultMessage(sessionId: string, costUsd: number): SDKMessage {
+  return {
+    type: "result",
+    subtype: "success",
+    duration_ms: 1000,
+    duration_api_ms: 800,
+    is_error: false,
+    num_turns: 1,
+    stop_reason: null,
+    total_cost_usd: costUsd,
+    usage: usage(500, 220),
+    modelUsage: {},
+    permission_denials: [],
+    uuid: randomUUID(),
+    session_id: sessionId,
+    structured_output: undefined,
+    result: "done",
+  };
+}
+
+/**
+ * The whole cycle, in one scripted `Runner` — no new seam (spec §7: "the `Runner` fake and the
+ * fixture repo are the two you have"). First call simulates the agent calling `inbox_ask`;
+ * second call (the resume) simulates `task_update_status(review)`. Both tool calls go through the
+ * REAL handler, exactly as `verify-stage3.mts`'s `PausingRunner` established for AC-6 — this fake
+ * substitutes the SDK's own tool dispatch, never the handler underneath it, so every DB write AC-9
+ * inspects (the InboxMessage row, the TaskEvent) is produced by production code, not asserted by
+ * the test into existence.
+ */
+class CyclingRunner implements Runner {
+  readonly calls: RunParams[] = [];
+  constructor(
+    private readonly db: ReturnType<typeof openDb>,
+    private readonly taskId: string,
+    private readonly question: string,
+  ) {}
+
+  async run(params: RunParams): Promise<RunOutcome> {
+    this.calls.push(params);
+    // worktree.ts's documented invariant: "<tmp>/agentos/<sessionId>" — the only way this fake,
+    // never handed the session id directly (RunParams carries no such field), can recover it to
+    // build the handler's SessionCtx.
+    const sessionId = basename(params.cwd);
+    const sdkSessionId = randomUUID();
+    await params.onMessage(initMessage(sdkSessionId));
+
+    if (this.calls.length === 1) {
+      await params.onMessage(
+        assistantToolUseMessage(sdkSessionId, qualify(INBOX_SERVER, INBOX_ASK), { question: this.question }),
+      );
+      await createInboxAskTool({ db: this.db, sessionId, taskId: this.taskId }).handler(
+        { question: this.question },
+        {} as never,
+      );
+      return { sdkSessionId, costUsd: 0.01, resultSubtype: "success" };
+    }
+
+    const reason = "needs a human's judgement before closing";
+    await params.onMessage(
+      assistantToolUseMessage(sdkSessionId, qualify(AGENTOS_SERVER, TASK_UPDATE_STATUS), {
+        status: "review",
+        reason,
+      }),
+    );
+    await createTaskUpdateStatusTool({ db: this.db, sessionId, taskId: this.taskId }).handler(
+      { status: "review", reason },
+      {} as never,
+    );
+
+    await params.onMessage(resultMessage(sdkSessionId, 0.02));
+    return { sdkSessionId, costUsd: 0.02, resultSubtype: "success" };
+  }
+}
+
+/**
+ * Polls rather than sleeping a fixed amount — `verify-stage3.mts`'s own `waitForSession`,
+ * reused in shape (not imported — same file-ownership reason as the message builders above).
+ */
+async function waitForSession(
+  db: ReturnType<typeof openDb>,
+  sessionId: string,
+  settled: (s: NonNullable<ReturnType<typeof getSession>>) => boolean,
+  timeoutMs = 5000,
+) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const session = getSession(db, sessionId);
+    if (!session) throw new Error(`waitForSession: no Session ${sessionId}`);
+    if (settled(session)) return session;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `waitForSession: session ${sessionId} did not settle within ${timeoutMs}ms ` +
+          `(status='${session.status}', endedAtISO=${session.endedAtISO ?? "null"})`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
+// ── AC-9 · the full cycle, in one test (docs/specs/stage-3b-onboarding.spec.md §4, "the check ──
+// ── that proves the loop") — create agent → create task → dispatch → the scripted fake asks a ──
+// ── question → answer it → the fake moves the card to review → the human approves → done. ──────
+// Every stage is asserted POSITIVELY (the session really paused, the question was really asked,
+// the answer was really consumed, the session itself really moved the card) rather than only
+// checking the terminal status — a cycle test that would still pass had the pause never happened
+// is testing very little (the risk this ticket's own brief names).
+{
+  const { dir } = makeConnectorFixtureRepo();
+  const cfg = fixtureConfig("t4-ac9", dir);
+  const db = openDb(":memory:");
+  const project = createProject(db, {
+    slug: "t4-ac9",
+    primaryRepoPath: dir,
+    yamlPath: join(dir, "agentos.yml"),
+    maxConcurrentSessions: 1,
+  });
+  const agent = createAgent(db, {
+    projectId: project.id,
+    name: "Cycle Runner",
+    monogram: "CR",
+    model: "claude-opus-5",
+    rolePrompt: "Runs the full task cycle for AC-9.",
+    allowedTools: ["Read"],
+    disallowedTools: [],
+    canCommit: false,
+  });
+
+  const form = new FormData();
+  form.set("slug", "t4-ac9");
+  form.set("name", "Full-cycle task");
+  form.set("description", "Exercises dispatch, pause, resume, review and approval end to end.");
+  form.set("assigneeAgentId", agent.id);
+  form.set("approvalGate", "on");
+
+  const created = await withOnlyProject(cfg, () => createTaskForSlug("t4-ac9", form, { db }));
+  const task = created.taskId ? getTask(db, created.taskId) : null;
+
+  if (!created.ok || !task) {
+    fail("AC-9", `setup: task creation refused or unreadable: ${created.reason}`);
+    db.close();
+  } else {
+    const QUESTION = "which cloud provider?";
+    const ANSWER = "use AWS";
+    const runner = new CyclingRunner(db, task.id, QUESTION);
+
+    const dispatched = await dispatch(task.id, "manual", { db, runner });
+    if (!dispatched.started) {
+      fail("AC-9", `dispatch refused: (${dispatched.refusedBy}) ${dispatched.reason}`);
+      db.close();
+    } else {
+      const sessionId = dispatched.sessionId;
+
+      // Stage 1 — dispatch's own move, todo -> doing, actor the session.
+      const dispatchEvent = listTaskEvents(db, task.id).find(
+        (e) => e.fromStatus === "todo" && e.toStatus === "doing" && e.actorType === "session" && e.actorId === sessionId,
+      );
+
+      // Stage 2 — the session really paused: 'waiting-inbox', worktree gone, one real open
+      // question — not merely "dispatch didn't error." Mirrors AC-6's own dual wait condition
+      // (verify-stage3.mts): status flips synchronously inside the real inbox_ask handler,
+      // worktreePath clears later once teardown's own subprocess finishes.
+      const paused = await waitForSession(db, sessionId, (s) => s.status === "waiting-inbox" && s.worktreePath === null);
+      const inboxRows = listInboxMessagesBySession(db, sessionId);
+      const askedForReal =
+        paused.status === "waiting-inbox" &&
+        paused.worktreePath === null &&
+        inboxRows.length === 1 &&
+        inboxRows[0].status === "open" &&
+        inboxRows[0].body === QUESTION;
+
+      if (!dispatchEvent) {
+        fail("AC-9", `no TaskEvent recorded dispatch's own todo->doing move with actor session ${sessionId}`);
+        db.close();
+      } else if (!askedForReal) {
+        fail(
+          "AC-9",
+          `the session did not really pause on a real question: session=${JSON.stringify(paused)}, inbox=${JSON.stringify(inboxRows)}`,
+        );
+        db.close();
+      } else {
+        // Stage 3 — answer it, and prove the answer actually reached the resumed run (AC-6's
+        // own technique: the fake cannot prove the model saw anything, so assert the OPTIONS the
+        // second call received instead).
+        await resumeSession(sessionId, ANSWER, { db, runner });
+        const afterResume = await waitForSession(db, sessionId, (s) => s.endedAtISO !== null);
+        const secondCall = runner.calls[1];
+        const answerConsumed = !!secondCall && secondCall.resume === paused.sdkSessionId && secondCall.prompt === ANSWER;
+
+        // Stage 4 — the fake itself, as the session, moved the card to 'review' — never asserted
+        // via the terminal status alone.
+        const taskAtReview = getTask(db, task.id)!;
+        const eventsAtReview = listTaskEvents(db, task.id);
+        const reviewEvent = eventsAtReview.find(
+          (e) => e.fromStatus === "doing" && e.toStatus === "review" && e.actorType === "session" && e.actorId === sessionId,
+        );
+
+        // The evidence line the agent's own work earns, at the one point in this cycle it can
+        // carry a session id at all — via cardModel/evidenceLineFor (lib/tasks/model.ts), never
+        // re-derived here, per the ticket's own instruction. Once the human approves below, the
+        // latest TaskEvent is human-actored and evidenceLineFor deliberately renders
+        // 'hand-moved' instead (spec §8.3's own table — "an executed card and a hand-moved card
+        // must be distinguishable"), which is why this is checked here, at 'review', and not
+        // against the task's eventual 'done' state.
+        const evidenceAtReview = evidenceLineFor({
+          task: taskAtReview,
+          events: eventsAtReview,
+          sessionsById: new Map([[sessionId, afterResume]]),
+          toolCallCountBySession: new Map(),
+          commitShasBySession: new Map(),
+        });
+        const evidenceResolves =
+          evidenceAtReview.kind === "executed" &&
+          evidenceAtReview.sessionId === sessionId &&
+          getSession(db, evidenceAtReview.sessionId) !== null;
+
+        if (!answerConsumed) {
+          fail(
+            "AC-9",
+            `the resume did not carry the human's answer into the run: got resume=${JSON.stringify(secondCall?.resume)}, prompt=${JSON.stringify(secondCall?.prompt)}`,
+          );
+        } else if (!reviewEvent) {
+          fail("AC-9", `no TaskEvent recorded the session's own doing->review move with actor ${sessionId}`);
+        } else if (taskAtReview.status !== "review") {
+          fail("AC-9", `expected the task in 'review' after the fake's own move, got '${taskAtReview.status}'`);
+        } else if (!evidenceResolves) {
+          fail(
+            "AC-9",
+            `the review card's evidence line did not resolve to a real session id: ${JSON.stringify(evidenceAtReview)}`,
+          );
+        } else {
+          // Stage 5 — the human approves. The same write `approveDoneAction` performs
+          // (app/p/[slug]/[tab]/actions.ts) — that action itself is not callable here, since it
+          // calls getDb() and revalidatePath, neither reachable outside a real Next.js request
+          // (the same reason initializeProject/createTaskForSlug are split from their bound
+          // actions, per that file's own comment).
+          writeTaskTransition(db, {
+            taskId: task.id,
+            toStatus: "done",
+            actorType: "human",
+            actorId: "owner",
+            reason: "approved by owner",
+          });
+
+          const taskDone = getTask(db, task.id)!;
+          const approveEvent = listTaskEvents(db, task.id).find(
+            (e) => e.fromStatus === "review" && e.toStatus === "done" && e.actorType === "human" && e.actorId === "owner",
+          );
+
+          if (taskDone.status !== "done") {
+            fail("AC-9", `expected the task 'done' after approval, got '${taskDone.status}'`);
+          } else if (!approveEvent) {
+            fail("AC-9", "no TaskEvent recorded the human's own review->done approval, actor 'owner'");
+          } else {
+            pass(
+              "AC-9",
+              `todo→doing (session ${sessionId.slice(0, 8)}) → waiting-inbox (real question "${QUESTION}") → ` +
+                `resumed with "${ANSWER}" (options carried the resume id and the answer) → doing→review ` +
+                `(session, evidence "${evidenceAtReview.kind === "executed" ? evidenceAtReview.text : ""}", resolves via getSession) → ` +
+                `review→done (owner). Every transition carries the right TaskEvent actor.`,
+            );
+          }
+        }
+        db.close();
+      }
+    }
+  }
 }
 
 for (const t of TEMPS) rmSync(t, { recursive: true, force: true });

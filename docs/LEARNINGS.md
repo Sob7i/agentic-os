@@ -331,6 +331,21 @@ belongs in `docs/DECISIONS.md` instead.
   **A side effect that only shows up on a clean machine will not show up in review**; this was found
   by deleting `data/` and booting, not by reading the diff.
 
+- (2026-08-19) **A ticket's own file-scope restriction is enforced by the harness, not just the
+  brief — plan probes accordingly.** Stage 3b T4's brief forbade touching any `lib/` or `app/` file
+  and asked for a delete-a-guard probe in the same shape T2's review had used: edit the production
+  file, watch the check redden, revert. The Edit tool refused the very first attempt, against
+  `lib/agentos/mcp/agentos-server.ts`, with a permission denial naming the scope. Earlier tickets'
+  probes (T1's parser, T2's ownership guard, T3's assignee check) were run during **review**, which
+  carries no such restriction — T4 is the first ticket where the probing itself had to happen inside
+  the restriction. The fix was a throwaway harness (deleted before finishing, never committed) that
+  imports the same production functions **unmodified** and substitutes the one broken step directly
+  — reproducing byte-for-byte the database state a real regression would leave, without editing the
+  file the regression would have been in. **The generalisation:** when a ticket both forbids editing
+  a file and needs to prove a check would catch a defect in it, the probe has to construct the
+  broken *output* through injection at a seam, not by breaking the *source* — the same substitution
+  principle `Runner`/`FakeRunner` already use for the SDK, one level down.
+
 ## Tooling
 
 - (2026-07-27) **`.pen` files (Pencil) are plain UTF-8 JSON** — readable directly with any JSON

@@ -19,14 +19,14 @@ and things explicitly punted with a reason.
   **Unblock condition:** the first project with enough real tasks and sessions to measure — at which
   point measure first, then batch the three per-session loads.
 
-- **Nothing connects an `agentos.yml` on disk to a `Project` row in `data/agentos.sqlite`**
-  *(added 2026-08-19)*. The shell (D18) checks the file and shows the tabs; T7's Tasks and Inbox
-  pages check one level deeper and render an honest *"not initialized"* pane rather than inventing
-  rows or crashing. But **no ticket through T7 builds the connector**, so no real project can
-  dispatch yet — Stage 3 is complete and still unreachable on a watched repo. **Unblock condition:**
-  none technical; it needs a decision about *what* creates the row (a manual `init` command, a
-  yaml-watcher, or the first dispatch) and that decision belongs with whoever picks up the first
-  real run — see also `docs/DECISIONS.md` D27, which chose `fractal-code` as the target repo.
+- **`CLAUDE.md`'s top status paragraph is stale** *(added 2026-08-19, found while landing Stage 3b
+  T4)*. It still reads *"Next build step: **Stage 3**, the execution MVP, gated on two owner
+  decisions in its spec's §5.11 and §5.12"* — both gates cleared 2026-08-18 as **D27**, and Stage 3,
+  Stage 3a, **and now Stage 3b** are all built (`docs/HANDOFF.md`'s own "Where things stand" and
+  T1–T7/T1–T4 logs). Not fixed here: `CLAUDE.md` is not in this ticket's file scope (T4's brief lists
+  exactly which docs it may touch, and `CLAUDE.md` is not one of them), so this is reported rather
+  than patched around. **Unblock condition:** none technical — the next session with `CLAUDE.md` in
+  scope should rewrite the status paragraph against `docs/HANDOFF.md`'s current "Where things stand".
 
 - **`verify-stage3a.mts`'s AC-1 can go red because GitHub is down** *(added 2026-08-19)*. It spawns
   `verify:stage1` and **hard-asserts its exact pass/fail totals**. Stage 1 is not hermetic — its
@@ -343,6 +343,13 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than
      deleting them. -->
 
+- **Nothing connects an `agentos.yml` on disk to a `Project` row in `data/agentos.sqlite`** —
+  resolved 2026-08-19 by Stage 3b T1–T4. T1 built the connector (an explicit *Initialize* button,
+  D30); T2/T3 built agent and task creation behind it; T4's **AC-9** proves the whole cycle —
+  dispatch → pause → resume → review → approve — runs end to end against fixtures. Still open:
+  **no human has run it on a real project** (`docs/HUMAN-TEST.md` Part 7, added by T4) — that
+  remains an owner gate, not a code gap, and is tracked in `docs/HANDOFF.md`'s *Next up* rather
+  than here.
 - **`runBootSweep` has no call site** — resolved 2026-08-19 by T7. `instrumentation.ts` calls it
   once per server process, passing `dispatch.ts`'s own `PROCESS_BOOT_ID`. Verified against a real
   boot rather than a fixture: with a stale `running` session seeded, starting the server logs

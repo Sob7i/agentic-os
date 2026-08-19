@@ -25,23 +25,28 @@
 > "none" was already wrong by the time the PR recording it existed. A fact that its own recording
 > changes cannot be recorded; it can only be reproduced.
 >
-> **Checked 2026-08-19 (on `feat/stage-3b-t3-tasks`, after Stage 3b T3).** The suite counts
+> **Checked 2026-08-19 (on `feat/stage-3b-t4-cycle`, after Stage 3b T4).** The suite counts
 > below were measured on that branch, not on `develop` — it is the branch this file ships in, and a
 > count measured somewhere else would be a claim about code nobody ran. If today is much later than
-> that, this table is a hypothesis.
+> that, this table is a hypothesis. **Correction while landing T4:** the previous check-in of this
+> block read `pnpm verify:stage3b` as *13 of 13* and `pnpm verify` as *72 of 73* — both were already
+> wrong the day they were written. T3 had actually landed **fourteen** stage3b checks (T1's five,
+> T2's five, T3's four — AC-6, AC-6b, AC-7, AC-7b — is four, not three), so the true prior total was
+> *74 of 75*. A predicted value the *Verified state* block exists to hold, fixed here in passing —
+> not a lesson, the mechanism already knows about this class (`CLAUDE.md`'s session ritual).
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
 | `develop` head | `8643ef7` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #16, #17 (2026-08-19), #18 (2026-08-19) | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **72 of 73** — measured 2026-08-19 on the T3 branch | `pnpm verify` |
+| `pnpm verify` | **74 of 75** — measured 2026-08-19 on the T4 branch | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
 | `pnpm verify:stage3` | 33 of 33 — AC-1…AC-19 plus T7-1…T7-4; AC-12 opt-in (skipped by default) | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
-| `pnpm verify:stage3b` | 13 of 13 — T1's five, T2's five, T3's AC-6, AC-6b, AC-7, AC-7b (AC-9 lands with T4) | `pnpm verify:stage3b` |
+| `pnpm verify:stage3b` | 15 of 15 — T1's five, T2's five, T3's four, T4's **AC-9** | `pnpm verify:stage3b` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
 | Live board severities | **not recorded, by rule** | `pnpm dev` |
@@ -305,12 +310,36 @@
   ticket's file list. It is `showsRunControl` now, with **AC-7b** asserting all four cases *and*
   that `Board.tsx` delegates rather than repeating the decision — the second half guards the T7-2
   shape, where a pure function was correct, asserted, and dead for rendering.
-- **Next: T4** — AC-9, the full cycle, and the `docs/HUMAN-TEST.md` walkthrough. **Branch it off
-  T3.** T4 is the one that proves the loop, and the walkthrough it writes is blocked on an owner
-  gate: no watched repo has an `agentos.yml`, so the first real initialization means writing into
-  `fractal-code` (D27).
-- **Then:** the owner gates. AC-12 (one real session, `AGENTOS_REAL_SESSION=1`) has never been run;
-  nadim's fix proposal has never been approved, which is still Stage 2's unmet criterion.
+- **Stage 3b T4 — AC-9, the full cycle, and the walkthrough — is built** (`feat/stage-3b-t4-cycle`,
+  2026-08-19). One check runs the whole loop for real, against fixtures: create agent → create task
+  → `dispatch` → the scripted fake asks a question → answer it → the fake itself moves the card to
+  `review` → the human approves → `done`. Every transition is asserted **positively** (the session
+  really entered `waiting-inbox`, one real open `InboxMessage` with the real question text; the
+  resumed run's options carried the real answer and the right `sdkSessionId`; the session itself,
+  not the test, moved `doing → review`) rather than only by the ending — the brief's own warning
+  that *"a cycle test that would still pass if the pause never happened is testing very little"*
+  is exactly what a `skip-pause` probe (below) exists to rule out. The evidence line at `review`
+  is read through `cardModel`/`evidenceLineFor` (`lib/tasks/model.ts`), never re-derived, and
+  asserted to resolve to a real session via `getSession` — checked at `review` specifically, because
+  once the human's own `review → done` transition is the latest `TaskEvent`, `evidenceLineFor`
+  deliberately switches the card to `hand-moved` (spec §8.3) and no longer names a session at all.
+  **No production code changed.** AC-9 found no gap in T1–T3's own code to report — T4's Edit tool
+  itself refused an attempted temporary edit to `lib/agentos/mcp/agentos-server.ts` under the
+  ticket's own scope rule, which is the harness enforcing the same boundary the brief stated in
+  words. Proved by four independent probes, run against a throwaway harness that reuses the same
+  production functions unmodified rather than editing them: an actor recorded wrongly (a human
+  recorded where the session itself moved the card) reddened on the missing `session`-actored
+  `TaskEvent`; a transition that changes `Task.status` via a raw `UPDATE` instead of
+  `writeTaskTransition` (so no `TaskEvent` at all) reddened the same way; a corrupted evidence-line
+  session id reddened on `getSession` resolving to nothing; and skipping the inbox pause entirely
+  reddened by timing out waiting for `waiting-inbox`, never reaching the fake success case the
+  original risk named. `docs/HUMAN-TEST.md` gained **Part 7**, a seven-step walkthrough whose first
+  step is the one thing this ticket cannot do itself: the owner adding `agentos.yml` to
+  `fractal-code` (D27), with the exact two-line file to paste.
+- **Then:** the owner gates. **Nobody has run Part 7 by hand yet** — that is Stage 3b's own stated
+  acceptance criterion (§4: *"Stage 3b's value is only realised once a human runs the cycle by
+  hand"*), unmet the same way Stage 2's drift-correction click still is. AC-12 (one real session,
+  `AGENTOS_REAL_SESSION=1`) has never been run; nadim's fix proposal has never been approved.
 
 ## How to pick up
 
@@ -325,39 +354,39 @@
 
 ## Next up
 
-1. **Approve nadim's proposal once, by hand** (owner gate). With Stage 2 merged this is the
-   *only* thing separating "eleven fixture tests pass" from "this has corrected a real document",
-   and it should happen *before* the execution layer starts, so the pivot begins from a closed
-   stage rather than an open one. Afterwards the card should read `✎ written · awaiting re-check`
-   with git's own porcelain beneath it, and the next reload should decide for itself whether the
-   drift is gone. Undo is `git checkout -- docs/HANDOFF.md docs/LEARNINGS.md` in nadim.
-2. **Clear the two gates on the Stage 3 spec** — `docs/specs/stage-3-execution-mvp.spec.md` is
-   `☐` and now blocked on **nothing but** §5.11 (which watched repo the first sessions target —
-   recommendation `fractal-code`) and §5.12 (whether the MVP agent may commit at all —
-   recommendation: ship the capability, default the seeded agent to `canCommit: false`). Both are
-   owner calls because both end in a write to someone's repo. Answering them flips the glyph to `☑`.
-   Everything else in §5, including the shell (D23) and the dispatch model (D24), is closed.
-3. **Look at the ribbon once** (AC-10). It is the one acceptance criterion that cannot be
+> **Corrected while landing T4:** items 2, 5 and 6 below (both Stage 3 spec gates already cleared
+> by D27, "build Stage 3" with Stage 3/3a/3b all already built, and committing `wireframes2.pen`
+> which is already tracked) were stale — asserting work as pending that the rest of this same file
+> already recorded as done. Removed rather than left to mislead the next session; no
+> `docs/LEARNINGS.md` entry, since this is a narrative list going stale by not being updated as
+> work landed, the ordinary way these rot, not a new class of mistake.
+
+1. **Run `docs/HUMAN-TEST.md` Part 7, by hand** (owner gate). This is the actual next thing: the
+   connector, the forms, and the whole dispatch → pause → resume → review → approve cycle are built
+   and proven against fixtures (AC-9). **Nobody has run it on a real project with a real agent** —
+   that is Stage 3b's own stated acceptance criterion — and it starts with adding `agentos.yml` to
+   `fractal-code` (D27), which only the owner can do; Part 7 gives the exact file contents.
+2. **Approve nadim's proposal once, by hand** (owner gate). With Stage 2 merged this is the
+   *only* thing separating "eleven fixture tests pass" from "this has corrected a real document."
+   Afterwards the card should read `✎ written · awaiting re-check` with git's own porcelain
+   beneath it, and the next reload should decide for itself whether the drift is gone. Undo is
+   `git checkout -- docs/HANDOFF.md docs/LEARNINGS.md` in nadim.
+3. **Run AC-12 for real** (owner gate, `AGENTOS_REAL_SESSION=1 pnpm tsx scripts/verify-stage3.mts`)
+   — the one check in the whole build that spawns a real session against the real Agent SDK. Costs
+   money and needs the network, which is exactly why it stays outside `pnpm verify`; it has never
+   been run.
+4. **Look at the ribbon once** (AC-10). It is the one acceptance criterion that cannot be
    automated, and it is currently recorded in `docs/FEATURES.md` as a **computed estimate, not an
    observation** — ~890px of 1280px. `pnpm dev` → any `/p/<name>`. If it is cramped, D23 named the
    fallback in advance and §5.4 kept the pane unconstrained so the swap stays a layout change.
-4. **Specs for Stages 4 and 5 are written** —
+5. **Specs for Stages 4 and 5 are written** —
    [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) is **`☑`
-   buildable** (no owner gate; it is sequenced behind Stage 3), and
+   buildable** (no owner gate; it is sequenced behind Stage 3b, which is now built), and
    [`stage-5-goals.spec.md`](specs/stage-5-goals.spec.md) is **`☐`**, gated on one owner call in
    its §5.11 — the default spend cap, and whether a goal may spawn unattended before the loop has
    been watched once. Stage 6 (the rewritten Overview) and Stage 7 (portfolio cost) are **not**
    specced yet, deliberately: both read data that Stages 3–5 produce, and speccing them now would
    be guessing at shapes that do not exist.
-5. **Build Stage 3.** Build order is in the spec's §6 — now seven items, with
-   `lib/agentos/dispatch.ts` added as **5**. Risk is concentrated in the first three (schema,
-   worktree, runner-plus-fake) and in dispatch, which is small but is the only door to a session;
-   the acceptance suite goes in before the UI, exactly as Stage 2 did. Then Stage 4 templates →
-   Stage 5 goals → Stage 6 the rewritten Overview → Stage 7 portfolio cost. PRD §10 has the
-   acceptance criterion for each.
-6. **Commit `design/wireframes2.pen`** — it arrived untracked, and there is a stray
-   `pencil-new.pen` (1 MB) at the repo root, which is the same autosave pattern `docs/BACKLOG.md`
-   already recorded once. Decide whether it is a design artefact or debris before the next commit.
 
 - **2026-08-18** — Round-3 wireframes reviewed and the shell closed as **D23**: Concept B′ over
   the design agent's own recommendation of C, because the Kanban is the surface this product will be

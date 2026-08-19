@@ -215,6 +215,31 @@ AC-7 exists: it is why the refusal names a precondition rather than just failing
 shows nothing rather than something greyed out. `createTask` does not default from
 `Project.defaultAgentId`, and dispatch's precondition 4 refuses rather than choosing.
 
+### The full cycle proven, once, end to end (Stage 3b T4 — spec §4 AC-9)
+
+**Everything T1–T3 built now runs together, against one task, in one check.** Create an agent,
+create a task, `dispatch` it, let the scripted fake ask a question, answer it, watch the fake move
+the card to `review`, then approve it as the human — every one of those five transitions is asserted
+**positively** (the session really did enter `waiting-inbox`, the question really was asked, the
+answer really was consumed by the resumed run) rather than only by the ending, and every transition's
+`TaskEvent` is checked for the **right actor**: a session id where a session moved it, `"owner"`
+where the human did.
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| The full cycle, asserted at every stage | `todo→doing` (session) → `waiting-inbox` (real question, real `InboxMessage`) → resumed with the human's answer (proven by the resume options the second call received) → `doing→review` (session) → `review→done` (owner) | `pnpm verify:stage3b` → AC-9 | 3b T4 |
+| The card's evidence resolves to a real session, before a human's own action supersedes it | At `review`, `cardModel`/`evidenceLineFor` (`lib/tasks/model.ts`) reports the `executed` kind with a session id that `getSession` actually resolves | `pnpm verify:stage3b` → AC-9 | 3b T4 |
+
+**A human approving a gated card changes what the card's own evidence line says.** Once the human's
+`review → done` transition is the most recent `TaskEvent`, `evidenceLineFor` switches the card to
+`hand-moved` — the session that did the work is no longer named on the card, only on the Sessions
+tab. This was true of the model before this ticket (spec §8.3); AC-9 is the first check to run a
+gated task through the whole cycle and observe it, rather than assume it from the two states in
+isolation.
+
+**No production code changed for this ticket.** T4 is the suite (`AC-9`) and the docs; AC-9 found no
+gap in T1–T3's own code to report.
+
 ### The Overview
 
 *Not built.* Planned: PRD §6.8, **Stage 6** (re-scoped by D22 to read two sources). `/overview`
