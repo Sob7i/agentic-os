@@ -1,9 +1,8 @@
 /**
  * AC-2, AC-9, AC-8a (worktree lifecycle, T2), AC-4, AC-5, AC-5b (the two MCP servers and the
- * gate, T4), and AC-14…AC-19 (`dispatch()` and the boot sweep, T5) from
+ * gate, T4), AC-14…AC-19 (`dispatch()` and the boot sweep, T5), and AC-1, AC-3, AC-6, AC-7, AC-8,
+ * AC-10, AC-11, AC-12, AC-13 (T6, closing out the suite) from
  * docs/specs/stage-3-execution-mvp.spec.md §4, as runnable checks.
- *
- * T6 still adds AC-1, AC-3, AC-6…AC-8, AC-10…AC-13 to this file.
  *
  * AC-2/AC-9/AC-8a run against a fixture repo generated in a temp directory — never a watched
  * project. Stage 2's suite established the pattern and the reason: a test proving we can write
@@ -16,16 +15,36 @@
  * could only reach the handler via a permitted SDK dispatch could never demonstrate [the handler
  * refuses regardless of what let the call through]." No model, no subprocess, no MCP wire format.
  *
- * AC-14…AC-19 call the real `dispatch()` end to end, against fixture repos in a temp dir and an
- * in-memory SQLite db, with a `FakeRunner` standing in for the Agent SDK (§9's Runner seam) —
+ * AC-14…AC-19, and T6's AC-1/AC-3/AC-6/AC-7/AC-8/AC-10/AC-13, call the real `dispatch()` end to
+ * end, against fixture repos in a temp dir and an in-memory SQLite db, with a `FakeRunner` (or,
+ * where the check needs the fake to trigger a real side effect — AC-6's pause, AC-8's commits —
+ * a small purpose-built `Runner` alongside it) standing in for the Agent SDK (§9's Runner seam) —
  * never a watched project, per the standing constraint in `docs/specs/stage-3-tickets.md`.
  * AC-17's drift fixture is the one place this file reaches into `lib/reconcile/` (via `boardOnce`,
  * never `buildBoard`, so `verify:stage3a`'s AC-3 stays green) — see `withOnlyProject` below for
- * how it does that without ever reconciling a real watched repo.
+ * how it does that without ever reconciling a real watched repo. AC-11 reuses the regression
+ * oracle `verify-stage3a.mts`'s own AC-1 established: spawn Stage 1's real suite fresh and count
+ * PASS/FAIL lines, rather than asserting a number that could rot here unnoticed.
+ *
+ * AC-12 is the one check that is NOT part of `pnpm verify:stage3`'s default run: it dispatches a
+ * genuine session against the real Agent SDK, which costs money and needs the network. It is
+ * gated behind an env flag and prints a SKIP line — never a silent absence — when that flag is
+ * unset. To actually run it (a deliberate, owner-approved act, not something CI or `pnpm verify`
+ * ever does):
+ *
+ *   AGENTOS_REAL_SESSION=1 pnpm tsx scripts/verify-stage3.mts
+ *   # or, equivalently:
+ *   pnpm stage3:real-session
+ *
+ * That second script is named `stage3:real-session`, not `verify:stage3-real` or similar — it
+ * deliberately does NOT start with `verify:`, because `scripts/verify-all.mts` (and `pnpm verify`)
+ * discover every suite to run from that prefix alone (CLAUDE.md: "never add a suite to a
+ * hand-maintained list"). A `verify:`-prefixed name here would make `pnpm verify` spend real money
+ * on every run — exactly what AC-12's own text warns against.
  *
  * Run: pnpm verify:stage3
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -38,8 +57,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
 import { createWorktree, removeWorktree, withWorktree } from "../lib/agentos/worktree";
 import {
   createAgent,
@@ -49,6 +69,8 @@ import {
   createToolCall,
   getSession,
   getTask,
+  listCommitShas,
+  listInboxMessagesBySession,
   listTaskEvents,
   listToolCallsBySession,
   openDb,
@@ -58,6 +80,7 @@ import {
 } from "../lib/agentos/db";
 import { createApprovalGate } from "../lib/agentos/mcp/gate";
 import { createTaskUpdateStatusTool } from "../lib/agentos/mcp/agentos-server";
+import { createInboxAskTool } from "../lib/agentos/mcp/inbox-server";
 import {
   AGENTOS_SERVER,
   INBOX_ASK,
@@ -67,12 +90,16 @@ import {
   TASK_UPDATE_STATUS,
   qualify,
 } from "../lib/agentos/mcp/names";
-import { dispatch, type DispatchDeps, type Precondition } from "../lib/agentos/dispatch";
+import { dispatch, resumeSession, type DispatchDeps, type Precondition } from "../lib/agentos/dispatch";
 import { runBootSweep } from "../lib/agentos/sweep";
 import { FakeRunner } from "../lib/agentos/runner/fake";
-import type { DriftAtSpawn } from "../lib/agentos/types";
+import { composeOptions } from "../lib/agentos/runner/local";
+import type { Runner, RunOutcome, RunParams } from "../lib/agentos/runner/runner";
+import type { DriftAtSpawn, SessionRow } from "../lib/agentos/types";
 import type { ProjectConfig } from "../projects.config";
 import { createRequire } from "node:module";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { BetaMessage, BetaUsage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 
 let failures = 0;
 const pass = (id: string, msg: string) => console.log(`  PASS  ${id} — ${msg}`);
@@ -1041,9 +1068,965 @@ for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
   db.close();
 }
 
+console.log("\nStage 3 acceptance — the funnel runs a real session end to end (T6)\n");
+
+// ── T6 fixtures — SDKMessage builders and a settlement-poll helper ─────────────────────────
+// The builders mirror lib/agentos/runner/runner.smoke.mts's own shapes exactly — that file
+// verified them against the installed SDK's real types (`external-API-fields-are-guilty-
+// until-verified`), so this does not re-guess a shape already checked once.
+
+function usage(inputTokens: number, outputTokens: number): BetaUsage {
+  return {
+    cache_creation: null,
+    cache_creation_input_tokens: null,
+    cache_read_input_tokens: null,
+    fallback_credit: null,
+    inference_geo: null,
+    input_tokens: inputTokens,
+    iterations: null,
+    output_tokens: outputTokens,
+    output_tokens_details: null,
+    server_tool_use: null,
+    service_tier: null,
+    speed: null,
+  };
+}
+
+function initMessage(sessionId: string): SDKMessage {
+  return {
+    type: "system",
+    subtype: "init",
+    apiKeySource: "user",
+    claude_code_version: "0.0.0-fake",
+    cwd: "/tmp/agentos-fake-worktree",
+    tools: ["Read", "Edit", "Bash"],
+    mcp_servers: [],
+    model: "claude-opus-5",
+    permissionMode: "default",
+    slash_commands: [],
+    output_style: "default",
+    skills: [],
+    plugins: [],
+    uuid: randomUUID(),
+    session_id: sessionId,
+  };
+}
+
+function assistantToolUseMessage(sessionId: string, toolName: string, input: unknown): SDKMessage {
+  const message: BetaMessage = {
+    id: randomUUID(),
+    container: null,
+    content: [{ type: "tool_use", id: randomUUID(), name: toolName, input }],
+    context_management: null,
+    diagnostics: null,
+    model: "claude-opus-5",
+    role: "assistant",
+    stop_details: null,
+    stop_reason: "tool_use",
+    stop_sequence: null,
+    type: "message",
+    usage: usage(120, 40),
+  };
+  return { type: "assistant", message, parent_tool_use_id: null, uuid: randomUUID(), session_id: sessionId };
+}
+
+function resultMessage(
+  sessionId: string,
+  opts: { subtype: "success" } | { subtype: "error_max_turns" | "error_max_budget_usd" },
+  costUsd: number,
+): SDKMessage {
+  const base = {
+    type: "result" as const,
+    duration_ms: 1000,
+    duration_api_ms: 800,
+    is_error: opts.subtype !== "success",
+    num_turns: 1,
+    stop_reason: null,
+    total_cost_usd: costUsd,
+    usage: usage(500, 220),
+    modelUsage: {},
+    permission_denials: [],
+    uuid: randomUUID(),
+    session_id: sessionId,
+  };
+  if (opts.subtype === "success") {
+    return { ...base, subtype: "success", structured_output: undefined, result: "done" };
+  }
+  return { ...base, subtype: opts.subtype, errors: [`terminated: ${opts.subtype}`] };
+}
+
+/**
+ * Polls `getSession` against a deadline rather than sleeping a fixed amount — AC-9a's own
+ * pattern for waiting on `dispatch`'s unawaited continuation (§7.4), reused here (not
+ * reinvented) by every T6 check that must observe a run settle before reading its record.
+ */
+async function waitForSession(
+  db: DatabaseSync,
+  sessionId: string,
+  settled: (s: SessionRow) => boolean,
+  timeoutMs = 5000,
+): Promise<SessionRow> {
+  // Throws rather than returning the last polled row. Returning it turned "the continuation never
+  // settled" into a downstream assertion failure about the wrong thing — a hang reported as a bad
+  // value, which is the hardest kind of flake to read (review of #16). A missing session is also
+  // stated outright instead of riding on a non-null assertion.
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const session = getSession(db, sessionId);
+    if (!session) throw new Error(`waitForSession: no Session ${sessionId}`);
+    if (settled(session)) return session;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `waitForSession: session ${sessionId} did not settle within ${timeoutMs}ms ` +
+          `(status='${session.status}', endedAtISO=${session.endedAtISO ?? "null"})`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
+/**
+ * A `Runner` that simulates the agent calling `inbox_ask` on its FIRST invocation only — through
+ * the REAL handler (`mcp/inbox-server.ts`), the same "call the handler directly" seam §3.3
+ * established for AC-4/AC-5, one layer up. A real SDK run would reach that handler via its own
+ * MCP dispatch, which no fake in this suite simulates (§9's "there is no fake for [the SDK's own
+ * tool dispatch]"); this substitutes the SDK's dispatch itself, not the handler underneath it —
+ * the handler runs for real, with real DB writes. Every later call (the resume) is an ordinary
+ * clean completion, so a test can assert what THAT call received (AC-6).
+ */
+class PausingRunner implements Runner {
+  readonly calls: RunParams[] = [];
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly taskId: string,
+    private readonly question: string,
+  ) {}
+
+  async run(params: RunParams): Promise<RunOutcome> {
+    this.calls.push(params);
+    // worktree.ts's own documented invariant: "<tmp>/agentos/<sessionId>" — the directory name
+    // and the Session row's primary key are the same value, readable end-to-end from a session
+    // id alone. This is the only way a Runner, which is never handed the session id directly
+    // (runner.ts's RunParams), can recover it to build the handler's SessionCtx.
+    const sessionId = basename(params.cwd);
+    const sdkSessionId = randomUUID();
+    await params.onMessage(initMessage(sdkSessionId));
+
+    if (this.calls.length === 1) {
+      await params.onMessage(
+        assistantToolUseMessage(sdkSessionId, qualify(INBOX_SERVER, INBOX_ASK), { question: this.question }),
+      );
+      await createInboxAskTool({ db: this.db, sessionId, taskId: this.taskId }).handler(
+        { question: this.question },
+        {} as never,
+      );
+      return { sdkSessionId, costUsd: 0.01, resultSubtype: "success" };
+    }
+
+    await params.onMessage(resultMessage(sdkSessionId, { subtype: "success" }, 0.02));
+    return { sdkSessionId, costUsd: 0.02, resultSubtype: "success" };
+  }
+}
+
+/**
+ * A `Runner` that makes real commits inside the worktree it is handed, then — BEFORE returning
+ * (i.e. strictly before `dispatch`'s own teardown, which only runs once `run()` resolves) — reads
+ * `git log <baseRefSha>..HEAD` itself, independently of `readWorktreeCommits`, so AC-8 has ground
+ * truth that was never produced by the code under test.
+ */
+class CommittingRunner implements Runner {
+  expectedShas: string[] = [];
+  constructor(
+    private readonly baseRefSha: string,
+    private readonly commitMessages: string[],
+  ) {}
+
+  async run(params: RunParams): Promise<RunOutcome> {
+    const sdkSessionId = randomUUID();
+    await params.onMessage(initMessage(sdkSessionId));
+
+    const id = ["-c", "user.email=t@t", "-c", "user.name=t"];
+    for (const msg of this.commitMessages) {
+      writeFileSync(join(params.cwd, `${msg.replace(/[^a-z0-9]+/gi, "-")}.md`), `# ${msg}\n`);
+      execFileSync("git", [...id, "add", "-A"], { cwd: params.cwd });
+      execFileSync("git", [...id, "commit", "-q", "-m", msg], { cwd: params.cwd });
+    }
+    this.expectedShas = execFileSync("git", ["log", `${this.baseRefSha}..HEAD`, "--format=%H"], {
+      cwd: params.cwd,
+      encoding: "utf8",
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .reverse();
+
+    await params.onMessage(resultMessage(sdkSessionId, { subtype: "success" }, 0.02));
+    return { sdkSessionId, costUsd: 0.02, resultSubtype: "success" };
+  }
+}
+
+// ── AC-1 · a task runs — assert the DURABLE record, never a status snapshot ────────────────
+// The trap is a race, not a logic error: `dispatch` starts the run UNAWAITED (§7.4), so with an
+// empty FakeRunner the session can reach 'completed' before an assertion reads it. Asserting
+// `Session.status === 'running'` would then flake — or worse, get "fixed" into asserting
+// whatever it happened to see. The TaskEvent this check anchors on is true forever regardless of
+// how fast the run finishes; the card's move to 'doing' is equally non-racy, since `dispatch`
+// writes it BEFORE the unawaited continuation is even started (§7.2's pseudocode).
+{
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  const runner = new FakeRunner({ messages: [] });
+
+  const result = await dispatch(task.id, "manual", { db, runner });
+  if (!result.started) {
+    fail("AC-1", `dispatch refused: ${JSON.stringify(result)}`);
+  } else {
+    const taskAfter = getTask(db, task.id)!;
+    const session = getSession(db, result.sessionId);
+    const events = listTaskEvents(db, task.id);
+    const moveEvent = events.find(
+      (e) => e.fromStatus === "todo" && e.toStatus === "doing" && e.actorType === "session" && e.actorId === result.sessionId,
+    );
+
+    const ok = taskAfter.status === "doing" && session !== null && !!moveEvent;
+    if (!ok) {
+      fail(
+        "AC-1",
+        `expected the card in 'doing' with a Session row and a matching TaskEvent; got task.status='${taskAfter.status}' session=${!!session} moveEvent=${JSON.stringify(moveEvent)}`,
+      );
+    } else {
+      pass(
+        "AC-1",
+        `dispatch moved the card 'todo' → 'doing' and created session ${result.sessionId.slice(0, 8)}, with a TaskEvent naming it as actor (asserted durably — not a status snapshot that could race the unawaited run)`,
+      );
+    }
+  }
+  // Deliberately NOT closed here, and deliberately not awaited to completion either — that is
+  // this check's entire point (assert the durable record while the run may still be in flight).
+  // Closing now would race dispatch's own unawaited continuation into a benign but noisy
+  // "database is not open" log line, the same hazard AC-16's own note above already avoids
+  // rather than invites.
+}
+
+// ── AC-3 · one ToolCall row per tool-use message, ordered by seq — never sorted away ───────
+{
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  // Deliberately NOT alphabetical — a check that sorted before comparing would still pass
+  // against an alphabetically-ordered script and would only ever catch the bug it exists to
+  // catch by accident. At least three, per spec; this uses four.
+  const emittedOrder = ["zeta_tool", "alpha_tool", "task_update_status", "inbox_ask"];
+  const sdkSessionId = randomUUID();
+  const runner = new FakeRunner({
+    messages: [
+      initMessage(sdkSessionId),
+      ...emittedOrder.map((name) => assistantToolUseMessage(sdkSessionId, name, { at: name })),
+      resultMessage(sdkSessionId, { subtype: "success" }, 0.01),
+    ],
+  });
+
+  const result = await dispatch(task.id, "manual", { db, runner });
+  if (!result.started) {
+    fail("AC-3", `dispatch refused: ${JSON.stringify(result)}`);
+  } else {
+    await waitForSession(db, result.sessionId, (s) => s.endedAtISO !== null);
+    const calls = listToolCallsBySession(db, result.sessionId);
+    const countOk = calls.length === emittedOrder.length; // exactly equal — never `>=`
+    const seqOk = calls.every((c, i) => c.seq === i); // 0,1,2… — no gaps
+    const orderOk = calls.map((c) => c.name).join(",") === emittedOrder.join(","); // NOT sorted
+
+    if (!countOk || !seqOk || !orderOk) {
+      fail(
+        "AC-3",
+        `expected exactly ${emittedOrder.length} rows, seq 0..${emittedOrder.length - 1} with no gaps, names in emitted order [${emittedOrder.join(", ")}]` +
+          ` — got ${calls.length} rows: ${JSON.stringify(calls.map((c) => ({ seq: c.seq, name: c.name })))}`,
+      );
+    } else {
+      pass(
+        "AC-3",
+        `${calls.length} ToolCall rows, seq 0..${calls.length - 1}, names in the order emitted [${calls.map((c) => c.name).join(", ")}]`,
+      );
+    }
+  }
+  db.close();
+}
+
+// ── AC-6 · pause and resume — assert the resume OPTIONS, since the fake cannot prove the model
+// saw anything; also drives the backlog case: a paused session whose worktreePath is non-null
+// because the pause-time teardown failed (T5 keeps it) ─────────────────────────────────────
+{
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  const runner = new PausingRunner(db, task.id, "which cloud provider?");
+
+  const result = await dispatch(task.id, "manual", { db, runner });
+  if (!result.started) {
+    fail("AC-6", `setup: dispatch refused: ${JSON.stringify(result)}`);
+  } else {
+    // Wait for BOTH `status === 'waiting-inbox'` (set synchronously inside the real inbox_ask
+    // handler, before runner.run() even resolves) AND `worktreePath === null` (set later, once
+    // runner.run() resolves and runSessionToCompletion's own — genuinely async — `git worktree
+    // remove` subprocess finishes). Waiting on status alone races the teardown and was caught
+    // here while proving this check can fail: the pass path intermittently read a session that
+    // had already paused but not yet finished tearing down.
+    const paused = await waitForSession(db, result.sessionId, (s) => s.status === "waiting-inbox" && s.worktreePath === null);
+    const expectedPath = join(realpathSync(tmpdir()), "agentos", result.sessionId);
+    const inboxRows = listInboxMessagesBySession(db, result.sessionId);
+
+    const cleanPauseOk =
+      paused.status === "waiting-inbox" &&
+      paused.worktreePath === null &&
+      !existsSync(expectedPath) &&
+      !worktreePaths(dir).includes(expectedPath) &&
+      inboxRows.length === 1 &&
+      inboxRows[0].status === "open" &&
+      inboxRows[0].body === "which cloud provider?";
+
+    if (!cleanPauseOk) {
+      fail(
+        "AC-6",
+        `inbox_ask should leave 'waiting-inbox' with worktreePath null, no worktree on disk or in 'git worktree list', and one open InboxMessage: ${JSON.stringify(paused)}, inboxRows=${JSON.stringify(inboxRows)}`,
+      );
+    } else {
+      const firstSdkSessionId = paused.sdkSessionId;
+      await resumeSession(result.sessionId, "use AWS", { db, runner });
+      await waitForSession(db, result.sessionId, (s) => s.endedAtISO !== null);
+      const secondCall = runner.calls[1];
+
+      const resumeOptionsOk =
+        runner.calls.length === 2 && !!secondCall && secondCall.resume === firstSdkSessionId && secondCall.prompt === "use AWS";
+
+      if (!resumeOptionsOk) {
+        // Never JSON.stringify the raw RunParams — it embeds live MCP server / canUseTool
+        // objects from the SDK with circular references, so a naive dump crashes the check
+        // instead of printing a FAIL line. Report only the fields under test.
+        fail(
+          "AC-6",
+          `expected the second runner call to carry resume='${firstSdkSessionId}' prompt='use AWS' — got resume=${JSON.stringify(secondCall?.resume)} prompt=${JSON.stringify(secondCall?.prompt)} (${runner.calls.length} total calls)`,
+        );
+      } else {
+        // The backlog case: teardown at PAUSE time fails, so worktreePath is kept non-null (T5's
+        // own note). `resumeSession` must clear it before `createWorktree`, which derives the
+        // SAME path from the SAME session id — otherwise `git worktree add` collides.
+        const { dir: dir2 } = makeDispatchFixtureRepo();
+        const db2 = openDb(":memory:");
+        const { project: project2, agent: agent2 } = makeDispatchProject(db2, dir2);
+        const task2 = makeDispatchTask(db2, project2, agent2);
+        const runner2 = new PausingRunner(db2, task2.id, "which env?");
+
+        const result2 = await dispatch(task2.id, "manual", {
+          db: db2,
+          runner: runner2,
+          removeWorktree: async () => {
+            throw new Error("forced teardown failure — simulating the backlog's stale-worktree case");
+          },
+        });
+
+        if (!result2.started) {
+          fail("AC-6", `setup (backlog sub-case): dispatch refused: ${JSON.stringify(result2)}`);
+        } else {
+          const stalePaused = await waitForSession(
+            db2,
+            result2.sessionId,
+            (s) => s.status === "waiting-inbox" && s.worktreePath !== null,
+          );
+          const staleExisted = stalePaused.worktreePath !== null && existsSync(stalePaused.worktreePath);
+
+          if (!staleExisted) {
+            fail("AC-6", `backlog sub-case setup did not leave a real, non-null worktreePath: ${JSON.stringify(stalePaused)}`);
+          } else {
+            let resumeThrew: string | null = null;
+            try {
+              await resumeSession(result2.sessionId, "use staging", { db: db2, runner: runner2 });
+            } catch (err) {
+              resumeThrew = err instanceof Error ? err.message : String(err);
+            }
+
+            if (resumeThrew !== null) {
+              fail("AC-6", `resumeSession threw on a stale non-null worktreePath instead of clearing it first: ${resumeThrew}`);
+            } else {
+              await waitForSession(db2, result2.sessionId, (s) => s.endedAtISO !== null);
+              const secondCall2 = runner2.calls[1];
+              const staleCaseOk =
+                runner2.calls.length === 2 &&
+                !!secondCall2 &&
+                secondCall2.resume === stalePaused.sdkSessionId &&
+                secondCall2.prompt === "use staging";
+
+              if (!staleCaseOk) {
+                // Same circularity hazard as above — report only the fields under test.
+                fail(
+                  "AC-6",
+                  `backlog sub-case: resume options wrong after clearing the stale worktree — resume=${JSON.stringify(secondCall2?.resume)} prompt=${JSON.stringify(secondCall2?.prompt)} calls=${runner2.calls.length}`,
+                );
+              } else {
+                pass(
+                  "AC-6",
+                  `inbox_ask paused the session (worktree torn down, no live handle) and answering resumed the runner with resume='${firstSdkSessionId?.slice(0, 8)}…' and the answer as prompt; ` +
+                    `the backlog case — a non-null worktreePath left by a failed pause-teardown — is cleared by resumeSession before the same path is reused`,
+                );
+              }
+            }
+          }
+          db2.close();
+        }
+      }
+    }
+  }
+  db.close();
+}
+
+// ── AC-7 · cost lands unmodified — a NON-ROUND figure so rounding/truncation/float-parse bugs
+// are visible; an assertion against 0.5 would pass through several ────────────────────────
+{
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  const EXACT_COST = 0.0123456;
+  const sdkSessionId = randomUUID();
+  const runner = new FakeRunner({
+    messages: [initMessage(sdkSessionId), resultMessage(sdkSessionId, { subtype: "success" }, EXACT_COST)],
+  });
+
+  const result = await dispatch(task.id, "manual", { db, runner });
+  if (!result.started) {
+    fail("AC-7", `dispatch refused: ${JSON.stringify(result)}`);
+  } else {
+    const session = await waitForSession(db, result.sessionId, (s) => s.endedAtISO !== null);
+    if (session.costUsd !== EXACT_COST) {
+      fail("AC-7", `costUsd landed as ${session.costUsd}, expected EXACTLY ${EXACT_COST} (the result message's total_cost_usd, unmodified)`);
+    } else {
+      pass("AC-7", `total_cost_usd $${EXACT_COST} landed on the session unmodified`);
+    }
+  }
+  db.close();
+}
+
+// ── AC-8 · commit shas are real, and absence is recorded as absence ────────────────────────
+{
+  // Part 1 — two commits, read from `git log <baseRef>..HEAD` in the worktree BEFORE teardown,
+  // compared against a `git log` WE run ourselves (CommittingRunner.expectedShas) — never
+  // against what the code under test returned.
+  const { dir } = makeDispatchFixtureRepo();
+  const baseRefSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  const runner = new CommittingRunner(baseRefSha, ["first change", "second change"]);
+
+  const result = await dispatch(task.id, "manual", { db, runner });
+  if (!result.started) {
+    fail("AC-8", `dispatch refused: ${JSON.stringify(result)}`);
+  } else {
+    await waitForSession(db, result.sessionId, (s) => s.endedAtISO !== null);
+    const recorded = listCommitShas(db, result.sessionId)
+      .map((r) => r.sha)
+      .sort();
+    const expected = [...runner.expectedShas].sort();
+    const shaShapeOk = recorded.every((s) => /^[0-9a-f]{40}$/.test(s));
+    const matchOk = recorded.length === 2 && JSON.stringify(recorded) === JSON.stringify(expected);
+
+    if (!shaShapeOk || !matchOk) {
+      fail("AC-8", `recorded shas ${JSON.stringify(recorded)} do not match an independent 'git log ${baseRefSha.slice(0, 8)}..HEAD': ${JSON.stringify(expected)}`);
+    } else {
+      // Part 2 — a run that commits nothing records none.
+      const task2 = makeDispatchTask(db, project, agent);
+      const sdkSessionId2 = randomUUID();
+      const runner2 = new FakeRunner({
+        messages: [initMessage(sdkSessionId2), resultMessage(sdkSessionId2, { subtype: "success" }, 0.001)],
+      });
+      const result2 = await dispatch(task2.id, "manual", { db, runner: runner2 });
+
+      if (!result2.started) {
+        fail("AC-8", `second dispatch (no commits) refused: ${JSON.stringify(result2)}`);
+      } else {
+        await waitForSession(db, result2.sessionId, (s) => s.endedAtISO !== null);
+        const none = listCommitShas(db, result2.sessionId);
+        if (none.length !== 0) {
+          fail("AC-8", `a run that committed nothing recorded ${none.length} sha row(s): ${JSON.stringify(none)}`);
+        } else {
+          pass(
+            "AC-8",
+            `a run that committed two commits recorded exactly those two shas (${recorded.map((s) => s.slice(0, 8)).join(", ")}), matching an independent 'git log' run; a run that committed nothing recorded zero rows`,
+          );
+        }
+      }
+    }
+  }
+  db.close();
+}
+
+// ── AC-10 · no status without evidence — walk every Task after a run; current status must
+// equal the toStatus of its most recent TaskEvent (or, with none, the just-created 'todo') ──
+{
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const violations: string[] = [];
+  let setupFailed = false;
+
+  // taskA: dispatched, completes cleanly, then moved to 'review' via the REAL handler —
+  // mirrors AC-4's own "call the handler directly" pattern.
+  const taskA = makeDispatchTask(db, project, agent);
+  const resultA = await dispatch(taskA.id, "manual", { db, runner: new FakeRunner({ messages: [] }) });
+  if (!resultA.started) {
+    fail("AC-10", `setup: taskA dispatch refused: ${JSON.stringify(resultA)}`);
+    setupFailed = true;
+  } else {
+    await waitForSession(db, resultA.sessionId, (s) => s.endedAtISO !== null);
+    await createTaskUpdateStatusTool({ db, sessionId: resultA.sessionId, taskId: taskA.id }).handler(
+      { status: "review", reason: "done" },
+      {} as never,
+    );
+  }
+
+  // taskB: never dispatched — stays 'todo', zero TaskEvent rows.
+  const taskB = makeDispatchTask(db, project, agent);
+
+  // taskC: dispatched, then the runner throws mid-run — dispatch's own failure path moves it
+  // back to 'todo' as actorType 'system' (§7.6).
+  const taskC = makeDispatchTask(db, project, agent);
+  const sdkSessionIdC = randomUUID();
+  const resultC = await dispatch(taskC.id, "manual", {
+    db,
+    runner: new FakeRunner({
+      messages: [initMessage(sdkSessionIdC)],
+      throwAfterIndex: 0,
+      error: new Error("boom — AC-10 fixture"),
+    }),
+  });
+  if (!resultC.started) {
+    fail("AC-10", `setup: taskC dispatch refused: ${JSON.stringify(resultC)}`);
+    setupFailed = true;
+  } else {
+    await waitForSession(db, resultC.sessionId, (s) => s.endedAtISO !== null);
+  }
+
+  if (!setupFailed) {
+    for (const t of [taskA, taskB, taskC]) {
+      const current = getTask(db, t.id)!;
+      const events = listTaskEvents(db, t.id);
+      const last = events[events.length - 1];
+      const ok = last ? current.status === last.toStatus : current.status === "todo";
+      if (!ok) {
+        violations.push(
+          `task ${t.id.slice(0, 8)}: status='${current.status}' but last TaskEvent.toStatus='${last?.toStatus ?? "(none)"}'`,
+        );
+      }
+    }
+    if (violations.length > 0) {
+      fail("AC-10", violations.join("; "));
+    } else {
+      pass(
+        "AC-10",
+        `all 3 tasks' current status matches their evidence — reviewed-via-session, todo-with-zero-events, and todo-restored-by-a-system-event-after-failure`,
+      );
+    }
+  }
+  db.close();
+}
+
+// ── AC-11 · the portfolio layer is unaffected — Stage 1's PRE-SLICE result, not stale "8/8" ──
+// The spec's own AC-11 text says "the Board's existing 8 Stage-1 checks still pass" — that is
+// stale: Stage 1 is 7P/1F, with AC-2 known-failing for a reason already logged in
+// docs/BACKLOG.md, and nothing in this ticket touches it. Reusing the oracle
+// verify-stage3a.mts's own AC-1 established: spawn the real suite fresh and count PASS/FAIL
+// lines, rather than trusting a number written down here that could rot unnoticed.
+{
+  const s1 = spawnSync("pnpm", ["verify:stage1"], { encoding: "utf8" });
+  const out1 = s1.stdout ?? "";
+  const passes1 = (out1.match(/^\s+PASS/gm) ?? []).length;
+  const fails1 = (out1.match(/^\s+FAIL/gm) ?? []).length;
+  const preSliceResult = passes1 === 7 && fails1 === 1 && /AC-2/.test(out1);
+
+  // Stage 1 is NOT hermetic: its AC-1 asserts nadim carries `drift`, and that verdict comes from
+  // DC1, which needs a live `gh` call. When GitHub is unreachable or rate-limits, DC1 cannot
+  // produce the finding, nadim degrades to `attention`, and Stage 1 returns 6P/2F — for reasons
+  // that have nothing to do with the branch under test. Observed twice while T6 was being built.
+  //
+  // A check that cannot tell "the thing I test broke" from "the network was down" is a check
+  // people learn to ignore — which is exactly what already happened to Stage 1's own AC-2. So a
+  // degraded run reports SKIP, not FAIL: the oracle stays silent rather than lying in either
+  // direction. `verify-stage3a.mts`'s AC-1 has the same exposure and is logged in docs/BACKLOG.md.
+  // Narrow deliberately. The first version of this matched /collector|unavailable/i — and Stage 1
+  // prints "PR data unavailable …" as a **PASS** on every single run (AC-5 exists to show `gh`
+  // degrading visibly). So the guard was true for *any* non-7P/1F result, and would have reported
+  // a genuine Stage 1 regression as SKIP. A guard against false reds that swallows every real red
+  // is worse than no guard: it is the "green for the wrong reason" failure, introduced while
+  // fixing another instance of it (review of #16).
+  //
+  // The offline symptom is specific and worth matching exactly: DC1 needs `gh`, so without it
+  // nadim cannot be scored `drift` and AC-1 fails with this precise sentence. Anything else that
+  // fails is a real regression and must stay a FAIL.
+  const OFFLINE_SYMPTOM = /^\s+FAIL\s+AC-1\b.*severity is \w+, expected drift/m;
+  const degradedUpstream = !preSliceResult && OFFLINE_SYMPTOM.test(out1);
+
+  if (degradedUpstream) {
+    console.log(
+      `  SKIP  AC-11 — Stage 1 returned ${passes1}P/${fails1}F, but its own AC-1 depends on a live ` +
+        `\`gh\` call and the run shows a degraded collector. Not asserting a portfolio regression ` +
+        `from an offline GitHub — re-run when connected.`,
+    );
+  } else if (!preSliceResult) {
+    fail(
+      "AC-11",
+      `expected Stage 1's pre-slice result (7P/1F, AC-2 named) — got ${passes1}P/${fails1}F. First 300 chars: ${out1.slice(0, 300)}`,
+    );
+  } else {
+    pass(
+      "AC-11",
+      `a project without agentos.yml exposes no execution surface (AC-15a) — and Stage 1's own suite, run fresh, is unchanged at ${passes1}P/${fails1}F (AC-2 known, docs/BACKLOG.md)`,
+    );
+  }
+}
+
+console.log("\nStage 3 acceptance — the one real session (T6, opt-in)\n");
+
+// ── AC-12 · one real session, opt-in — the only proof the other eighteen test something real ──
+// NOT part of the default `pnpm verify:stage3` run: it costs money and needs the network. Behind
+// AGENTOS_REAL_SESSION=1, it dispatches a genuine agent — `dispatch()`'s own default `LocalRunner`,
+// never injected here — against a scratch fixture repo with a trivial prompt, and asserts a
+// session id, a cost above zero, and a clean teardown. See this file's header for how to run it.
+if (process.env.AGENTOS_REAL_SESSION !== "1") {
+  console.log(
+    "  SKIP  AC-12 — one real session against the live Agent SDK; costs money and needs the " +
+      "network, so it is not part of `pnpm verify`. Run with: " +
+      "AGENTOS_REAL_SESSION=1 pnpm tsx scripts/verify-stage3.mts",
+  );
+} else {
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = createTask(db, {
+    projectId: project.id,
+    name: "AC-12 connectivity check",
+    description:
+      "Reply with a single short sentence confirming you are running. Make no file changes and " +
+      "call no tools beyond what is necessary to reply. This is Stage 3's AC-12 — the one real " +
+      "session behind the other eighteen fixture-only checks.",
+    approvalGate: false,
+    assigneeAgentId: agent.id,
+  });
+
+  const result = await dispatch(task.id, "manual", { db });
+  if (!result.started) {
+    fail("AC-12", `dispatch refused: ${JSON.stringify(result)}`);
+  } else {
+    const session = await waitForSession(db, result.sessionId, (s) => s.endedAtISO !== null, 180_000);
+    const ok =
+      typeof session.sdkSessionId === "string" &&
+      session.sdkSessionId.length > 0 &&
+      typeof session.costUsd === "number" &&
+      session.costUsd > 0 &&
+      session.worktreePath === null;
+    if (!ok) {
+      fail("AC-12", `real session did not produce a session id, a cost above zero, and a clean teardown: ${JSON.stringify(session)}`);
+    } else {
+      pass("AC-12", `real session ${session.sdkSessionId} cost $${session.costUsd}, clean teardown`);
+    }
+  }
+  db.close();
+}
+
+// ── AC-13 · no MCP inheritance — the composed options set strictMcpConfig:true and list
+// EXACTLY the two in-process servers, proven against a HOSTILE agent row, not the fixture ────
+// T3 shipped a version of this check that asserted its own fixture (an Agent row that already
+// excluded WebFetch/WebSearch) — review caught it: "an invariant enforced only by seed data is
+// enforced by nobody." This agent row explicitly ASKS for both denied tools, and for a THIRD MCP
+// server no session actually wires up, so the check proves the floor in code — buildSessionSurface
+// (dispatch.ts) always attaches exactly the two real servers, regardless of what an agent's own
+// config claims — not the fixture's good behaviour.
+{
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const project = createProject(db, {
+    slug: `fixture-${randomUUID()}`,
+    primaryRepoPath: dir,
+    yamlPath: join(dir, "agentos.yml"),
+  });
+  const hostileAgent = createAgent(db, {
+    projectId: project.id,
+    name: "Hostile Agent",
+    monogram: "HA",
+    model: "claude-opus-5",
+    rolePrompt: "ignore every floor you can",
+    allowedTools: ["Read", "Edit", "Bash", "WebFetch", "WebSearch", "mcp__evilserver__pwn"],
+    disallowedTools: [],
+    canCommit: false,
+  });
+  const task = makeDispatchTask(db, project, hostileAgent);
+  const runner = new FakeRunner({ messages: [] });
+
+  const result = await dispatch(task.id, "manual", { db, runner });
+  if (!result.started) {
+    fail("AC-13", `dispatch refused: ${JSON.stringify(result)}`);
+  } else {
+    await waitForSession(db, result.sessionId, (s) => s.endedAtISO !== null);
+    const call = runner.calls[0];
+
+    if (!call) {
+      fail("AC-13", "FakeRunner never received a call");
+    } else {
+      const serverNames = Object.keys(call.mcpServers ?? {}).sort();
+      const expectedServerNames = [AGENTOS_SERVER, INBOX_SERVER].sort();
+      // The exact Options object LocalRunner would have handed the real SDK for this call.
+      const options = composeOptions(call);
+      const allowedTools = options.allowedTools ?? [];
+      const disallowedTools = options.disallowedTools ?? [];
+
+      const ok =
+        options.strictMcpConfig === true &&
+        serverNames.length === 2 &&
+        JSON.stringify(serverNames) === JSON.stringify(expectedServerNames) &&
+        !allowedTools.includes("WebFetch") &&
+        !allowedTools.includes("WebSearch") &&
+        disallowedTools.includes("WebFetch") &&
+        disallowedTools.includes("WebSearch");
+
+      if (!ok) {
+        fail(
+          "AC-13",
+          `hostile agent asked for WebFetch/WebSearch and a third server — composed options: strictMcpConfig=${options.strictMcpConfig}, servers=${JSON.stringify(serverNames)}, allowedTools=${JSON.stringify(allowedTools)}, disallowedTools=${JSON.stringify(disallowedTools)}`,
+        );
+      } else {
+        pass(
+          "AC-13",
+          `hostile agent row (asked for WebFetch/WebSearch + a nonexistent third server) still composes strictMcpConfig:true and exactly the two in-process servers [${serverNames.join(", ")}]`,
+        );
+      }
+    }
+  }
+  db.close();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// T7 — the Tasks board's pure model (lib/tasks/model.ts). Spec §8; ticket brief §6.
+//
+// These are NOT spec-numbered ACs — §8 names rules, not acceptance-criteria numbers — so they
+// are labelled T7-1…T7-4 rather than invented as AC-20+. Each asserts a pure function directly,
+// with hand-built fixture rows (no sqlite, no worktree — the same "assert the function, not the
+// route" seam `verify-stage3a.mts` established for `lib/shell/model.ts`).
+console.log("\nStage 3 acceptance — T7's Tasks board model (§8, no route rendered)\n");
+
+{
+  const { evidenceLineFor } = await import("../lib/tasks/model");
+
+  const baseTask = {
+    id: "task-todo",
+    projectId: "proj-1",
+    name: "fixture task",
+    description: "",
+    blockedReason: null,
+    approvalGate: false,
+    assigneeAgentId: null,
+    scheduleKind: "manual",
+    createdAt: "2026-08-01T00:00:00.000Z",
+  };
+
+  // ── T7-1 · a todo card's evidence carries no line at all — absence, not an empty string ──
+  {
+    const todoEvidence = evidenceLineFor({
+      task: { ...baseTask, status: "todo" },
+      events: [],
+      sessionsById: new Map(),
+      toolCallCountBySession: new Map(),
+      commitShasBySession: new Map(),
+    });
+    const keys = Object.keys(todoEvidence).sort();
+    if (todoEvidence.kind !== "none") {
+      fail("T7-1", `todo evidence.kind was '${todoEvidence.kind}', expected 'none'`);
+    } else if (keys.length !== 1 || keys[0] !== "kind") {
+      fail(
+        "T7-1",
+        `a 'none' evidence carried extra fields ${JSON.stringify(keys)} — that is a placeholder, not an absence`,
+      );
+    } else {
+      pass("T7-1", `todo card's evidence is exactly {kind:'none'} — no text field exists to be empty`);
+    }
+  }
+
+  // ── T7-2 · executed vs hand-moved are distinguishable by register before either is read ──
+  {
+    const sessionId = "11111111-2222-3333-4444-555555555555";
+    const executedSession = {
+      id: sessionId,
+      taskId: "task-executed",
+      agentId: "agent-1",
+      sdkSessionId: null,
+      status: "completed" as const,
+      triggerKind: "manual" as const,
+      worktreePath: null,
+      baseRef: "deadbeef",
+      costUsd: 6.4,
+      pid: 1,
+      bootId: "boot-1",
+      driftAtSpawnJson: "{}",
+      startedAtISO: "2026-08-01T00:00:00.000Z",
+      endedAtISO: "2026-08-01T00:38:00.000Z",
+      failureReason: null,
+    };
+    const executedEvidence = evidenceLineFor({
+      task: { ...baseTask, id: "task-executed", status: "review" },
+      events: [
+        {
+          id: "ev-1",
+          taskId: "task-executed",
+          fromStatus: "doing",
+          toStatus: "review",
+          actorType: "session",
+          actorId: sessionId,
+          reason: null,
+          atISO: "2026-08-01T00:38:00.000Z",
+        },
+      ],
+      sessionsById: new Map([[sessionId, executedSession]]),
+      toolCallCountBySession: new Map([[sessionId, 12]]),
+      commitShasBySession: new Map([[sessionId, ["3ac91e2abc0000000000000000000000000000"]]]),
+    });
+
+    const handMovedEvidence = evidenceLineFor({
+      task: { ...baseTask, id: "task-hand", status: "done" },
+      events: [
+        {
+          id: "ev-2",
+          taskId: "task-hand",
+          fromStatus: "review",
+          toStatus: "done",
+          actorType: "human",
+          actorId: "Sobhi",
+          reason: "approved",
+          atISO: "2026-08-01T01:00:00.000Z",
+        },
+      ],
+      sessionsById: new Map(),
+      toolCallCountBySession: new Map(),
+      commitShasBySession: new Map(),
+    });
+
+    const { registerFor } = await import("../lib/tasks/model");
+    const executedRegister = registerFor(executedEvidence);
+    const handMovedRegister = registerFor(handMovedEvidence);
+
+    if (executedEvidence.kind !== "executed") {
+      fail("T7-2", `expected kind 'executed', got '${executedEvidence.kind}'`);
+    } else if (handMovedEvidence.kind !== "hand-moved") {
+      fail("T7-2", `expected kind 'hand-moved', got '${handMovedEvidence.kind}'`);
+    } else if (executedRegister === handMovedRegister) {
+      fail(
+        "T7-2",
+        `executed and hand-moved got the SAME register ('${executedRegister}') — the two are indistinguishable before either is read`,
+      );
+    } else if (executedRegister !== "mono" || handMovedRegister !== "claim") {
+      fail(
+        "T7-2",
+        `registers were distinct but wrong: executed='${executedRegister}' (want 'mono'), hand-moved='${handMovedRegister}' (want 'claim')`,
+      );
+    } else {
+      pass(
+        "T7-2",
+        `executed ('${executedEvidence.text}', register '${executedRegister}') and hand-moved ('${handMovedEvidence.text}', register '${handMovedRegister}') are distinct registers, not just distinct text`,
+      );
+    }
+  }
+
+  // ── T7-3 · a gated review card's refusal string is gateRefusalReason() itself, not a copy ──
+  {
+    const { gateModelFor } = await import("../lib/tasks/model");
+    const { gateRefusalReason } = await import("../lib/agentos/mcp/gate");
+    const gatedTask = { ...baseTask, id: "task-gated", status: "review" as const, approvalGate: true };
+    const gate = gateModelFor(gatedTask);
+    const sourceOfTruth = gateRefusalReason(gatedTask.id);
+
+    const ungated = gateModelFor({ ...baseTask, id: "task-ungated", status: "review" as const, approvalGate: false });
+    const notReview = gateModelFor({ ...baseTask, id: "task-gated-2", status: "doing" as const, approvalGate: true });
+
+    if (!gate) {
+      fail("T7-3", "gateModelFor returned null for a review task with approvalGate:true");
+    } else if (gate.refusalReason !== sourceOfTruth) {
+      fail(
+        "T7-3",
+        `gate block's refusal string did not match gateRefusalReason() — card said "${gate.refusalReason}", API said "${sourceOfTruth}"`,
+      );
+    } else if (ungated !== null) {
+      fail("T7-3", "gateModelFor returned a gate block for a review task with approvalGate:false");
+    } else if (notReview !== null) {
+      fail("T7-3", "gateModelFor returned a gate block for a 'doing' task, not 'review'");
+    } else {
+      pass(
+        "T7-3",
+        `gated review card's refusal string is identical to gateRefusalReason('${gatedTask.id}') — one source, imported not retyped; null correctly for ungated and non-review tasks`,
+      );
+    }
+  }
+}
+
+// ── T7-4 · column counts are plain numbers; the model exposes no badge/severity field (§8.5) ──
+{
+  const { columnsFor, cardModel } = await import("../lib/tasks/model");
+  const tasks = [
+    { id: "t1", projectId: "p1", name: "a", description: "", status: "todo" as const, blockedReason: null, approvalGate: false, assigneeAgentId: null, scheduleKind: "manual", createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "t2", projectId: "p1", name: "b", description: "", status: "todo" as const, blockedReason: null, approvalGate: false, assigneeAgentId: null, scheduleKind: "manual", createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "t3", projectId: "p1", name: "c", description: "", status: "doing" as const, blockedReason: null, approvalGate: false, assigneeAgentId: null, scheduleKind: "manual", createdAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  const cards = tasks.map((task) =>
+    cardModel({
+      task,
+      events: [],
+      sessionsById: new Map(),
+      toolCallCountBySession: new Map(),
+      commitShasBySession: new Map(),
+      agentsById: new Map(),
+    }),
+  );
+  const columns = columnsFor(cards, tasks);
+  const todoCol = columns.find((c) => c.key === "todo");
+  const doingCol = columns.find((c) => c.key === "doing");
+  const reviewCol = columns.find((c) => c.key === "review");
+  // §8.5 is about FOUR columns. Checking three would still pass with `done` missing entirely —
+  // a check that does not check what its own label claims (review of #17).
+  const doneCol = columns.find((c) => c.key === "done");
+  const allFour = !!todoCol && !!doingCol && !!reviewCol && !!doneCol && columns.length === 4;
+
+  const forbiddenKeys = ["severity", "colour", "color", "badge", "pill"];
+  const leaked = columns.flatMap((c) => Object.keys(c).filter((k) => forbiddenKeys.includes(k.toLowerCase())));
+
+  if (!allFour) {
+    fail(
+      "T7-4",
+      `columnsFor did not return all four columns — got [${columns.map((c) => c.key).join(", ")}]`,
+    );
+  } else if (typeof todoCol.count !== "number" || typeof doingCol.count !== "number" || typeof doneCol.count !== "number") {
+    fail("T7-4", `column count was not a number: todo=${typeof todoCol.count}, doing=${typeof doingCol.count}`);
+  } else if (todoCol.count !== 2 || doingCol.count !== 1 || reviewCol.count !== 0 || doneCol.count !== 0) {
+    fail("T7-4", `wrong counts: todo=${todoCol.count} (want 2), doing=${doingCol.count} (want 1), review=${reviewCol.count} (want 0), done=${doneCol.count} (want 0)`);
+  } else if (leaked.length > 0) {
+    fail("T7-4", `ColumnModel exposed a badge-shaped field: ${JSON.stringify(leaked)} — §8.5 says plain numerals, no pill, no colour`);
+  } else {
+    pass(
+      "T7-4",
+      `column counts are plain numbers (todo=${todoCol.count}, doing=${doingCol.count}, review=${reviewCol.count}) and the model carries no severity/badge/colour field`,
+    );
+  }
+}
+
+// Every fixture repo created after the mid-file sweep above — T6's AC-1/3/6/7/8/10/12/13 families
+// included — is still on disk at this point, and `pnpm verify:stage3` runs on every `pnpm verify`.
+// Two sweeps that each cover only what preceded them leak everything written after the last one
+// (review of #16). This final pass is the one that has to be unconditional.
+for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
+
 console.log(
   failures === 0
-    ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b, AC-14, AC-15a…e, AC-16, AC-17a/b, AC-18a/b, AC-19a/b, AC-19c, AC-9a).\n"
+    ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b, AC-14, AC-15a…e, AC-16, AC-17a/b, AC-18a/b, AC-19a/b, AC-19c, AC-9a, " +
+        "AC-1, AC-3, AC-6, AC-7, AC-8, AC-10, AC-11, AC-13 — AC-12 opt-in, see its own SKIP/PASS line above — " +
+        "plus T7-1…T7-4, the Tasks board's own pure-model checks).\n"
     : `\n${failures} FAILING.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);

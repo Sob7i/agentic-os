@@ -73,12 +73,14 @@ deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state*
 | `docs/DECISIONS.md` | Decisions | Why we chose X — don't re-litigate |
 | `docs/LEARNINGS.md` | Lessons | What we must not re-buy |
 | `docs/FEATURES.md` | Behaviour | What the system does **today** |
+| `docs/HUMAN-TEST.md` | Walkthrough | What it does **in plain language**, with things to try by hand — for a human checking the system without reading code |
 | `docs/BACKLOG.md` | — | Deferred work, with unblock conditions |
 | git history | Record | What changed, when |
 | `docs/PRD.md` | Product | The problem, the features, the build order |
 | `docs/DESIGN-BRIEF.md` | Design | Portfolio layer (Board, Overview) — rounds 1–2 |
 | `docs/DESIGN-BRIEF-EXECUTION.md` | Design | Execution layer + app shell — round 3 |
 | `docs/specs/stage-3a-shell.spec.md` | Queue | The app shell — **built 2026-08-18** |
+| `docs/specs/stage-3b-onboarding.spec.md` | Queue | **Next to build** — the connector that makes Stage 3 reachable, plus agent and task creation. One owner decision open (§5.1) |
 | `docs/specs/AgentOS-spec.md` | Reference | Reconstructed source spec for the execution layer — **a reconstruction, not a contract** |
 | `design/wireframes.pen` | Design | Round-1/2 wireframes (Pencil; plain JSON, readable directly) |
 | `design/wireframes2.pen` | Design | **Round-3** wireframes — the shell, Tasks, Goals, Sessions, Inbox, plus six rationale notes. Shell closed as D23 |

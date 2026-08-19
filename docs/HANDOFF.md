@@ -25,18 +25,18 @@
 > "none" was already wrong by the time the PR recording it existed. A fact that its own recording
 > changes cannot be recorded; it can only be reproduced.
 >
-> **Checked 2026-08-19 (after the #13/#14 review).** If today is much later than that, this table is a hypothesis.
+> **Checked 2026-08-19 (after T7 — Stage 3 complete).** If today is much later than that, this table is a hypothesis.
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
 | `develop` head | `250ab5d` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #9, #10, #11, #12 — all 2026-08-18 | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **47 of 48** — measured 2026-08-19 after the second #13/#14 review | `pnpm verify` |
+| `pnpm verify` | **59 of 60** — measured 2026-08-19 after T7 | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
-| `pnpm verify:stage3` | 21 of 21 (T2–T5; AC-14…AC-19, AC-19c and AC-9a among them) | `pnpm verify:stage3` |
+| `pnpm verify:stage3` | 33 of 33 — AC-1…AC-19 plus T7-1…T7-4; AC-12 opt-in (skipped by default) | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
@@ -212,9 +212,50 @@
   resume, since `createWorktree` derives the same path from the same session id; `resumeSession`
   clears it first and otherwise fails with an error naming the path. **That resume path has no test
   yet — it is AC-6, which is T6's** (`docs/BACKLOG.md`).
-- **Next waves:** T6 (complete the suite: AC-1, AC-3, AC-6…AC-8, AC-10…AC-13, plus opt-in AC-12) →
-  T7 (UI, and the first ticket that owns app startup — `runBootSweep` still has no call site,
-  `docs/BACKLOG.md`).
+- **T6 is built: Stage 3's acceptance suite is complete.** AC-1…AC-19 all present and passing —
+  *the count lives in the Verified state block above, not here* — plus **AC-12** — the one real session — written, documented, and deliberately outside
+  `pnpm verify`: it sits behind `AGENTOS_REAL_SESSION=1` under a `stage3:real-session` script, which
+  the `verify:*` discovery cannot pick up, so the default run can never spend money. **It has never
+  been run for real** — that is an owner decision, and §4 calls it *"the only proof the other
+  eighteen are testing something real"*.
+- **The suite found a fragility in itself.** Stage 1 is **not hermetic** — its AC-1 needs a live
+  `gh` call through DC1 — and both AC-11 and Stage 3a's AC-1 hard-assert its exact pass count. AC-11
+  reports **SKIP** on a degraded upstream now rather than a false regression; Stage 3a's AC-1 has
+  the identical exposure and is logged in `docs/BACKLOG.md`. Confirmed by putting a failing `gh` on
+  `PATH` and reproducing the exact message T6's agent had seen and could not explain.
+- **T7 is built — Stage 3 is complete.** The Tasks board, the session view and the Inbox, with
+  every §8 rule that could be *wrong* in pure functions under `lib/tasks/` (`evidenceLineFor`,
+  `registerFor`, `gateModelFor`, `columnsFor`) and dumb components that switch only on a decided
+  discriminant. T7-1…T7-4 assert the four rules most likely to be "improved": a `todo` card's
+  evidence is an **absence, not an empty string**; executed and hand-moved get **different
+  registers**; the gate's refusal text is `gateRefusalReason()` itself rather than a copy; and the
+  column model exposes no badge-shaped field. Drag-and-drop was dropped, which §8.4 explicitly
+  permits.
+- **`runBootSweep` finally has a call site, and it was proved against a real boot.** With a stale
+  `running` session seeded, starting the server logs `[agentos] boot sweep: interrupted 1
+  session(s) …` and the row reads `interrupted` afterwards — the first time §7.7's mechanism has
+  been shown working outside a fixture.
+- **Two things review caught that `pnpm build` never would.** Next compiles `instrumentation.ts`
+  for an **edge** target even with no edge routes, and `runtime = "nodejs"` gates execution rather
+  than compilation — in `dev` only, every route 500s until Node builtins are externalized for that
+  target. And the boot hook was **creating** `data/agentos.sqlite` on a machine with no execution
+  layer at all; it now opens the store only if it already exists. Both in `docs/LEARNINGS.md`;
+  neither is visible without starting the server.
+- **Stage 3 is complete and still unreachable on a real project.** Nothing connects an
+  `agentos.yml` on disk to a `Project` row — the pages render an honest *"not initialized"* pane
+  rather than inventing rows. That connector needs a decision about what creates the row, and it is
+  the next thing standing between this build and a first real run (`docs/BACKLOG.md`, and D27 which
+  already chose `fractal-code` as the target repo).
+- **Next to build: Stage 3b** ([`stage-3b-onboarding.spec.md`](specs/stage-3b-onboarding.spec.md),
+  written 2026-08-19). Stage 3 is complete and **cannot be used** — nothing turns an `agentos.yml`
+  into a `Project` row, so the only way to create an agent or a task is a seed script. 3b is the
+  smallest thing that closes the loop: initialize a project, create an agent, create a task. It is
+  sequenced **before Stage 4** because Stage 4's own spec says it introduces no new machinery — it
+  sequences parts that have already run, and right now none of them have run once. **One owner
+  decision is open**, §5.1: what creates the `Project` row. Recommendation is an explicit
+  *Initialize* button on the pane that already says *not initialized*.
+- **Then:** the owner gates. AC-12 (one real session, `AGENTOS_REAL_SESSION=1`) has never been run;
+  nadim's fix proposal has never been approved, which is still Stage 2's unmet criterion.
 
 ## How to pick up
 

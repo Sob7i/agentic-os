@@ -235,6 +235,48 @@ belongs in `docs/DECISIONS.md` instead.
   nulling `worktreePath` would have discarded the only pointer to the directory left behind.
   Found by review on #14, not by the suite.
 
+- (2026-08-19) **Stage 1's suite is not hermetic, and two other suites hard-assert its exact pass
+  count.** Stage 1's AC-1 asserts nadim carries `drift`; that verdict comes from **DC1, which needs
+  a live `gh` call**. With GitHub unreachable or rate-limited, DC1 cannot produce the finding, nadim
+  degrades to `attention`, and the suite returns **6P/2F** — for reasons with nothing to do with the
+  branch under test. Reproduced deliberately by putting a failing `gh` on `PATH`: the failure is
+  exactly `AC-1 — nadim severity is attention, expected drift`, the message T6's agent had seen
+  twice and could not explain. **The consequence is not the flake; it is what a flake teaches.** A
+  check that cannot distinguish *"the thing I test broke"* from *"the network was down"* gets
+  ignored — which is precisely what already happened to Stage 1's own AC-2, and the reason a red
+  suite here no longer alarms anyone. **So an oracle over a non-hermetic suite reports SKIP on a
+  degraded upstream, never FAIL**: silence is honest, a false red is not. Done for `AC-11`;
+  `verify-stage3a.mts`'s AC-1 has the identical exposure and is logged in `docs/BACKLOG.md`.
+
+- (2026-08-19) **Never `JSON.stringify` a `RunParams` in a failure message.** It carries live SDK and
+  MCP server objects with circular references, so the stringify **throws instead of printing** — and
+  it throws on the failure path, meaning the suite crashes at exactly the moment it was trying to
+  tell you what went wrong. Stringify the two or three fields the assertion is about. Found by T6's
+  agent while proving AC-6 by breaking it — the failure path was only exercised *because* the
+  prove-by-breaking rule forced it, which is a small argument for that rule on its own.
+
+- (2026-08-19) **Next compiles `instrumentation.ts` for an edge target even with no edge routes, and
+  `export const runtime = "nodejs"` does not stop it.** On Next 15.5 in `next dev` — *not* `next
+  build`, which already tree-shakes the dead branch — the edge compiler walks that file's whole
+  import graph and fails on every `node:`-prefixed builtin it finds (`UnhandledSchemeError`), one at
+  a time, turning **every route into a 500**. The `NEXT_RUNTIME` guard inside `register()` gates
+  *execution*, not compilation, so it is correct and insufficient. Fixed with a `webpack.externals`
+  rule in `next.config.mjs` externalizing **all** Node builtins for the edge target — all of them
+  rather than a hand-kept list, because the failures surfaced one per rebuild as the import graph
+  grew. **The point worth keeping: `pnpm build` passing is not evidence that `pnpm dev` runs.** This
+  was only ever going to be found by starting the server, which is why T7's brief asked for the page
+  to actually be loaded.
+
+- (2026-08-19) **Booting the portfolio was creating the execution layer's database.**
+  `instrumentation.ts`'s boot sweep called `getDb()`, and `openDb` does `mkdirSync` + `migrate` — so
+  merely opening the Board on a machine with **no** project opted in materialized a 110KB
+  `data/agentos.sqlite`. Not an invariant-5 violation (the file has no rows, so nothing is
+  *stored*), but D19 asks for the layer boundary to be **real in code**, and one layer starting up
+  should not conjure the other's store. With no store there are no sessions, so the sweep is a
+  guaranteed no-op — the fix is to skip when the file does not exist, which costs nothing.
+  **A side effect that only shows up on a clean machine will not show up in review**; this was found
+  by deleting `data/` and booting, not by reading the diff.
+
 ## Tooling
 
 - (2026-07-27) **`.pen` files (Pencil) are plain UTF-8 JSON** — readable directly with any JSON
