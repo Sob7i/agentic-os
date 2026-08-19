@@ -49,7 +49,7 @@ import { initializeProject } from "../app/p/[slug]/[tab]/actions";
 import { createAgentForSlug, updateAgentForSlug } from "../app/p/[slug]/config/actions";
 import { parseAgentosYml } from "../lib/agentos/config";
 import { EGRESS_DENIED_TOOLS } from "../lib/agentos/egress";
-import { resolveToolGrants } from "../lib/agentos/agent-form";
+import { buildAgentInput, resolveToolGrants } from "../lib/agentos/agent-form";
 import { loadProjectExecutionData } from "../lib/tasks/data";
 import type { ProjectConfig } from "../projects.config";
 
@@ -561,6 +561,34 @@ console.log("\nStage 3b acceptance — the connector, fixture repos only\n");
     fail("AC-5b", `the single shared list does not actually deny egress: ${JSON.stringify(resolveToolGrants(["Read", "WebFetch", "WebSearch"]))}`);
   else
     pass("AC-5b", `one definition (lib/agentos/egress.ts), imported by both enforcement points; [${EGRESS_DENIED_TOOLS.join(", ")}] denied at write time and at spawn`);
+}
+
+// ── AC-4b · numeric limits are validated to the shape their columns hold ──────────────────
+// Review of #21. `Agent.maxTurns` is an INTEGER column and the honest form sends `step={1}`, but
+// `buildAgentInput` accepted any positive finite number — so a crafted post could store a
+// fractional turn budget that SQLite would coerce on the way in. The browser's own `min` on the
+// budget field also disagreed with the server, calling 0 valid where the server rejects it: a
+// value the form accepts and the server refuses is a form that lies about what it will take.
+{
+  const bad = (patch: Record<string, string>) =>
+    buildAgentInput({
+      name: "N", monogram: "NN", model: "claude-opus-5", rolePrompt: "R",
+      requestedTools: ["Read"], canCommit: false, maxTurns: "", maxBudgetUsd: "", ...patch,
+    });
+  const cases: [string, ReturnType<typeof bad>][] = [
+    ["maxTurns 1.5", bad({ maxTurns: "1.5" })],
+    ["maxTurns 0", bad({ maxTurns: "0" })],
+    ["maxTurns -1", bad({ maxTurns: "-1" })],
+    ["maxBudgetUsd 0", bad({ maxBudgetUsd: "0" })],
+  ];
+  const accepted = cases.filter(([, r]) => r.ok).map(([n]) => n);
+  const good = bad({ maxTurns: "42", maxBudgetUsd: "12.5" });
+
+  if (accepted.length > 0) fail("AC-4b", `invalid numeric limits were accepted: [${accepted.join(", ")}]`);
+  else if (!good.ok) fail("AC-4b", `a valid submission was refused: ${good.error}`);
+  else if (good.input.maxTurns !== 42 || good.input.maxBudgetUsd !== 12.5)
+    fail("AC-4b", `valid limits did not survive: ${JSON.stringify(good.input)}`);
+  else pass("AC-4b", "fractional, zero and negative turn budgets refused; a fractional *budget* still allowed (it is REAL, not INTEGER); 42 / 12.5 round-trip");
 }
 
 for (const t of TEMPS) rmSync(t, { recursive: true, force: true });

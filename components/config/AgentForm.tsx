@@ -86,7 +86,7 @@ export function AgentForm({
 
       <label className={s.field}>
         Max budget (USD)
-        <input name="maxBudgetUsd" type="number" min={0} step="0.01" defaultValue={agent?.maxBudgetUsd ?? ""} />
+        <input name="maxBudgetUsd" type="number" min={0.01} step="0.01" defaultValue={agent?.maxBudgetUsd ?? ""} />
       </label>
 
       <button type="submit" className={s.submit} disabled={pending}>
