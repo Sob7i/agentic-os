@@ -1166,13 +1166,23 @@ async function waitForSession(
   settled: (s: SessionRow) => boolean,
   timeoutMs = 5000,
 ): Promise<SessionRow> {
+  // Throws rather than returning the last polled row. Returning it turned "the continuation never
+  // settled" into a downstream assertion failure about the wrong thing — a hang reported as a bad
+  // value, which is the hardest kind of flake to read (review of #16). A missing session is also
+  // stated outright instead of riding on a non-null assertion.
   const deadline = Date.now() + timeoutMs;
-  let session = getSession(db, sessionId)!;
-  while (!settled(session) && Date.now() < deadline) {
+  for (;;) {
+    const session = getSession(db, sessionId);
+    if (!session) throw new Error(`waitForSession: no Session ${sessionId}`);
+    if (settled(session)) return session;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `waitForSession: session ${sessionId} did not settle within ${timeoutMs}ms ` +
+          `(status='${session.status}', endedAtISO=${session.endedAtISO ?? "null"})`,
+      );
+    }
     await new Promise((r) => setTimeout(r, 25));
-    session = getSession(db, sessionId)!;
   }
-  return session;
 }
 
 /**
@@ -1645,8 +1655,18 @@ class CommittingRunner implements Runner {
   // people learn to ignore — which is exactly what already happened to Stage 1's own AC-2. So a
   // degraded run reports SKIP, not FAIL: the oracle stays silent rather than lying in either
   // direction. `verify-stage3a.mts`'s AC-1 has the same exposure and is logged in docs/BACKLOG.md.
-  const degradedUpstream =
-    !preSliceResult && /severity is attention, expected drift|collector|unavailable/i.test(out1);
+  // Narrow deliberately. The first version of this matched /collector|unavailable/i — and Stage 1
+  // prints "PR data unavailable …" as a **PASS** on every single run (AC-5 exists to show `gh`
+  // degrading visibly). So the guard was true for *any* non-7P/1F result, and would have reported
+  // a genuine Stage 1 regression as SKIP. A guard against false reds that swallows every real red
+  // is worse than no guard: it is the "green for the wrong reason" failure, introduced while
+  // fixing another instance of it (review of #16).
+  //
+  // The offline symptom is specific and worth matching exactly: DC1 needs `gh`, so without it
+  // nadim cannot be scored `drift` and AC-1 fails with this precise sentence. Anything else that
+  // fails is a real regression and must stay a FAIL.
+  const OFFLINE_SYMPTOM = /^\s+FAIL\s+AC-1\b.*severity is \w+, expected drift/m;
+  const degradedUpstream = !preSliceResult && OFFLINE_SYMPTOM.test(out1);
 
   if (degradedUpstream) {
     console.log(
