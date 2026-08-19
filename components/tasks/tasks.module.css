@@ -161,6 +161,28 @@
 }
 .notInit strong { color: var(--text); }
 
+/* ── Initialize button (T1: the connector, spec §5.1/D30) ───────────────── */
+.initForm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  max-width: 62ch;
+}
+.initButton {
+  font-size: 12px;
+  padding: 6px 13px;
+  border: 1px solid var(--text);
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.initButton:disabled { opacity: 0.6; cursor: default; }
+.initNote { font-size: 12px; color: var(--muted); margin: 0; }
+.initError { font-size: 12px; color: var(--drift); margin: 0; }
+
 /* ── The session view (design brief §6.5) ────────────────────────────────── */
 .sessionHead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 0 4px; }
 .sessionId { font-family: var(--mono); font-size: 13px; color: var(--muted); }

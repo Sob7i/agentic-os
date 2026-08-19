@@ -12,7 +12,8 @@ import { cardModel, columnsFor } from "@/lib/tasks/model";
 import { inboxModel } from "@/lib/tasks/inbox-model";
 import { Board } from "@/components/tasks/Board";
 import { Inbox } from "@/components/tasks/Inbox";
-import { runNowAction, approveDoneAction, answerInboxAction } from "./actions";
+import { InitializeButton } from "@/components/tasks/InitializeButton";
+import { runNowAction, approveDoneAction, answerInboxAction, initializeProjectAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -61,12 +62,15 @@ function TabBody({ tab, slug, projectPath }: { tab: string; slug: string; projec
     const data = loadProjectExecutionData(projectPath);
     if (!data) {
       return (
-        <p className={t.notInit}>
-          <strong>Not initialized.</strong> This project has an <span className="mono">agentos.yml</span>,
-          but no matching <span className="mono">Project</span> row exists yet in{" "}
-          <span className="mono">data/agentos.sqlite</span>. Connecting an opted-in project to the
-          execution database is not built by this ticket — see <span className="mono">docs/BACKLOG.md</span>.
-        </p>
+        <>
+          <p className={t.notInit}>
+            <strong>Not initialized.</strong> This project has an <span className="mono">agentos.yml</span>,
+            but no matching <span className="mono">Project</span> row exists yet in{" "}
+            <span className="mono">data/agentos.sqlite</span>. Click Initialize to read that file
+            and connect this project to the execution layer.
+          </p>
+          <InitializeButton slug={slug} action={initializeProjectAction} />
+        </>
       );
     }
     if (tab === "tasks") {
