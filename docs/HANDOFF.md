@@ -212,8 +212,8 @@
   resume, since `createWorktree` derives the same path from the same session id; `resumeSession`
   clears it first and otherwise fails with an error naming the path. **That resume path has no test
   yet — it is AC-6, which is T6's** (`docs/BACKLOG.md`).
-- **T6 is built: Stage 3's acceptance suite is complete.** AC-1…AC-19 all present, **29 checks
-  passing**, plus **AC-12** — the one real session — written, documented, and deliberately outside
+- **T6 is built: Stage 3's acceptance suite is complete.** AC-1…AC-19 all present and passing —
+  *the count lives in the Verified state block above, not here* — plus **AC-12** — the one real session — written, documented, and deliberately outside
   `pnpm verify`: it sits behind `AGENTOS_REAL_SESSION=1` under a `stage3:real-session` script, which
   the `verify:*` discovery cannot pick up, so the default run can never spend money. **It has never
   been run for real** — that is an owner decision, and §4 calls it *"the only proof the other
