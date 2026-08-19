@@ -99,6 +99,44 @@ severity vocabulary moved to `lib/severity.ts` so the ribbon uses the *same* map
 copy. `pnpm verify` returns the same result as before the slice — that is AC-1, and it is asserted
 by running the Stage 1 and Stage 2 suites unmodified as a regression oracle.
 
+### The Tasks board, the session view, and the Inbox (T7 — spec §8, §2)
+
+**The first surface behind an execution layer that renders real content rather than a
+placeholder.** Reachable at `/p/<slug>/tasks` and `/p/<slug>/inbox` once a project both has an
+`agentos.yml` on disk (D18, checked by the shell) *and* a matching `Project` row in
+`data/agentos.sqlite` (checked by this surface, one level deeper — see *Known gaps* below: no
+watched project has the second one yet). A single session's own page lives at
+`/p/<slug>/sessions/<id>`, linked from a task card's evidence line or an Inbox item; there is no
+session *list* in this slice.
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Lists a project's tasks on a four-column board | Cards appear under `todo`/`doing`/`review`/`done` | Load `/p/<project>/tasks` on a project with a `Project` row | T7 |
+| A `todo` card shows no evidence line | Nothing renders — not an empty line, not a placeholder | `pnpm verify:stage3` → T7-1 | T7 |
+| A running session's card carries no motion | A static 3px rail is the entire treatment | Load `/p/<project>/tasks` while a session is `running` | T7 |
+| Executed and hand-moved cards are distinguishable before either is read | `▶` + mono + session id + sha vs. quoted italic naming a person | `pnpm verify:stage3` → T7-2 | T7 |
+| A session id opens the session view; a sha is a real, verifiable value | Session id links to `/p/<slug>/sessions/<id>` | Click a card's evidence line | T7 |
+| A gated `review` card's refusal reason is the API's own string | One source, imported not retyped | `pnpm verify:stage3` → T7-3 | T7 |
+| Column counts are plain numbers | No pill, no colour, no badge field on the model | `pnpm verify:stage3` → T7-4 | T7 |
+| Creates a task and runs it now | `Run now` on a `todo` card calls `dispatch()`; card moves to `doing` | Click `Run now` on a project with a `Project` row | T7 |
+| Accepts a human's approval on a gated card | `Approve & mark done` moves `review → done`, recorded as hand-moved | Click the gate's approve button | T7 |
+| Answering an Inbox question resumes the session | `Answer and resume` calls `resumeSession()` with the reply | Answer an open question in `/p/<slug>/inbox` | T7 |
+| The session view shows the evidence, not a live feed | Duration, cost, commits, and the full tool-call log, oldest first, no auto-scroll | Load `/p/<slug>/sessions/<id>` | T7 |
+| The Inbox's open count is the one legitimate counter | Every other count in this layer is a plain number (§8.5) | Load `/p/<slug>/inbox` | T7 |
+| Keeps the portfolio visible inside a project | Ribbon and (where applicable) drift band still render on Tasks/Inbox/session pages | Load `/p/<project>/tasks` | T7 |
+
+**All nine card states — `todo`, `running`, `executed`, `failed`, `hand-moved`, a gated `review`
+card, an ungated `review` card, `done`, and an empty column — were rendered against a seeded
+fixture project and a live `pnpm dev` server**, not just asserted by the pure-function suite above;
+the wireframe's own evidence-line text (`running · 12m · 41 tool calls · $2.10 so far`) came back
+verbatim. The seed script and its `projects.config.ts` entry were both reverted before this landed
+— per invariant 5, the portfolio's watched set stays exactly six real projects.
+
+**The boot sweep now has a call site (§7.7).** `instrumentation.ts` calls `runBootSweep` once per
+server process, passing `dispatch.ts`'s own `PROCESS_BOOT_ID` so the two can never disagree. Built
+by T5, wired by T7 — until this landed, restarting `pnpm dev` left `running` rows with no process
+behind them, permanently.
+
 ### The Overview
 
 *Not built.* Planned: PRD §6.8, **Stage 6** (re-scoped by D22 to read two sources). `/overview`
@@ -141,6 +179,24 @@ Stated in full in `CLAUDE.md` §Invariants.
 
 ## Known gaps in this map
 
+- **Restarting the dev server kills every running session, and the system reports that rather than
+  hiding it (§7.7).** `instrumentation.ts`'s boot sweep marks every `running`/`waiting-inbox`
+  session whose `bootId` doesn't match the current process as `interrupted`, with the reason
+  recorded and its worktree removed — so the loss is visible on the card (`failed`-register
+  evidence, mono, naming the reason) rather than a `running` row lying forever. Surviving a restart
+  needs a supervisor process, which is the cloud runner's problem (D20) → `docs/BACKLOG.md`.
+- **No watched project has a `Project` row in `data/agentos.sqlite`.** `agentos.yml` on disk is
+  necessary but not sufficient — the shell (D18) checks the file and shows the tabs; the Tasks/Inbox
+  pages check one level deeper and render an honest "not initialized" pane rather than inventing
+  rows or crashing. Nothing yet creates that row from a yaml file appearing on disk — connecting the
+  two is not built by any ticket through T7 → `docs/BACKLOG.md`.
+- **`instrumentation.ts` needed a webpack config change, not just the file itself.** Next.js 15.5
+  compiles `instrumentation.ts` for an edge-runtime target in `next dev` (not `next build`, which
+  already tree-shakes the dead branch) even though this app declares no edge routes, and that edge
+  compile fails on any `node:`-prefixed builtin reachable from the file — `dispatch.ts`'s own import
+  graph reaches several. `next.config.mjs` externalizes every Node builtin for that one target.
+  Found by actually running `pnpm dev` against a seeded fixture project, which is also how every row
+  in the Tasks-board table above was verified — not assumed from the pure-function suite alone.
 - **⚠ AC-10 (does the ribbon fit?) is measured but not *observed*.** Stage 3a's one manual
   acceptance asks whether six real project names survive a 40px ribbon at 1280px. The rendered
   ribbon is **116 characters** — `← All projects ⌘1 · ⚠ nadim · ○ agentic-os · ○ itqan ·
