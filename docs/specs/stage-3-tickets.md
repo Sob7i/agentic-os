@@ -131,8 +131,8 @@ against the real SDK without being called.
 
 **May touch:** `lib/agentos/mcp/*`. **Must not touch:** `lib/agentos/dispatch.ts` (T5).
 
-**Build:** `agentos` (`task.read`, `task.update_status`, `task.append_activity`) and `inbox`
-(`inbox.ask`), both via `createSdkMcpServer`, both **constructed per session** and closing over that
+**Build:** `agentos` (`task_read`, `task_update_status`, `task_append_activity`) and `inbox`
+(`inbox_ask`) — underscores, not the dotted names this ticket originally carried (**D29**), both via `createSdkMcpServer`, both **constructed per session** and closing over that
 session's id and task id.
 
 **Traps.**

@@ -25,18 +25,18 @@
 > "none" was already wrong by the time the PR recording it existed. A fact that its own recording
 > changes cannot be recorded; it can only be reproduced.
 >
-> **Checked 2026-08-18 (evening).** If today is much later than that, this table is a hypothesis.
+> **Checked 2026-08-18 (late evening, after T4).** If today is much later than that, this table is a hypothesis.
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
-| `develop` head | `081ae34` | `git log --oneline -1 origin/develop` |
+| `develop` head | `250ab5d` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
-| Last merged | #6, #7, #8 — all 2026-08-15 | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **29 of 30** — measured 2026-08-18 after merging #11 | `pnpm verify` |
+| Last merged | #9, #10, #11, #12 — all 2026-08-18 | `gh pr list --state merged --limit 5` |
+| `pnpm verify` | **32 of 33** — measured 2026-08-18 after building T4 | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
-| `pnpm verify:stage3` | 3 of 3 (AC-2, AC-9, AC-8a) | `pnpm verify:stage3` |
+| `pnpm verify:stage3` | 6 of 6 (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b) | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
@@ -48,8 +48,10 @@
   Agentic OS is now **two layers**: the portfolio (Board + Overview, read-only, what exists today)
   and a new per-project, opt-in **execution layer** adapted from
   [`docs/specs/AgentOS-spec.md`](specs/AgentOS-spec.md) — tasks, goals, inbox, sessions, costs,
-  with agents and templates as configuration. **Nothing of it is built.** Decisions D18–D22 are
-  closed; the build order in PRD §10 was renumbered and old Stage 3 (Overview) moved to Stage 6.
+  with agents and templates as configuration. Decisions D18–D22 are closed; the build order in
+  PRD §10 was renumbered and old Stage 3 (Overview) moved to Stage 6. *(This said "Nothing of it is
+  built" until 2026-08-18 — an asserted staleness, corrected while landing T4: Stage 3a ships and
+  Stage 3's tickets T1–T4 are in.)*
 - **Stage 2 is merged; its acceptance criterion is still unmet.** The code and the re-scope docs
   are in. But Stage 2's own criterion — *one real drift corrected through the dashboard* — **has
   never been met**: nadim's HANDOFF still claims *"PRs #1 through #22 merged"* and no proposal has
@@ -122,7 +124,7 @@
   shell), D24 (dispatch, never pull) and **D25** (a DoD item carries the *kind* of evidence that
   closed it — which supersedes what frame `G1` drew); D18–D22 are the re-scope.
 
-## Stage 3 — wave 1 landed (2026-08-18)
+## Stage 3 — waves 1 and 2 landed (2026-08-18)
 
 - **T1 (schema) and T2 (worktree) are built**, by two Sonnet agents in isolated worktrees, reviewed
   against the spec before integration. `lib/agentos/{db,types,worktree}.ts` and
@@ -152,10 +154,32 @@
 - **Merging #11 then #12 conflicted in four files, none of them a real disagreement** — see
   `docs/LEARNINGS.md`. `package.json`'s suite list is now *discovered* rather than written down, so
   that half cannot recur; the hub-doc half is a sequencing rule now in `CLAUDE.md` §Git.
-- **Next waves:** T4 (MCP + gate) → T5 (`dispatch` + sweep) → T6/T7. Tickets and the wave plan:
-  [`stage-3-tickets.md`](specs/stage-3-tickets.md). **T4's question is already answered** in §3.3:
-  the fake does not simulate SDK tool dispatch, and AC-4/AC-5 call the handler and `canUseTool`
-  directly — which is the only way to assert *which* layer refused.
+- **T4 (the two MCP servers + the gate) is built** — `lib/agentos/mcp/{names,context,gate,agentos-server,inbox-server}.ts`
+  plus AC-4, AC-5 and AC-5b. `zod` is now a direct dependency: it is a *peer* of the Agent SDK and
+  was present in the pnpm store but **not resolvable from the project root**, so `createSdkMcpServer`
+  could not have been called without it. Declared as `^4.4.3` — which is a floor, not a pin, and
+  the wording here said "pinned" until a reviewer caught it. What actually prevents the failure
+  mode is that our range and the SDK's peer range (`^4.0.0`) intersect, so pnpm resolves **one**
+  instance; two would break `instanceof` inside the MCP server and would look like a schema bug
+  rather than a resolution one.
+- **The gate's first layer was one string away from being dead on arrival.** `canUseTool` is handed
+  the *fully-qualified* name (`mcp__agentos__task_update_status`), not the bare one — and a callback
+  matching the bare name would never fire while **AC-5 still passed**, because layer 2 refuses on its
+  own. `qualify()` in `names.ts` is now the single source both the gate and its test import.
+- **T4's agent found a defect in my own spec that no check in the suite could reach — D29.** The
+  spec named the tools with dots (`task.read`); the Messages API's tool-name field is
+  `^[a-zA-Z0-9_-]{1,64}$`. Dots register fine at the MCP layer, so it would have surfaced at the
+  first *real* dispatch (AC-12) and nowhere earlier — because §3.3 deliberately routes AC-4/AC-5
+  around the SDK. Renamed to underscores; **AC-5b** asserts the charset structurally, and was
+  proved by reverting one name and watching it fail.
+- **The sub-agent base problem was structural, and is now understood.** Four agents in a row were
+  provisioned onto `3ea05a0` because isolated worktrees branch from **`origin/main`**, which this
+  workflow leaves behind `develop` by design. The fourth stopped instead of building, because its
+  brief made it check first. Worktrees are now created by hand from `develop` — `docs/LEARNINGS.md`.
+- **Next waves:** T5 (`dispatch` + sweep) → T6/T7. Tickets and the wave plan:
+  [`stage-3-tickets.md`](specs/stage-3-tickets.md). T5 is the single most consequential file in the
+  slice: it is the only door to a session (AC-14), owns the five preconditions, and writes D24's
+  drift record.
 
 ## How to pick up
 

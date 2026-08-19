@@ -166,8 +166,16 @@ function call with a Zod-validated argument.
 
 | Server | Tools | Notes |
 |---|---|---|
-| `agentos` | `task.read`, `task.update_status`, `task.append_activity` | `task.update_status` is where §3.4's gate lives |
-| `inbox` | `inbox.ask` | Returns nothing useful — see §3.5. `inbox.send` is deliberately absent (§5.8) |
+| `agentos` | `task_read`, `task_update_status`, `task_append_activity` | `task_update_status` is where §3.4's gate lives |
+| `inbox` | `inbox_ask` | Returns nothing useful — see §3.5. `inbox_send` is deliberately absent (§5.8) |
+
+**Underscores, not dots — renamed 2026-08-18 as D29.** This table said `task.read` and `inbox.ask`
+until T4 was built. Dots register fine at the MCP protocol layer, but the Messages API's own
+tool-name field is `^[a-zA-Z0-9_-]{1,64}$` — and because §3.3 below has AC-4 and AC-5 call the
+handler directly, **nothing in `pnpm verify` would ever have crossed the boundary that enforces
+it.** The first real dispatch (AC-12) would have been the first to find out. `AC-5b` now asserts
+the charset so the suite catches it instead. Prose elsewhere in this spec still uses the dotted
+form where it is describing the *concept*; `lib/agentos/mcp/names.ts` is the wire-name authority.
 
 **The scripted fake does not simulate SDK tool dispatch, and does not need to** *(closed
 2026-08-18, asked by the agent that built the fake)*. Because these tools are plain async functions
@@ -304,8 +312,8 @@ SDK, and it is opt-in.
   its path is the session's `cwd`. Afterwards it appears in neither `worktree list` nor the
   filesystem. A second run gets a **different** path with a clean tree.
 - **AC-3** — Each emitted tool-use message writes one `ToolCall` row, ordered by `seq`.
-- **AC-4** — A scripted `task.update_status("review")` moves the card and records the actor.
-- **AC-5 — the gate holds.** On a task with `approvalGate: true`: the session's `task.update_status`
+- **AC-4** — A scripted `task_update_status("review")` moves the card and records the actor.
+- **AC-5 — the gate holds.** On a task with `approvalGate: true`: the session's `task_update_status`
   to `done` is refused with a reason, the card stays in `review`, and a refusal is recorded. The
   same transition from the human succeeds and writes a `TaskEvent` with `actorType: 'human'`.
   **Assert which layer refused** (§3.4) — Stage 2's lesson was that a test asserting only "something
@@ -338,6 +346,10 @@ SDK, and it is opt-in.
   **Assert the import graph, not the SQL text** — a grep for `INSERT INTO Session` breaks on
   quoting, line wrapping, or a prepared-statement helper, and would then fail while the invariant
   holds, which is the failure mode that teaches people to delete a check.
+- **AC-5b — no tool name the Messages API would reject.** Every tool name in
+  `lib/agentos/mcp/names.ts` and its qualified `mcp__<server>__<tool>` form matches
+  `^[a-zA-Z0-9_-]{1,64}$`. Structural, added with D29 — §3.3's direct-handler testing means no
+  other check in the suite reaches the boundary that enforces this.
 - **AC-15 — every refusal is stated and writes nothing.** Each of §7.3's five preconditions is
   driven to failure in turn. Each returns `started: false`, names the precondition that stopped it,
   and leaves **zero new `Session` rows and zero new `TaskEvent` rows**. Following Stage 2's lesson,

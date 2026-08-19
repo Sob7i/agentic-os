@@ -191,6 +191,14 @@ feature branch ──PR (agent opens)──▶ develop ──(owner merges)─�
   second stage off the first, or expect to resolve four union conflicts per merge. **The tell that
   a conflict is spurious is that every hunk resolves to a union**; if you are choosing between two
   versions, that one is real and deserves attention.
+- **Never provision a sub-agent worktree from the default base — create it by hand from
+  `develop`.** Isolated worktrees branch from **`origin/main`**, and this workflow deliberately
+  leaves `main` behind `develop` (only the owner merges into it). Four agents in a row therefore
+  started at a commit predating the entire build. Run `git worktree add -b <branch> <path>
+  origin/develop`, `pnpm install` in it, and hand the agent the path. **Give every agent brief a
+  base check** — the expected sha *and* a cheap structural one (`ls lib/agentos/`), because a
+  missing directory is a faster tell than a hash comparison, and the check is the only thing that
+  turns a silent wrong build into a two-minute correction.
 - **Never add a suite to a hand-maintained list.** `pnpm verify` discovers its suites from the
   `verify:*` keys in `package.json` ([`scripts/verify-all.mts`](scripts/verify-all.mts)) precisely
   so that adding a stage is an insert, not an edit to a line another branch also edited.
