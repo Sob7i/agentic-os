@@ -41,7 +41,7 @@
  * Run: pnpm verify:stage3b
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -61,8 +61,8 @@ import { initializeProject, createTaskForSlug } from "../app/p/[slug]/[tab]/acti
 import { createAgentForSlug, updateAgentForSlug } from "../app/p/[slug]/config/actions";
 import { parseAgentosYml } from "../lib/agentos/config";
 import { EGRESS_DENIED_TOOLS } from "../lib/agentos/egress";
-import { resolveToolGrants } from "../lib/agentos/agent-form";
 import { showsRunControl } from "../lib/tasks/model";
+import { buildAgentInput, resolveToolGrants } from "../lib/agentos/agent-form";
 import { loadProjectExecutionData } from "../lib/tasks/data";
 import { dispatch } from "../lib/agentos/dispatch";
 import { FakeRunner } from "../lib/agentos/runner/fake";
@@ -231,6 +231,60 @@ console.log("\nStage 3b acceptance — the connector, fixture repos only\n");
     fail("AC-3", `second call did not report already-initialized: ${JSON.stringify(second)}`);
   else if (rows.length !== 1) fail("AC-3", `expected exactly 1 row after two calls, got ${rows.length}`);
   else pass("AC-3", `second call reported "${second.reason}"; row count still 1 after two calls`);
+  db.close();
+}
+
+// ── AC-2c · a duplicate slug refuses on the screen, it does not throw ─────────────────────
+// Review of #20. Idempotency is keyed on `primaryRepoPath` (§3.2 — the one fact the Board and the
+// row derive from the same place), but `Project.slug` is UNIQUE. Those are not the same guard: a
+// *different* repo whose agentos.yml declares an already-taken slug passes the idempotency check
+// and then violates the constraint. Uncaught that is a 500, which bypasses exactly what D30's
+// button is for — a refusal the human can read. Two projects, one declared slug.
+{
+  const first = makeConnectorFixtureRepo({ yamlContents: "slug: shared-name\n" });
+  const second = makeConnectorFixtureRepo({ yamlContents: "slug: shared-name\n" });
+  const db = openDb(":memory:");
+
+  const a = await withOnlyProject(fixtureConfig("dup-a", first.dir), () => initializeProject("dup-a", { db }));
+  let threw: string | null = null;
+  let b: Awaited<ReturnType<typeof initializeProject>> | null = null;
+  try {
+    b = await withOnlyProject(fixtureConfig("dup-b", second.dir), () => initializeProject("dup-b", { db }));
+  } catch (err) {
+    threw = err instanceof Error ? err.message : String(err);
+  }
+  const rows = listProjects(db);
+
+  if (!a.ok) fail("AC-2c", `setup: the first initialize refused: ${a.reason}`);
+  else if (threw) fail("AC-2c", `initialize threw instead of refusing — a 500, not a stated reason: ${threw}`);
+  else if (b?.ok) fail("AC-2c", "a second project was created with an already-taken slug");
+  else if (!b?.reason) fail("AC-2c", "refused without a stated reason");
+  else if (rows.length !== 1) fail("AC-2c", `expected 1 row, got ${rows.length}`);
+  else pass("AC-2c", `duplicate slug refused on the screen: "${b.reason.slice(0, 70)}" — 1 row, no throw`);
+  db.close();
+}
+
+// ── AC-2d · an unreadable agentos.yml is not reported as "has not opted in" ────────────────
+// Review of #20. The original `catch {}` flattened every readFileSync failure into the opt-out
+// sentence, so a permission error read as a deliberate choice not to opt in — this dashboard
+// asserting something it never checked, which is invariant 2, inside the product built to enforce
+// it. A directory named `agentos.yml` reproduces a non-ENOENT read error portably (EISDIR).
+{
+  const { dir } = makeConnectorFixtureRepo({ withAgentosYml: false });
+  mkdirSync(join(dir, "agentos.yml"));
+  const db = openDb(":memory:");
+
+  const result = await withOnlyProject(fixtureConfig("unreadable", dir), () =>
+    initializeProject("unreadable", { db }),
+  );
+
+  if (result.ok) fail("AC-2d", "initialize succeeded against an unreadable agentos.yml");
+  else if (/has not opted in/.test(result.reason ?? ""))
+    fail("AC-2d", `an unreadable file was reported as opt-out: "${result.reason}"`);
+  else if (!/could not be read/.test(result.reason ?? ""))
+    fail("AC-2d", `the refusal did not say the file could not be read: "${result.reason}"`);
+  else if (listProjects(db).length !== 0) fail("AC-2d", "a row was written despite the refusal");
+  else pass("AC-2d", `unreadable file stated as such, not as opt-out: "${result.reason?.slice(0, 70)}" — 0 rows`);
   db.close();
 }
 
@@ -747,6 +801,34 @@ console.log("\nStage 3b acceptance — the connector, fixture repos only\n");
     fail("AC-7b", "components/tasks/Board.tsx still decides the Run now control from card.agent itself, alongside showsRunControl");
   else
     pass("AC-7b", "Run now shows only on a todo card with an agent; absent (not disabled) when the assignee is deliberately human — and Board.tsx delegates the decision rather than repeating it");
+}
+
+// ── AC-4b · numeric limits are validated to the shape their columns hold ──────────────────
+// Review of #21. `Agent.maxTurns` is an INTEGER column and the honest form sends `step={1}`, but
+// `buildAgentInput` accepted any positive finite number — so a crafted post could store a
+// fractional turn budget that SQLite would coerce on the way in. The browser's own `min` on the
+// budget field also disagreed with the server, calling 0 valid where the server rejects it: a
+// value the form accepts and the server refuses is a form that lies about what it will take.
+{
+  const bad = (patch: Record<string, string>) =>
+    buildAgentInput({
+      name: "N", monogram: "NN", model: "claude-opus-5", rolePrompt: "R",
+      requestedTools: ["Read"], canCommit: false, maxTurns: "", maxBudgetUsd: "", ...patch,
+    });
+  const cases: [string, ReturnType<typeof bad>][] = [
+    ["maxTurns 1.5", bad({ maxTurns: "1.5" })],
+    ["maxTurns 0", bad({ maxTurns: "0" })],
+    ["maxTurns -1", bad({ maxTurns: "-1" })],
+    ["maxBudgetUsd 0", bad({ maxBudgetUsd: "0" })],
+  ];
+  const accepted = cases.filter(([, r]) => r.ok).map(([n]) => n);
+  const good = bad({ maxTurns: "42", maxBudgetUsd: "12.5" });
+
+  if (accepted.length > 0) fail("AC-4b", `invalid numeric limits were accepted: [${accepted.join(", ")}]`);
+  else if (!good.ok) fail("AC-4b", `a valid submission was refused: ${good.error}`);
+  else if (good.input.maxTurns !== 42 || good.input.maxBudgetUsd !== 12.5)
+    fail("AC-4b", `valid limits did not survive: ${JSON.stringify(good.input)}`);
+  else pass("AC-4b", "fractional, zero and negative turn budgets refused; a fractional *budget* still allowed (it is REAL, not INTEGER); 42 / 12.5 round-trip");
 }
 
 for (const t of TEMPS) rmSync(t, { recursive: true, force: true });

@@ -17,7 +17,7 @@ it is not restated. The two rules that were most often the ones broken in Stage 
 
 - **Write the named acceptance checks first, and prove each structural check by making it fail.**
   Five separate Stage 3 tickets shipped a check that was green for the wrong reason and none was
-  self-caught (`docs/LEARNINGS.md`, 2026-08-19). A check you have never seen red is not evidence.
+  self-caught (`docs/LEARNINGS.md`, 2026-08-18). A check you have never seen red is not evidence.
 - **Do not commit to a shared branch, do not merge, do not open a PR, do not push.**
 
 ## Standing constraints (all tickets)

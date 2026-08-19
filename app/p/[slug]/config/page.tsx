@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { boardOnce } from "@/lib/reconcile/cached";
 import { projectNav, ribbonModel, driftBandFor } from "@/lib/shell/model";
@@ -52,7 +53,7 @@ export default async function ConfigPage({
             <p className={c.notInit}>
               <strong>Not initialized.</strong> This project has no <span className="mono">Project</span>{" "}
               row yet in <span className="mono">data/agentos.sqlite</span>. Initialize it from the{" "}
-              <a href={`/p/${slug}/tasks`}>Tasks</a> tab first — one button, in one place (spec §6).
+              <Link href={`/p/${slug}/tasks`}>Tasks</Link> tab first — one button, in one place (spec §6).
             </p>
           ) : (
             <>
@@ -67,9 +68,9 @@ export default async function ConfigPage({
                         <span className={c.agentMonogram}>{agent.monogram}</span>
                         <span className={c.agentName}>{agent.name}</span>
                         <span className={c.agentModel}>{agent.model}</span>
-                        <a className={c.editLink} href={`/p/${slug}/config?agent=${agent.id}`}>
+                        <Link className={c.editLink} href={`/p/${slug}/config?agent=${agent.id}`}>
                           edit
-                        </a>
+                        </Link>
                       </li>
                     ))}
                   </ul>

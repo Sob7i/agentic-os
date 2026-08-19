@@ -360,8 +360,10 @@ function hydrateAgent(raw: Record<string, unknown>): AgentRow {
 }
 
 /**
- * Rewrites every column `createAgent` accepts — there is no partial-update variant, so a
- * successful edit always writes the whole row the caller built. Lives here, beside `createAgent`,
+ * Rewrites every **editable** column — the whole row the caller built, with no partial-update
+ * variant. `id` and `projectId` are deliberately not among them: an agent does not move between
+ * projects, and `Session`/`Task` rows already name it where it is. Said "every column
+ * `createAgent` accepts" until review of #21 pointed out that implied edits could reparent one. Lives here, beside `createAgent`,
  * rather than in the route that calls it: T2 wrote this statement inline in
  * `app/p/[slug]/config/actions.ts` because `db.ts` was outside its file list, which put schema
  * knowledge about `Agent` in two places. The failure mode is silent — add a column to `Agent` and

@@ -111,9 +111,12 @@ export function buildAgentInput(raw: RawAgentFormValues): AgentFormResult {
   const { allowed, disallowed, deniedByFloor } = resolveToolGrants(raw.requestedTools);
 
   const maxTurnsText = raw.maxTurns.trim();
+  // A positive **integer**: `Agent.maxTurns` is an INTEGER column, and SQLite would coerce a
+  // fractional value silently. The honest form sends `step={1}`, but a crafted post does not have
+  // to. Review of #21.
   const maxTurns = maxTurnsText === "" ? null : Number(maxTurnsText);
-  if (maxTurns !== null && (!Number.isFinite(maxTurns) || maxTurns <= 0)) {
-    return { ok: false, error: `max turns must be a positive number, got "${maxTurnsText}"` };
+  if (maxTurns !== null && (!Number.isInteger(maxTurns) || maxTurns <= 0)) {
+    return { ok: false, error: `max turns must be a positive whole number, got "${maxTurnsText}"` };
   }
 
   const maxBudgetText = raw.maxBudgetUsd.trim();

@@ -91,11 +91,25 @@ export async function initializeProject(
   let text: string;
   try {
     text = readFileSync(yamlPath, "utf8");
-  } catch {
+  } catch (err) {
+    // Only a genuinely absent file means "has not opted in". A permission error or an I/O
+    // failure is a different fact, and reporting it as opt-out would be this dashboard asserting
+    // something it did not check — invariant 2, inside the product built to enforce it. Review of
+    // #20 found the original `catch {}` flattened every read failure into the same sentence.
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return {
+        ok: false,
+        alreadyInitialized: false,
+        reason: `no agentos.yml found at ${yamlPath} — this project has not opted in to the execution layer`,
+      };
+    }
     return {
       ok: false,
       alreadyInitialized: false,
-      reason: `no agentos.yml found at ${yamlPath} — this project has not opted in to the execution layer`,
+      reason: `agentos.yml at ${yamlPath} could not be read (${code ?? "unknown error"}): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     };
   }
 
@@ -113,12 +127,26 @@ export async function initializeProject(
     return { ok: true, alreadyInitialized: true, reason: "already initialized" };
   }
 
-  createProject(db, {
-    slug: parsed.slug ?? slug,
-    primaryRepoPath: nav.project.path,
-    yamlPath,
-    maxConcurrentSessions: parsed.maxConcurrentSessions,
-  });
+  // `Project.slug` is UNIQUE, and the idempotency check above is keyed on `primaryRepoPath` —
+  // deliberately, since that is the one fact the Board and this row derive from the same place
+  // (§3.2). The two are therefore not the same guard: a *different* repo whose `agentos.yml`
+  // declares a slug already taken passes the check above and then violates the constraint. Left
+  // uncaught that is a 500, which bypasses the whole point of D30's button — that a refusal is
+  // stated on the screen. Review of #20.
+  try {
+    createProject(db, {
+      slug: parsed.slug ?? slug,
+      primaryRepoPath: nav.project.path,
+      yamlPath,
+      maxConcurrentSessions: parsed.maxConcurrentSessions,
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      alreadyInitialized: false,
+      reason: `could not create the project row: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
 
   return { ok: true, alreadyInitialized: false, reason: null };
 }
