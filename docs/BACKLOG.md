@@ -10,6 +10,24 @@ and things explicitly punted with a reason.
 
 ## Open
 
+- **`lib/tasks/data.ts` loads the Tasks board with N+1 queries** *(added 2026-08-19)*. Events are
+  fetched per task, and tool calls, commit shas and inbox messages per session. Correct, and fine
+  against the fixture-sized databases everything is currently tested on — but it grows linearly with
+  a project's history, and the board is the page someone leaves open. Raised in review of #17 and
+  **deliberately not fixed there**: the honest fix is a handful of grouped queries, and doing it
+  before any real project has accumulated a single session would be optimising against a guess.
+  **Unblock condition:** the first project with enough real tasks and sessions to measure — at which
+  point measure first, then batch the three per-session loads.
+
+- **Nothing connects an `agentos.yml` on disk to a `Project` row in `data/agentos.sqlite`**
+  *(added 2026-08-19)*. The shell (D18) checks the file and shows the tabs; T7's Tasks and Inbox
+  pages check one level deeper and render an honest *"not initialized"* pane rather than inventing
+  rows or crashing. But **no ticket through T7 builds the connector**, so no real project can
+  dispatch yet — Stage 3 is complete and still unreachable on a watched repo. **Unblock condition:**
+  none technical; it needs a decision about *what* creates the row (a manual `init` command, a
+  yaml-watcher, or the first dispatch) and that decision belongs with whoever picks up the first
+  real run — see also `docs/DECISIONS.md` D27, which chose `fractal-code` as the target repo.
+
 - **`verify-stage3a.mts`'s AC-1 can go red because GitHub is down** *(added 2026-08-19)*. It spawns
   `verify:stage1` and **hard-asserts its exact pass/fail totals**. Stage 1 is not hermetic — its
   AC-1 depends on a live `gh` call through DC1 — so an offline or rate-limited moment drops a pass
@@ -20,26 +38,6 @@ and things explicitly punted with a reason.
   still needs the same treatment. Not done here because it edits a shipped suite's check, which is
   its own change with its own review surface. **Unblock condition:** none — this is a small,
   self-contained fix that just needs its own PR; copy AC-11's `degradedUpstream` branch.
-
-- **T6's AC-6 must cover resuming a session whose teardown failed** *(added 2026-08-19)*. The
-  #14 teardown fix deliberately keeps `Session.worktreePath` when `removeWorktree` throws, because
-  the path is the only pointer to a directory left behind. That creates an interaction on resume:
-  `createWorktree` derives the same path from the same session id, so a stale directory would
-  collide. `resumeSession` now clears it first and, if it cannot, throws an error naming the path
-  in terms a human can act on — but **nothing tests that path**, because the resume flow itself is
-  AC-6 and belongs to T6. **Unblock condition:** T6, which must drive AC-6 with a non-null
-  `worktreePath` on the paused session, not only the clean case.
-
-- **`runBootSweep` has no call site** *(added 2026-08-18)*. T5 built the boot sweep of §7.7 and
-  AC-18 proves it works, but nothing calls it on server start — the hook would live in
-  `instrumentation.ts` or equivalent, which is outside `lib/agentos/` and was outside T5's file
-  list. **Until it is wired, a `pnpm dev` restart leaves `running` rows that no longer have a
-  process** — precisely the stored-claim-contradicted-by-reality this product exists to catch,
-  occurring inside it. **Unblock condition:** T7 (the UI), which is the first ticket that owns app
-  startup. It must also add the §7.7 *Known gap* row to `docs/FEATURES.md` — *restarting the dev
-  server kills every running session, and the system reports that rather than hiding it* — which is
-  deliberately not added now, because `FEATURES.md` documents behaviour a user can reach and no
-  user can dispatch until T7.
 
 - **Fast-forward `main` to `develop`, or stop provisioning sub-agents from it** *(added
   2026-08-18)*. `origin/main` sits at `3ea05a0` — the PRD/design-brief commit, before Stage 1 —
@@ -332,6 +330,15 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
 
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than
      deleting them. -->
+
+- **`runBootSweep` has no call site** — resolved 2026-08-19 by T7. `instrumentation.ts` calls it
+  once per server process, passing `dispatch.ts`'s own `PROCESS_BOOT_ID`. Verified against a real
+  boot rather than a fixture: with a stale `running` session seeded, starting the server logs
+  `[agentos] boot sweep: interrupted 1 session(s) …` and the row reads `interrupted` afterwards.
+- **T6's AC-6 must cover resuming a session whose teardown failed** — resolved 2026-08-19 by T6.
+  AC-6 drives both the clean pause and the case where `worktreePath` is non-null, proving
+  `resumeSession` clears the stale worktree before `createWorktree` reuses the same
+  session-id-derived path.
 
 - **Install itqan into this project** — done 2026-07-27, `chore/itqan-install`. Had been
   *claimed* as complete in `docs/PRD.md` on 2026-07-26 while no role file existed; see

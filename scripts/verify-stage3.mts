@@ -1806,6 +1806,216 @@ if (process.env.AGENTOS_REAL_SESSION !== "1") {
   db.close();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// T7 — the Tasks board's pure model (lib/tasks/model.ts). Spec §8; ticket brief §6.
+//
+// These are NOT spec-numbered ACs — §8 names rules, not acceptance-criteria numbers — so they
+// are labelled T7-1…T7-4 rather than invented as AC-20+. Each asserts a pure function directly,
+// with hand-built fixture rows (no sqlite, no worktree — the same "assert the function, not the
+// route" seam `verify-stage3a.mts` established for `lib/shell/model.ts`).
+console.log("\nStage 3 acceptance — T7's Tasks board model (§8, no route rendered)\n");
+
+{
+  const { evidenceLineFor } = await import("../lib/tasks/model");
+
+  const baseTask = {
+    id: "task-todo",
+    projectId: "proj-1",
+    name: "fixture task",
+    description: "",
+    blockedReason: null,
+    approvalGate: false,
+    assigneeAgentId: null,
+    scheduleKind: "manual",
+    createdAt: "2026-08-01T00:00:00.000Z",
+  };
+
+  // ── T7-1 · a todo card's evidence carries no line at all — absence, not an empty string ──
+  {
+    const todoEvidence = evidenceLineFor({
+      task: { ...baseTask, status: "todo" },
+      events: [],
+      sessionsById: new Map(),
+      toolCallCountBySession: new Map(),
+      commitShasBySession: new Map(),
+    });
+    const keys = Object.keys(todoEvidence).sort();
+    if (todoEvidence.kind !== "none") {
+      fail("T7-1", `todo evidence.kind was '${todoEvidence.kind}', expected 'none'`);
+    } else if (keys.length !== 1 || keys[0] !== "kind") {
+      fail(
+        "T7-1",
+        `a 'none' evidence carried extra fields ${JSON.stringify(keys)} — that is a placeholder, not an absence`,
+      );
+    } else {
+      pass("T7-1", `todo card's evidence is exactly {kind:'none'} — no text field exists to be empty`);
+    }
+  }
+
+  // ── T7-2 · executed vs hand-moved are distinguishable by register before either is read ──
+  {
+    const sessionId = "11111111-2222-3333-4444-555555555555";
+    const executedSession = {
+      id: sessionId,
+      taskId: "task-executed",
+      agentId: "agent-1",
+      sdkSessionId: null,
+      status: "completed" as const,
+      triggerKind: "manual" as const,
+      worktreePath: null,
+      baseRef: "deadbeef",
+      costUsd: 6.4,
+      pid: 1,
+      bootId: "boot-1",
+      driftAtSpawnJson: "{}",
+      startedAtISO: "2026-08-01T00:00:00.000Z",
+      endedAtISO: "2026-08-01T00:38:00.000Z",
+      failureReason: null,
+    };
+    const executedEvidence = evidenceLineFor({
+      task: { ...baseTask, id: "task-executed", status: "review" },
+      events: [
+        {
+          id: "ev-1",
+          taskId: "task-executed",
+          fromStatus: "doing",
+          toStatus: "review",
+          actorType: "session",
+          actorId: sessionId,
+          reason: null,
+          atISO: "2026-08-01T00:38:00.000Z",
+        },
+      ],
+      sessionsById: new Map([[sessionId, executedSession]]),
+      toolCallCountBySession: new Map([[sessionId, 12]]),
+      commitShasBySession: new Map([[sessionId, ["3ac91e2abc0000000000000000000000000000"]]]),
+    });
+
+    const handMovedEvidence = evidenceLineFor({
+      task: { ...baseTask, id: "task-hand", status: "done" },
+      events: [
+        {
+          id: "ev-2",
+          taskId: "task-hand",
+          fromStatus: "review",
+          toStatus: "done",
+          actorType: "human",
+          actorId: "Sobhi",
+          reason: "approved",
+          atISO: "2026-08-01T01:00:00.000Z",
+        },
+      ],
+      sessionsById: new Map(),
+      toolCallCountBySession: new Map(),
+      commitShasBySession: new Map(),
+    });
+
+    const { registerFor } = await import("../lib/tasks/model");
+    const executedRegister = registerFor(executedEvidence);
+    const handMovedRegister = registerFor(handMovedEvidence);
+
+    if (executedEvidence.kind !== "executed") {
+      fail("T7-2", `expected kind 'executed', got '${executedEvidence.kind}'`);
+    } else if (handMovedEvidence.kind !== "hand-moved") {
+      fail("T7-2", `expected kind 'hand-moved', got '${handMovedEvidence.kind}'`);
+    } else if (executedRegister === handMovedRegister) {
+      fail(
+        "T7-2",
+        `executed and hand-moved got the SAME register ('${executedRegister}') — the two are indistinguishable before either is read`,
+      );
+    } else if (executedRegister !== "mono" || handMovedRegister !== "claim") {
+      fail(
+        "T7-2",
+        `registers were distinct but wrong: executed='${executedRegister}' (want 'mono'), hand-moved='${handMovedRegister}' (want 'claim')`,
+      );
+    } else {
+      pass(
+        "T7-2",
+        `executed ('${executedEvidence.text}', register '${executedRegister}') and hand-moved ('${handMovedEvidence.text}', register '${handMovedRegister}') are distinct registers, not just distinct text`,
+      );
+    }
+  }
+
+  // ── T7-3 · a gated review card's refusal string is gateRefusalReason() itself, not a copy ──
+  {
+    const { gateModelFor } = await import("../lib/tasks/model");
+    const { gateRefusalReason } = await import("../lib/agentos/mcp/gate");
+    const gatedTask = { ...baseTask, id: "task-gated", status: "review" as const, approvalGate: true };
+    const gate = gateModelFor(gatedTask);
+    const sourceOfTruth = gateRefusalReason(gatedTask.id);
+
+    const ungated = gateModelFor({ ...baseTask, id: "task-ungated", status: "review" as const, approvalGate: false });
+    const notReview = gateModelFor({ ...baseTask, id: "task-gated-2", status: "doing" as const, approvalGate: true });
+
+    if (!gate) {
+      fail("T7-3", "gateModelFor returned null for a review task with approvalGate:true");
+    } else if (gate.refusalReason !== sourceOfTruth) {
+      fail(
+        "T7-3",
+        `gate block's refusal string did not match gateRefusalReason() — card said "${gate.refusalReason}", API said "${sourceOfTruth}"`,
+      );
+    } else if (ungated !== null) {
+      fail("T7-3", "gateModelFor returned a gate block for a review task with approvalGate:false");
+    } else if (notReview !== null) {
+      fail("T7-3", "gateModelFor returned a gate block for a 'doing' task, not 'review'");
+    } else {
+      pass(
+        "T7-3",
+        `gated review card's refusal string is identical to gateRefusalReason('${gatedTask.id}') — one source, imported not retyped; null correctly for ungated and non-review tasks`,
+      );
+    }
+  }
+}
+
+// ── T7-4 · column counts are plain numbers; the model exposes no badge/severity field (§8.5) ──
+{
+  const { columnsFor, cardModel } = await import("../lib/tasks/model");
+  const tasks = [
+    { id: "t1", projectId: "p1", name: "a", description: "", status: "todo" as const, blockedReason: null, approvalGate: false, assigneeAgentId: null, scheduleKind: "manual", createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "t2", projectId: "p1", name: "b", description: "", status: "todo" as const, blockedReason: null, approvalGate: false, assigneeAgentId: null, scheduleKind: "manual", createdAt: "2026-08-01T00:00:00.000Z" },
+    { id: "t3", projectId: "p1", name: "c", description: "", status: "doing" as const, blockedReason: null, approvalGate: false, assigneeAgentId: null, scheduleKind: "manual", createdAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  const cards = tasks.map((task) =>
+    cardModel({
+      task,
+      events: [],
+      sessionsById: new Map(),
+      toolCallCountBySession: new Map(),
+      commitShasBySession: new Map(),
+      agentsById: new Map(),
+    }),
+  );
+  const columns = columnsFor(cards, tasks);
+  const todoCol = columns.find((c) => c.key === "todo");
+  const doingCol = columns.find((c) => c.key === "doing");
+  const reviewCol = columns.find((c) => c.key === "review");
+  // §8.5 is about FOUR columns. Checking three would still pass with `done` missing entirely —
+  // a check that does not check what its own label claims (review of #17).
+  const doneCol = columns.find((c) => c.key === "done");
+  const allFour = !!todoCol && !!doingCol && !!reviewCol && !!doneCol && columns.length === 4;
+
+  const forbiddenKeys = ["severity", "colour", "color", "badge", "pill"];
+  const leaked = columns.flatMap((c) => Object.keys(c).filter((k) => forbiddenKeys.includes(k.toLowerCase())));
+
+  if (!allFour) {
+    fail(
+      "T7-4",
+      `columnsFor did not return all four columns — got [${columns.map((c) => c.key).join(", ")}]`,
+    );
+  } else if (typeof todoCol.count !== "number" || typeof doingCol.count !== "number" || typeof doneCol.count !== "number") {
+    fail("T7-4", `column count was not a number: todo=${typeof todoCol.count}, doing=${typeof doingCol.count}`);
+  } else if (todoCol.count !== 2 || doingCol.count !== 1 || reviewCol.count !== 0 || doneCol.count !== 0) {
+    fail("T7-4", `wrong counts: todo=${todoCol.count} (want 2), doing=${doingCol.count} (want 1), review=${reviewCol.count} (want 0), done=${doneCol.count} (want 0)`);
+  } else if (leaked.length > 0) {
+    fail("T7-4", `ColumnModel exposed a badge-shaped field: ${JSON.stringify(leaked)} — §8.5 says plain numerals, no pill, no colour`);
+  } else {
+    pass(
+      "T7-4",
+      `column counts are plain numbers (todo=${todoCol.count}, doing=${doingCol.count}, review=${reviewCol.count}) and the model carries no severity/badge/colour field`,
+    );
+  }
+}
+
 // Every fixture repo created after the mid-file sweep above — T6's AC-1/3/6/7/8/10/12/13 families
 // included — is still on disk at this point, and `pnpm verify:stage3` runs on every `pnpm verify`.
 // Two sweeps that each cover only what preceded them leak everything written after the last one
@@ -1815,7 +2025,8 @@ for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
 console.log(
   failures === 0
     ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b, AC-14, AC-15a…e, AC-16, AC-17a/b, AC-18a/b, AC-19a/b, AC-19c, AC-9a, " +
-        "AC-1, AC-3, AC-6, AC-7, AC-8, AC-10, AC-11, AC-13 — AC-12 opt-in, see its own SKIP/PASS line above).\n"
+        "AC-1, AC-3, AC-6, AC-7, AC-8, AC-10, AC-11, AC-13 — AC-12 opt-in, see its own SKIP/PASS line above — " +
+        "plus T7-1…T7-4, the Tasks board's own pure-model checks).\n"
     : `\n${failures} FAILING.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);

@@ -208,6 +208,20 @@ export function getDb(): DatabaseSync {
   return singleton;
 }
 
+/**
+ * The store, but only if it already exists — otherwise `null`.
+ *
+ * `getDb()` **creates** `data/agentos.sqlite` (mkdirSync + migrate), so calling it to *read* means
+ * merely visiting a page materializes the execution layer's database on a machine where no project
+ * has opted in. That was fixed at boot (`instrumentation.ts`) and missed on the page path; review
+ * of #17 caught the second half. Read paths use this; write paths still use `getDb()`, because a
+ * write is the thing that legitimately brings the store into existence.
+ */
+export function dbIfExists(): DatabaseSync | null {
+  if (!singleton && !existsSync(DEFAULT_DB_PATH)) return null;
+  return getDb();
+}
+
 /** Closes and forgets the process-wide singleton, if one was opened. For tests only. */
 export function closeDb(): void {
   singleton?.close();

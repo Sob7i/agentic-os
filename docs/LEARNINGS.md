@@ -255,6 +255,28 @@ belongs in `docs/DECISIONS.md` instead.
   agent while proving AC-6 by breaking it — the failure path was only exercised *because* the
   prove-by-breaking rule forced it, which is a small argument for that rule on its own.
 
+- (2026-08-19) **Next compiles `instrumentation.ts` for an edge target even with no edge routes, and
+  `export const runtime = "nodejs"` does not stop it.** On Next 15.5 in `next dev` — *not* `next
+  build`, which already tree-shakes the dead branch — the edge compiler walks that file's whole
+  import graph and fails on every `node:`-prefixed builtin it finds (`UnhandledSchemeError`), one at
+  a time, turning **every route into a 500**. The `NEXT_RUNTIME` guard inside `register()` gates
+  *execution*, not compilation, so it is correct and insufficient. Fixed with a `webpack.externals`
+  rule in `next.config.mjs` externalizing **all** Node builtins for the edge target — all of them
+  rather than a hand-kept list, because the failures surfaced one per rebuild as the import graph
+  grew. **The point worth keeping: `pnpm build` passing is not evidence that `pnpm dev` runs.** This
+  was only ever going to be found by starting the server, which is why T7's brief asked for the page
+  to actually be loaded.
+
+- (2026-08-19) **Booting the portfolio was creating the execution layer's database.**
+  `instrumentation.ts`'s boot sweep called `getDb()`, and `openDb` does `mkdirSync` + `migrate` — so
+  merely opening the Board on a machine with **no** project opted in materialized a 110KB
+  `data/agentos.sqlite`. Not an invariant-5 violation (the file has no rows, so nothing is
+  *stored*), but D19 asks for the layer boundary to be **real in code**, and one layer starting up
+  should not conjure the other's store. With no store there are no sessions, so the sweep is a
+  guaranteed no-op — the fix is to skip when the file does not exist, which costs nothing.
+  **A side effect that only shows up on a clean machine will not show up in review**; this was found
+  by deleting `data/` and booting, not by reading the diff.
+
 ## Tooling
 
 - (2026-07-27) **`.pen` files (Pencil) are plain UTF-8 JSON** — readable directly with any JSON
