@@ -31,7 +31,9 @@ export function ProjectRail({ nav, currentTab }: { nav: ProjectNav; currentTab: 
       )}
 
       {nav.tabs.length > 0 && (
-        <p className={s.setup}>Agents · Templates · Environments · Repos live behind configuration</p>
+        <p className={s.setup}>
+          <Link href={`/p/${nav.slug}/config`}>Configuration</Link> — agents, templates, environments and repos
+        </p>
       )}
     </aside>
   );

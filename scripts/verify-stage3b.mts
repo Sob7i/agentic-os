@@ -8,6 +8,13 @@
  * appending to this same file (T1's own note in stage-3b-tickets.md: "everything else stacks on
  * this branch ... and to scripts/verify-stage3b.mts").
  *
+ * AC-4, AC-5, AC-8 (T2, "agent create and edit") append below AC-3. None of the three needs a git
+ * fixture repo's *contents* — `createAgentForSlug` / `updateAgentForSlug` only need `boardOnce()`
+ * to resolve a slug to a path and an execution-layer `Project` row already sitting at that path,
+ * so each block reuses `makeConnectorFixtureRepo` purely for a real directory to point
+ * `primaryRepoPath` at, and writes the `Project` row directly with `createProject` rather than
+ * going through `initializeProject` (T1's own connector, already covered by AC-1..AC-2b above).
+ *
  * Fixture repos in a temp dir; the model is never called. `initializeProject`'s only non-injected
  * dependency is `boardOnce()` (spec §7's seam table names only `Runner` and the fixture repo — a
  * "board fetcher" seam is not on it), so a fixture project is substituted by splicing
@@ -29,8 +36,17 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { openDb, listProjects } from "../lib/agentos/db";
+import {
+  openDb,
+  listProjects,
+  createProject,
+  createTask,
+  createSession,
+  updateSession,
+  getAgent,
+} from "../lib/agentos/db";
 import { initializeProject } from "../app/p/[slug]/[tab]/actions";
+import { createAgentForSlug, updateAgentForSlug } from "../app/p/[slug]/config/actions";
 import { parseAgentosYml } from "../lib/agentos/config";
 import { loadProjectExecutionData } from "../lib/tasks/data";
 import type { ProjectConfig } from "../projects.config";
@@ -198,6 +214,215 @@ console.log("\nStage 3b acceptance — the connector, fixture repos only\n");
     fail("AC-3", `second call did not report already-initialized: ${JSON.stringify(second)}`);
   else if (rows.length !== 1) fail("AC-3", `expected exactly 1 row after two calls, got ${rows.length}`);
   else pass("AC-3", `second call reported "${second.reason}"; row count still 1 after two calls`);
+  db.close();
+}
+
+// ── AC-4 · an agent round-trips, including the two JSON tool columns ──────────────────────
+{
+  const { dir } = makeConnectorFixtureRepo();
+  const cfg = fixtureConfig("t2-ac4", dir);
+  const db = openDb(":memory:");
+  createProject(db, {
+    slug: "t2-ac4",
+    primaryRepoPath: dir,
+    yamlPath: join(dir, "agentos.yml"),
+    maxConcurrentSessions: 1,
+  });
+
+  const form = new FormData();
+  form.set("slug", "t2-ac4");
+  form.set("name", "Reviewer");
+  form.set("monogram", "RV");
+  form.set("model", "claude-opus-5");
+  form.set("rolePrompt", "Reviews diffs for correctness.");
+  form.append("tools", "Read");
+  form.append("tools", "Bash");
+  form.set("canCommit", "on");
+  form.set("maxTurns", "42");
+  form.set("maxBudgetUsd", "12.5");
+
+  const result = await withOnlyProject(cfg, () => createAgentForSlug("t2-ac4", form, { db }));
+  const agent = result.agentId ? getAgent(db, result.agentId) : null;
+
+  if (!result.ok) {
+    fail("AC-4", `create refused a valid agent submission: ${result.reason}`);
+  } else if (!agent) {
+    fail("AC-4", "createAgentForSlug reported ok but the row cannot be read back");
+  } else {
+    const allowed = (JSON.parse(agent.allowedToolsJson) as string[]).sort();
+    const disallowed = (JSON.parse(agent.disallowedToolsJson) as string[]).sort();
+    const mismatches: string[] = [];
+    if (agent.name !== "Reviewer") mismatches.push(`name: ${agent.name}`);
+    if (agent.monogram !== "RV") mismatches.push(`monogram: ${agent.monogram}`);
+    if (agent.model !== "claude-opus-5") mismatches.push(`model: ${agent.model}`);
+    if (agent.rolePrompt !== "Reviews diffs for correctness.")
+      mismatches.push(`rolePrompt: ${agent.rolePrompt}`);
+    if (JSON.stringify(allowed) !== JSON.stringify(["Bash", "Read"]))
+      mismatches.push(`allowedToolsJson: ${JSON.stringify(allowed)}`);
+    if (JSON.stringify(disallowed) !== JSON.stringify(["WebFetch", "WebSearch"]))
+      mismatches.push(`disallowedToolsJson: ${JSON.stringify(disallowed)}`);
+    if (agent.canCommit !== true || typeof agent.canCommit !== "boolean")
+      mismatches.push(`canCommit: ${JSON.stringify(agent.canCommit)} (typeof ${typeof agent.canCommit})`);
+    if (agent.maxTurns !== 42) mismatches.push(`maxTurns: ${agent.maxTurns}`);
+    if (agent.maxBudgetUsd !== 12.5) mismatches.push(`maxBudgetUsd: ${agent.maxBudgetUsd}`);
+
+    if (mismatches.length > 0) fail("AC-4", `round-trip mismatch — ${mismatches.join("; ")}`);
+    else
+      pass(
+        "AC-4",
+        `every field round-tripped unchanged — allowedToolsJson=${JSON.stringify(allowed)}, disallowedToolsJson=${JSON.stringify(disallowed)}, canCommit=true (boolean, not 1)`,
+      );
+  }
+  db.close();
+}
+
+// ── AC-5 · the egress floor holds at creation, and it says so ─────────────────────────────
+// Hostile fixture, per the spec's own instruction (§4): asks for WebFetch and WebSearch, plus
+// one tool name that is not on the fixed list at all — "NotARealTool" — so this check also
+// proves `resolveToolGrants`'s fixed-list filter is load-bearing, not just the egress floor.
+{
+  const { dir } = makeConnectorFixtureRepo();
+  const cfg = fixtureConfig("t2-ac5", dir);
+  const db = openDb(":memory:");
+  createProject(db, {
+    slug: "t2-ac5",
+    primaryRepoPath: dir,
+    yamlPath: join(dir, "agentos.yml"),
+    maxConcurrentSessions: 1,
+  });
+
+  const form = new FormData();
+  form.set("slug", "t2-ac5");
+  form.set("name", "Scraper");
+  form.set("monogram", "SC");
+  form.set("model", "claude-opus-5");
+  form.set("rolePrompt", "Asks for the internet on purpose — a hostile fixture.");
+  form.append("tools", "Read");
+  form.append("tools", "WebFetch");
+  form.append("tools", "WebSearch");
+  form.append("tools", "NotARealTool");
+
+  const result = await withOnlyProject(cfg, () => createAgentForSlug("t2-ac5", form, { db }));
+  const agent = result.agentId ? getAgent(db, result.agentId) : null;
+
+  if (!result.ok) {
+    fail("AC-5", `create refused rather than stripping and storing: ${result.reason}`);
+  } else if (!agent) {
+    fail("AC-5", "createAgentForSlug reported ok but the row cannot be read back");
+  } else {
+    const allowed = JSON.parse(agent.allowedToolsJson) as string[];
+    const disallowed = JSON.parse(agent.disallowedToolsJson) as string[];
+    const problems: string[] = [];
+    if (allowed.includes("WebFetch") || allowed.includes("WebSearch"))
+      problems.push(`egress tools present in allowedToolsJson: ${JSON.stringify(allowed)}`);
+    if (!disallowed.includes("WebFetch") || !disallowed.includes("WebSearch"))
+      problems.push(`egress tools missing from disallowedToolsJson: ${JSON.stringify(disallowed)}`);
+    if (allowed.includes("NotARealTool"))
+      problems.push(`an unrecognized tool name reached allowedToolsJson unfiltered: ${JSON.stringify(allowed)}`);
+    if (JSON.stringify([...allowed].sort()) !== JSON.stringify(["Read"]))
+      problems.push(`allowedToolsJson should be exactly ["Read"], got ${JSON.stringify(allowed)}`);
+    if (!result.reason || !result.reason.includes("WebFetch") || !result.reason.includes("WebSearch"))
+      problems.push(`the UI's own result did not say so — reason: ${JSON.stringify(result.reason)}`);
+
+    if (problems.length > 0) fail("AC-5", problems.join("; "));
+    else
+      pass(
+        "AC-5",
+        `WebFetch/WebSearch absent from allowedToolsJson, present in disallowedToolsJson, "NotARealTool" dropped, UI said: "${result.reason}"`,
+      );
+  }
+  db.close();
+}
+
+// ── AC-8 · an agent with a running session cannot be edited — refused, row unchanged ──────
+// Includes a positive control: once the session completes, the identical edit succeeds and the
+// row actually changes — proof the refusal above was caused by the live session and not by
+// updateAgentForSlug being broken (the "check was green for the wrong reason" trap).
+{
+  const { dir } = makeConnectorFixtureRepo();
+  const cfg = fixtureConfig("t2-ac8", dir);
+  const db = openDb(":memory:");
+  createProject(db, {
+    slug: "t2-ac8",
+    primaryRepoPath: dir,
+    yamlPath: join(dir, "agentos.yml"),
+    maxConcurrentSessions: 5,
+  });
+
+  const createForm = new FormData();
+  createForm.set("slug", "t2-ac8");
+  createForm.set("name", "Original Name");
+  createForm.set("monogram", "OG");
+  createForm.set("model", "claude-opus-5");
+  createForm.set("rolePrompt", "Does the work.");
+
+  const created = await withOnlyProject(cfg, () => createAgentForSlug("t2-ac8", createForm, { db }));
+  if (!created.ok || !created.agentId) {
+    fail("AC-8", `setup: could not create the agent under test: ${created.reason}`);
+  } else {
+    const agentId = created.agentId;
+    const project = listProjects(db).find((p) => p.slug === "t2-ac8")!;
+    const task = createTask(db, {
+      projectId: project.id,
+      name: "t2-ac8 task",
+      description: "",
+      approvalGate: false,
+      assigneeAgentId: agentId,
+    });
+    const session = createSession(db, {
+      taskId: task.id,
+      agentId,
+      triggerKind: "manual",
+      worktreePath: "/tmp/agentic-os-t2-ac8-does-not-need-to-exist",
+      baseRef: "main",
+      pid: 1,
+      bootId: "boot-1",
+      driftAtSpawn: {
+        severity: "in-sync",
+        claim: "n/a",
+        verified: "n/a",
+        source: "fixture",
+        check: "fixture",
+        checkedAtISO: new Date().toISOString(),
+      },
+    });
+
+    const editForm = new FormData();
+    editForm.set("slug", "t2-ac8");
+    editForm.set("agentId", agentId);
+    editForm.set("name", "Renamed While Running");
+    editForm.set("monogram", "RW");
+    editForm.set("model", "claude-opus-5");
+    editForm.set("rolePrompt", "Does the work, renamed.");
+
+    const blocked = await withOnlyProject(cfg, () => updateAgentForSlug("t2-ac8", agentId, editForm, { db }));
+    const afterBlocked = getAgent(db, agentId)!;
+
+    // Positive control — see block comment above.
+    updateSession(db, session.id, { status: "completed", endedAtISO: new Date().toISOString() });
+    const allowed = await withOnlyProject(cfg, () => updateAgentForSlug("t2-ac8", agentId, editForm, { db }));
+    const afterAllowed = getAgent(db, agentId)!;
+
+    const problems: string[] = [];
+    if (blocked.ok) problems.push("edit succeeded while the session was still 'running'");
+    if (!blocked.reason || !blocked.reason.includes(session.id))
+      problems.push(`refusal did not name the session — reason: ${JSON.stringify(blocked.reason)}`);
+    if (afterBlocked.name !== "Original Name")
+      problems.push(`row changed despite the refusal — name is now "${afterBlocked.name}"`);
+    if (!allowed.ok)
+      problems.push(`positive control failed: edit was still refused once the session completed (${allowed.reason})`);
+    if (afterAllowed.name !== "Renamed While Running")
+      problems.push(
+        `positive control failed: edit reported ok but the row did not change — name is "${afterAllowed.name}"`,
+      );
+
+    if (problems.length > 0) fail("AC-8", problems.join("; "));
+    else
+      pass(
+        "AC-8",
+        `refused: "${blocked.reason}" — row unchanged while live; same edit succeeded once the session completed`,
+      );
+  }
   db.close();
 }
 
