@@ -104,8 +104,8 @@ by running the Stage 1 and Stage 2 suites unmodified as a regression oracle.
 **The first surface behind an execution layer that renders real content rather than a
 placeholder.** Reachable at `/p/<slug>/tasks` and `/p/<slug>/inbox` once a project both has an
 `agentos.yml` on disk (D18, checked by the shell) *and* a matching `Project` row in
-`data/agentos.sqlite` (checked by this surface, one level deeper — see *Known gaps* below: no
-watched project has the second one yet). A single session's own page lives at
+`data/agentos.sqlite` (checked by this surface, one level deeper). **Since Stage 3b T1 the second one is
+reachable** — the *not initialized* pane carries an Initialize button; see the section below. A single session's own page lives at
 `/p/<slug>/sessions/<id>`, linked from a task card's evidence line or an Inbox item; there is no
 session *list* in this slice.
 
@@ -144,6 +144,32 @@ opened only if it already exists — with no execution layer initialized there a
 sweep is a guaranteed no-op, and running the Board on a machine that has never opted in leaves no
 `data/` directory behind. D19 asks for the layer boundary to be real in code, and the portfolio
 starting up should not conjure the execution layer's database as a side effect.
+
+### Initializing a project (Stage 3b T1 — spec §1.1, D30)
+
+**The connector.** Until this landed, an `agentos.yml` on disk got a project its five tabs and
+nothing else: no tool turned it into a `Project` row, so every execution surface rendered *not
+initialized* and the only way to create one was a seed script. The pane that explains the problem
+now carries the button that fixes it — **an explicit click, never a filesystem watcher** (D30;
+option (c) was rejected on sight because a process that creates records without being asked is the
+exact shape D24 refused for dispatch).
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Initializes a project that has an `agentos.yml` | One `Project` row; the Tasks page stops saying *not initialized* and shows an empty four-column board | `pnpm verify:stage3b` → AC-1 | 3b T1 |
+| Reads the file's own settings | `slug` and `maxConcurrentSessions` come from `agentos.yml`; **`primaryRepoPath` never can** — it is taken from the Board's own entry (§3.2) | `pnpm verify:stage3b` → AC-1b | 3b T1 |
+| Refuses a project with no `agentos.yml` | Stated reason next to the button, naming the path it looked at; no row written | `pnpm verify:stage3b` → AC-2 | 3b T1 |
+| Refuses a malformed `agentos.yml` | The yaml parser's own message, **verbatim**, never reworded; no partially-created project | `pnpm verify:stage3b` → AC-2b | 3b T1 |
+| Initializing twice is a no-op, not a duplicate | Second click reports *already initialized*; still exactly one row | `pnpm verify:stage3b` → AC-3 | 3b T1 |
+| Opening a page still does not create the store | `dbIfExists()` on the page path, `getDb()` only inside the action — a click asks for the database, a page view does not | Load a tab on an uninitialized project; no `data/` appears | 3b T1 |
+
+**The `agentos.yml` format is this project's own, defined here rather than captured.** Spec §3.3
+asked that a real file be captured before parsing, on the `external-API-fields-are-guilty-until-verified`
+rule — but **no watched repo has one**, so there was nothing to capture and the format is ours to
+state. It is deliberately two optional keys, `slug` and `maxConcurrentSessions`, each with a
+default; an empty file is a valid bare opt-in, since D18 already made the file's *presence* the
+signal. The guilty-until-verified posture still applies to every field: each is validated, and a
+bad value refuses rather than being coerced.
 
 ### The Overview
 
@@ -243,3 +269,9 @@ Stated in full in `CLAUDE.md` §Invariants.
 - **AC-5 degrades both collectors, not just `gh`.** The test strips `PATH`, which disables `git`
   too. It proves failures surface with readable reasons and no silent zeros, but does not isolate
   a `gh`-only outage. A narrower fixture belongs with Stage 2 → `docs/BACKLOG.md`.
+- **No watched project has an `agentos.yml`, so the Initialize button has never been clicked on a
+  real repo.** All six in `projects.config.ts` were checked on 2026-08-19 and none has the file —
+  which also means `projectNav` gives every one of them zero tabs, so the pane the button lives on
+  is currently reachable only for a fixture. AC-1…AC-3 and AC-1b/AC-2b prove the connector against
+  fixture repos; **the first real initialization is an owner gate**, because creating that file
+  means writing into another repo. D27 already chose `fractal-code` as the target.

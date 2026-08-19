@@ -326,6 +326,18 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   map against merged PRs touching app code. Unblocked by: any watched project actually having a
   `FEATURES.md`; today **none do** except this one.
 
+- **`verify:stage3a` AC-3 counts `boardOnce(` in raw source text, comments included** — found
+  2026-08-19 while building Stage 3b T1. The check is
+  `(src.match(/\bboardOnce\(/g) ?? []).length` ([`scripts/verify-stage3a.mts:128`](../scripts/verify-stage3a.mts#L128)),
+  so a **doc comment** that names the function counts as a call site. T1 hit this from both sides
+  at once: it genuinely added a second call, and its own explanatory comments tripped the check as
+  well — and the passing fix was partly *rewording prose*. A check whose green can be bought by
+  editing a comment is not asserting what it claims to. The constraint itself (D23 — one collector
+  run per request, so the ribbon and the Board cannot disagree) is right and worth keeping; the
+  measurement is what is wrong. Strip comments and string literals before counting, or parse.
+  **Unblocked by:** nothing — it is a contained change to one suite, deliberately not made inside a
+  ticket forbidden from touching that file.
+
 ## Done / superseded
 
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than

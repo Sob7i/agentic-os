@@ -25,19 +25,23 @@
 > "none" was already wrong by the time the PR recording it existed. A fact that its own recording
 > changes cannot be recorded; it can only be reproduced.
 >
-> **Checked 2026-08-19 (after T7 — Stage 3 complete).** If today is much later than that, this table is a hypothesis.
+> **Checked 2026-08-19 (on `feat/stage-3b-t1-connector`, after Stage 3b T1).** The suite counts
+> below were measured on that branch, not on `develop` — it is the branch this file ships in, and a
+> count measured somewhere else would be a claim about code nobody ran. If today is much later than
+> that, this table is a hypothesis.
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
-| `develop` head | `250ab5d` | `git log --oneline -1 origin/develop` |
+| `develop` head | `8643ef7` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
-| Last merged | #9, #10, #11, #12 — all 2026-08-18 | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **59 of 60** — measured 2026-08-19 after T7 | `pnpm verify` |
+| Last merged | #16, #17 (2026-08-19), #18 (2026-08-19) | `gh pr list --state merged --limit 5` |
+| `pnpm verify` | **64 of 65** — measured 2026-08-19 on the T1 branch | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
 | `pnpm verify:stage3` | 33 of 33 — AC-1…AC-19 plus T7-1…T7-4; AC-12 opt-in (skipped by default) | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
+| `pnpm verify:stage3b` | 5 of 5 — AC-1, AC-1b, AC-2, AC-2b, AC-3 (the connector only; AC-4…AC-9 land with T2–T4) | `pnpm verify:stage3b` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
 | Live board severities | **not recorded, by rule** | `pnpm dev` |
@@ -254,7 +258,7 @@
   sequences parts that have already run, and right now none of them have run once. **Its one open
   decision is closed** — §5.1 became **D30** on 2026-08-19: an explicit *Initialize* button on the
   pane that already says *not initialized*. A filesystem watcher was rejected on sight and the
-  rejection recorded, because it is the kind of convenience that comes back. **The spec is `☑` and
+  rejection recorded, because it is the kind of convenience that comes back. **T1 is built** — see below. **The spec is `☑` and
   buildable, and the four T-tickets are written**
   ([`stage-3b-tickets.md`](specs/stage-3b-tickets.md), 2026-08-19): T1 the connector, T2 agent
   create/edit behind *configuration*, T3 task create, T4 the full cycle plus the walkthrough. They
@@ -264,6 +268,18 @@
   format rather than capturing one, and the *not initialized* pane is unreachable today because a
   project without the file gets zero tabs), **there is no `configuration` surface yet**, and
   **`yaml` is not a dependency**.
+- **Stage 3b T1 — the connector — is built** (`feat/stage-3b-t1-connector`, 2026-08-19). An
+  explicit *Initialize* button on the *not initialized* pane turns an `agentos.yml` into a
+  `Project` row: `primaryRepoPath` from the Board's own entry, never from the file or a form field;
+  `slug` and `maxConcurrentSessions` from the file; idempotent on a second click; a stated reason
+  on the screen when it refuses. Five checks, not the three the spec numbered — **lead review found
+  the parser was dead weight**: with only AC-1/2/3 in place, both parsed values could be deleted
+  from `createProject` and all three stayed green, and §3.3's malformed-file refusal had no check
+  at all. **AC-1b** and **AC-2b** close both, and each was proved by making it fail. That is the
+  T7-2 failure recurring one ticket later (`docs/LEARNINGS.md`, 2026-08-19), which is the reason
+  the practice is now standing rather than advisory.
+- **Next: T2** — agent create and edit, behind *configuration*. **Branch it off T1, not
+  `develop`** — the four tickets stack.
 - **Then:** the owner gates. AC-12 (one real session, `AGENTOS_REAL_SESSION=1`) has never been run;
   nadim's fix proposal has never been approved, which is still Stage 2's unmet criterion.
 
