@@ -25,7 +25,7 @@
 > "none" was already wrong by the time the PR recording it existed. A fact that its own recording
 > changes cannot be recorded; it can only be reproduced.
 >
-> **Checked 2026-08-19 (on `feat/stage-3b-t2-agents`, after Stage 3b T2).** The suite counts
+> **Checked 2026-08-19 (on `feat/stage-3b-t3-tasks`, after Stage 3b T3).** The suite counts
 > below were measured on that branch, not on `develop` — it is the branch this file ships in, and a
 > count measured somewhere else would be a claim about code nobody ran. If today is much later than
 > that, this table is a hypothesis.
@@ -35,13 +35,13 @@
 | `develop` head | `8643ef7` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #16, #17 (2026-08-19), #18 (2026-08-19) | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **69 of 70** — measured 2026-08-19 on the T2 branch | `pnpm verify` |
+| `pnpm verify` | **72 of 73** — measured 2026-08-19 on the T3 branch | `pnpm verify` |
 | — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
 | `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
 | `pnpm verify:stage3` | 33 of 33 — AC-1…AC-19 plus T7-1…T7-4; AC-12 opt-in (skipped by default) | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
-| `pnpm verify:stage3b` | 10 of 10 — T1's AC-1/1b/2/2b/3 plus T2's AC-4, AC-5, AC-5b, AC-8, AC-8b (AC-6, AC-7, AC-9 land with T3–T4) | `pnpm verify:stage3b` |
+| `pnpm verify:stage3b` | 13 of 13 — T1's five, T2's five, T3's AC-6, AC-6b, AC-7, AC-7b (AC-9 lands with T4) | `pnpm verify:stage3b` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
 | Live board severities | **not recorded, by rule** | `pnpm dev` |
@@ -292,7 +292,23 @@
   [`lib/agentos/egress.ts`](../lib/agentos/egress.ts) and AC-5b asserts nothing redefines it. Also
   moved in review: T2's inline `UPDATE Agent` left schema knowledge in a route file; it is
   `updateAgent` in `db.ts` now.
-- **Next: T3** — task create. **Branch it off T2, not `develop`** — the four tickets stack.
+- **Stage 3b T3 — task create — is built** (`feat/stage-3b-t3-tasks`, 2026-08-19). Title,
+  description, assignee (each agent plus an explicit human-only option), approval gate — bound at
+  creation, never defaulted at dispatch. **The first ticket whose agent caught its own gap**: told
+  in the brief exactly how T1 and T2 had failed, it ran the delete-a-guard probe unprompted, found
+  that its cross-project assignee check had no coverage, and added **AC-6b** itself. Describing the
+  last two misses worked where describing the criterion had not.
+  Review added one check. T3 built *"Run now is absent, not disabled-looking"* correctly but as a
+  ternary inside `components/tasks/Board.tsx`, then recorded it as untestable because no acceptance
+  script imports a component. The premise was true and the conclusion wrong — **a decision that can
+  be wrong does not belong in a dumb component**, and `lib/tasks/model.ts` was already in the
+  ticket's file list. It is `showsRunControl` now, with **AC-7b** asserting all four cases *and*
+  that `Board.tsx` delegates rather than repeating the decision — the second half guards the T7-2
+  shape, where a pure function was correct, asserted, and dead for rendering.
+- **Next: T4** — AC-9, the full cycle, and the `docs/HUMAN-TEST.md` walkthrough. **Branch it off
+  T3.** T4 is the one that proves the loop, and the walkthrough it writes is blocked on an owner
+  gate: no watched repo has an `agentos.yml`, so the first real initialization means writing into
+  `fractal-code` (D27).
 - **Then:** the owner gates. AC-12 (one real session, `AGENTOS_REAL_SESSION=1`) has never been run;
   nadim's fix proposal has never been approved, which is still Stage 2's unmet criterion.
 

@@ -1,4 +1,5 @@
 import type { CardModel, ColumnModel } from "@/lib/tasks/model";
+import { showsRunControl } from "@/lib/tasks/model";
 import s from "./tasks.module.css";
 import { Card } from "./Card";
 
@@ -57,12 +58,10 @@ function Column({
             key={card.id}
             card={card}
             slug={slug}
-            // A human-only card (card.agent === null, spec §7.1: a null assignee is deliberately
-            // human, never unassigned) gets no Run now control at all — never a disabled-looking
-            // one — so the card cannot imply a machine could have done it (AC-7). `card.agent` is
-            // already decided by `lib/tasks/model.ts`'s `cardModel`; this reads it, it does not
-            // recompute it.
-            runNowAction={col.key === "todo" && card.agent !== null ? runNowAction : undefined}
+            // The decision itself is `showsRunControl` in `lib/tasks/model.ts` — pure, and
+            // asserted by AC-7b without a renderer. This component only reads it (AC-7's
+            // "absent, not disabled-looking"): a dumb component, per CLAUDE.md §Conventions.
+            runNowAction={showsRunControl(card, col.key) ? runNowAction : undefined}
             approveDoneAction={col.key === "review" ? approveDoneAction : undefined}
           />
         ))}

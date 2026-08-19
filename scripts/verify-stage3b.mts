@@ -62,6 +62,7 @@ import { createAgentForSlug, updateAgentForSlug } from "../app/p/[slug]/config/a
 import { parseAgentosYml } from "../lib/agentos/config";
 import { EGRESS_DENIED_TOOLS } from "../lib/agentos/egress";
 import { resolveToolGrants } from "../lib/agentos/agent-form";
+import { showsRunControl } from "../lib/tasks/model";
 import { loadProjectExecutionData } from "../lib/tasks/data";
 import { dispatch } from "../lib/agentos/dispatch";
 import { FakeRunner } from "../lib/agentos/runner/fake";
@@ -706,6 +707,46 @@ console.log("\nStage 3b acceptance — the connector, fixture repos only\n");
     fail("AC-5b", `the single shared list does not actually deny egress: ${JSON.stringify(resolveToolGrants(["Read", "WebFetch", "WebSearch"]))}`);
   else
     pass("AC-5b", `one definition (lib/agentos/egress.ts), imported by both enforcement points; [${EGRESS_DENIED_TOOLS.join(", ")}] denied at write time and at spawn`);
+}
+
+// ── AC-7b · Run now is absent on a human-only card, and the decision is assertable ────────
+// Not spec-numbered — a lead-review addition (2026-08-19). §2's AC-7 row requires that Run now be
+// "absent, not disabled-looking", and T3 built that correctly — but as a ternary inside
+// `components/tasks/Board.tsx`, then recorded the behaviour as untestable because no acceptance
+// script in this repo imports a component. The premise was true and the conclusion was wrong: a
+// decision that can be wrong does not belong in a dumb component (CLAUDE.md §Conventions), and
+// `lib/tasks/model.ts` was already in T3's file list. `showsRunControl` is the decision; this
+// asserts all four cases.
+//
+// The second half is a structural approximation and is worth naming as one: there is no renderer
+// in the acceptance harness, so "Board.tsx actually calls it" is checked by reading the file. That
+// is the same weak measurement logged in docs/BACKLOG.md for verify:stage3a's AC-3, and it is here
+// for the T7-2 reason — `registerFor()` was pure, correct, asserted, and dead for rendering, so
+// its check proved a value the UI ignored. A textual check that the component delegates is worth
+// more than no check that it does.
+{
+  const withAgent = { agent: { monogram: "RV", name: "Reviewer" } };
+  const humanOnly = { agent: null };
+  const cases: [string, boolean, boolean][] = [
+    ["todo + agent", showsRunControl(withAgent, "todo"), true],
+    ["todo + human-only", showsRunControl(humanOnly, "todo"), false],
+    ["doing + agent", showsRunControl(withAgent, "doing"), false],
+    ["review + agent", showsRunControl(withAgent, "review"), false],
+  ];
+  const wrong = cases.filter(([, got, want]) => got !== want);
+
+  const board = readFileSync(join(process.cwd(), "components/tasks/Board.tsx"), "utf8");
+  const delegates = /showsRunControl\(/.test(board);
+  const reDecides = /runNowAction=\{[^}]*card\.agent/.test(board);
+
+  if (wrong.length > 0)
+    fail("AC-7b", `showsRunControl decided wrongly: ${wrong.map(([n, g, w]) => `${n} → ${g}, expected ${w}`).join("; ")}`);
+  else if (!delegates)
+    fail("AC-7b", "components/tasks/Board.tsx does not call showsRunControl — the pure decision is dead for rendering (the T7-2 failure)");
+  else if (reDecides)
+    fail("AC-7b", "components/tasks/Board.tsx still decides the Run now control from card.agent itself, alongside showsRunControl");
+  else
+    pass("AC-7b", "Run now shows only on a todo card with an agent; absent (not disabled) when the assignee is deliberately human — and Board.tsx delegates the decision rather than repeating it");
 }
 
 for (const t of TEMPS) rmSync(t, { recursive: true, force: true });

@@ -223,6 +223,30 @@ belongs in `docs/DECISIONS.md` instead.
   fail** — write the bypass, watch it go red, delete it, and report the failure message. A check
   demonstrated only in the passing direction has demonstrated nothing.
 
+- (2026-08-19) **Briefing an agent with *how the last two tickets failed* worked where briefing it
+  with the criterion had not.** Five Stage 3 tickets and then Stage 3b's T1 and T2 each shipped at
+  least one check that was green for the wrong reason, and none was self-caught — through briefs
+  that already said "prove every check by making it fail." T3's brief instead named the two
+  specific misses (*T1's parser could be deleted whole with three checks still green; T2's
+  ownership guard could be deleted with three checks still green*) and asked for two concrete
+  probes by name: delete every value you write, delete every guard you wrote. T3 ran them, found
+  that its own cross-project assignee check had no coverage, and **added the missing check itself**
+  — the first time an agent here closed this class before review did. **The generalisation: a
+  quality bar stated as a principle is advice; the same bar stated as two failures and two probes
+  is a procedure.** Keep briefs carrying the previous two concrete misses rather than the rule they
+  generalise to.
+
+- (2026-08-19) **"No test can reach it" is a claim about where the code is, not about what can be
+  tested.** T3 built AC-7's *"Run now is absent, not disabled-looking"* correctly, as a ternary in
+  `components/tasks/Board.tsx`, and then reported the behaviour as untestable — verifying first,
+  correctly, that no acceptance script in this repo imports a component. Both halves were true and
+  the conclusion was still wrong: `lib/tasks/model.ts` was already in the ticket's own file list,
+  and CLAUDE.md already says a decision that can be wrong belongs in the pure model rather than a
+  dumb component. **When a behaviour looks untestable, the first question is whether it is in the
+  wrong file, not whether the harness needs extending.** The move cost four lines. → `showsRunControl`,
+  asserted by **AC-7b** — which also checks that the component *delegates* to it, because a pure
+  function that is correct, asserted and unused is the T7-2 failure exactly.
+
 - (2026-08-19) **A correctly-written authorization guard with no adversarial fixture is
   indistinguishable, to the suite, from no guard at all.** Stage 3b T2 wrote its cross-project
   ownership check exactly right — `agent.projectId !== owned.project.id`, refusing a crafted post

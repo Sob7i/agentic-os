@@ -197,6 +197,24 @@ from the `Agent` row at spawn and records nothing about what that row said, so e
 live one would make the session's own record unreadable — you could not answer *"what was this
 agent allowed to do when it ran?"*. Editing **between** runs is fine.
 
+### Creating a task (Stage 3b T3 — spec §1.3, §4)
+
+The form sits above the board on the Tasks tab: title, description, assignee, approval gate. The
+assignee select offers each of the project's agents **plus an explicit human-only option**, and the
+choice is bound **at creation** — `dispatch` never defaults it (§7.1).
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Creates a task with an agent | The card appears in `todo` carrying that agent's monogram, and `dispatch` on it starts a session | `pnpm verify:stage3b` → AC-6 | 3b T3 |
+| One project cannot assign another's agent | A crafted post naming a foreign agent id is refused; no task is written | `pnpm verify:stage3b` → AC-6b | 3b T3 |
+| Creates a human-only task | `assigneeAgentId` is null, and dispatch refuses **by precondition `agent`** specifically — naming it, not merely returning `started: false` | `pnpm verify:stage3b` → AC-7 | 3b T3 |
+| A human-only card has no Run now control | **Absent, not disabled** — the card cannot imply a machine could have done the work and declined | `pnpm verify:stage3b` → AC-7b | 3b T3 |
+
+**A null assignee is deliberately human, never unassigned.** That distinction is the whole reason
+AC-7 exists: it is why the refusal names a precondition rather than just failing, and why the card
+shows nothing rather than something greyed out. `createTask` does not default from
+`Project.defaultAgentId`, and dispatch's precondition 4 refuses rather than choosing.
+
 ### The Overview
 
 *Not built.* Planned: PRD §6.8, **Stage 6** (re-scoped by D22 to read two sources). `/overview`
