@@ -13,6 +13,7 @@
     "verify:stage2": "tsx scripts/verify-stage2.mts",
     "verify:stage3": "tsx scripts/verify-stage3.mts",
     "verify:stage3a": "tsx scripts/verify-stage3a.mts",
+    "verify:stage3b": "tsx scripts/verify-stage3b.mts",
     "stage3:real-session": "AGENTOS_REAL_SESSION=1 tsx scripts/verify-stage3.mts"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

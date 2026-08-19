@@ -252,14 +252,92 @@ commit, that commit exists — it was read out of the repository, not remembered
 
 ---
 
+## Part 7 — Running the whole cycle, on a real project
+
+Everything above is proven against fixtures: real git repos in a temp directory, a real in-memory
+database, a scripted stand-in for the model that asks a scripted question and gives a scripted
+answer (`pnpm verify:stage3b`'s AC-9 runs exactly this sequence — dispatch, pause, resume, review,
+approve — and checks every step, not just the ending). **Nobody has run this by hand, on a real
+project, with a real agent, yet.** These are the exact steps to be the first.
+
+**What step 5 costs.** Only step 5 below spawns a real session against the real Agent SDK. That is
+the one step that uses the network and costs money. Every step before it is free and entirely local.
+
+**Step 1 — opt a project in. This is the one step only the owner can do.** Everything else in this
+walkthrough is a click in the app; this one writes into another repo, which is a human-only act
+here (`CLAUDE.md`'s per-session write gate) — this doc will not do it for you and has not done it.
+The target is `fractal-code` ([`DECISIONS.md`](DECISIONS.md) D27). Add a file at its root named `agentos.yml`
+containing exactly this:
+
+```yaml
+slug: fractal-code
+maxConcurrentSessions: 1
+```
+
+Commit it however you normally commit to that repo. Nothing below happens until this file exists.
+
+> ✅ **Try it:** `pnpm dev`, open the fractal-code project. Its Tasks tab says *not initialized* —
+> true until step 2, and no other tab is reachable yet (D18's opt-in-by-file-presence rule).
+
+**Step 2 — initialize.** Next to that sentence is an **Initialize** button. Click it once.
+
+> ✅ **Try it:** the page stops saying *not initialized*, and five tabs appear —
+> `Tasks · Goals · Inbox · Sessions · Costs`. Click Initialize again later and it says
+> *already initialized*, writing nothing a second time.
+
+**Step 3 — create an agent.** Behind **Configuration** — a link below the rail, deliberately **not** a sixth tab; the
+five work tabs are capped and setup lives outside them (D23) — add one: a name, a monogram, a model, a role prompt, and the tools it actually needs.
+WebFetch and WebSearch are not offered as checkboxes at all — the egress floor denies both
+unconditionally, so the form does not pretend to offer what it cannot grant. For a first real run on
+a real repo, leave **canCommit off** — the same conservative default D27 chose for this project.
+
+> ✅ **Try it:** the agent appears on the configuration page with exactly the grants you gave it.
+
+**Step 4 — create a task.** On the Tasks tab, add one: a title, a short description, the agent from
+step 3 as its assignee, and turn the approval gate on so you get to see review-and-approve for real
+rather than take it on faith.
+
+> ✅ **Try it:** the card appears in `todo`, the agent's monogram on it, no evidence line — nothing
+> has happened yet, and the card says so by saying nothing.
+
+**Step 5 — run it. This is the step that costs money and touches the network.** Click **Run now**.
+
+> ✅ **Try it:** the card moves to `doing` and, moments later, carries a live evidence line —
+> `▶ running · …`. Reload and the numbers climb; nothing animates on its own (Part 3's own rule).
+
+**Step 6 — if it asks you something.** A real agent may genuinely need to ask you something. If it
+does, the card stays in `doing` with a `blocked` label and the question appears in the **Inbox**.
+Answer it there.
+
+> ✅ **Try it:** after you answer, the same session continues — not a new one — and the card keeps
+> running.
+
+**Step 7 — approve it.** Because the task was gated, the agent stops itself at `review` instead of
+closing the task. The card shows `human gate` and an **Approve & mark done** button — click it.
+
+> ✅ **Try it:** the card moves to `done`. Its evidence line switches from the session's own
+> `▶ s_… · …` line to *"moved by hand · [you] · no session produced this"* — that is not the run
+> disappearing, it is the card naming whoever is now vouching for the current state
+> ([`specs/stage-3-execution-mvp.spec.md`](specs/stage-3-execution-mvp.spec.md) §8.3's own
+> distinction). The session itself does not vanish: it is still listed,
+> whole, on the **Sessions** tab, with every tool call and commit it made.
+
+That is the loop, closed once, by hand. **Until someone runs these seven steps, Stage 3b's own
+acceptance criterion is unmet** — its spec says so directly: "Stage 3b's value is only realised once
+a human runs the cycle by hand" — the same honesty Part 1 already applies to the Board's own
+never-yet-clicked Approve button.
+
+---
+
 ## What is NOT true yet — read this before testing
 
 Being straight about this is more useful than a demo.
 
-1. **No real project is connected yet.** The pieces all work and are tested, but nothing yet turns
-   "this project has an `agentos.yml`" into "this project has a record in the database". Until that
-   exists, the Tasks page will honestly say *not initialized* rather than inventing anything.
-   **This is the single thing standing between you and a full cycle**, and it is next.
+1. **No real project has run the cycle yet.** The connector, the agent and task forms, and the full
+   dispatch → pause → resume → review → approve cycle are all built and proven against fixtures.
+   What has never happened is a human running it on a real project with a real agent — no watched
+   repo has an `agentos.yml` yet. **Part 7 above is the exact walkthrough**, starting with the one
+   step only the owner can do.
 
 2. **No agent has ever really run.** Every check runs against a stand-in that replays scripted
    responses — deliberately, so tests cost nothing. There is **one** check that runs a real agent,

@@ -1,4 +1,5 @@
 import type { CardModel, ColumnModel } from "@/lib/tasks/model";
+import { showsRunControl } from "@/lib/tasks/model";
 import s from "./tasks.module.css";
 import { Card } from "./Card";
 
@@ -57,7 +58,10 @@ function Column({
             key={card.id}
             card={card}
             slug={slug}
-            runNowAction={col.key === "todo" ? runNowAction : undefined}
+            // The decision itself is `showsRunControl` in `lib/tasks/model.ts` — pure, and
+            // asserted by AC-7b without a renderer. This component only reads it (AC-7's
+            // "absent, not disabled-looking"): a dumb component, per CLAUDE.md §Conventions.
+            runNowAction={showsRunControl(card, col.key) ? runNowAction : undefined}
             approveDoneAction={col.key === "review" ? approveDoneAction : undefined}
           />
         ))}

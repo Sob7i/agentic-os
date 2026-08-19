@@ -223,6 +223,60 @@ belongs in `docs/DECISIONS.md` instead.
   fail** — write the bypass, watch it go red, delete it, and report the failure message. A check
   demonstrated only in the passing direction has demonstrated nothing.
 
+- (2026-08-19) **Briefing an agent with *how the last two tickets failed* worked where briefing it
+  with the criterion had not.** Five Stage 3 tickets and then Stage 3b's T1 and T2 each shipped at
+  least one check that was green for the wrong reason, and none was self-caught — through briefs
+  that already said "prove every check by making it fail." T3's brief instead named the two
+  specific misses (*T1's parser could be deleted whole with three checks still green; T2's
+  ownership guard could be deleted with three checks still green*) and asked for two concrete
+  probes by name: delete every value you write, delete every guard you wrote. T3 ran them, found
+  that its own cross-project assignee check had no coverage, and **added the missing check itself**
+  — the first time an agent here closed this class before review did. **The generalisation: a
+  quality bar stated as a principle is advice; the same bar stated as two failures and two probes
+  is a procedure.** Keep briefs carrying the previous two concrete misses rather than the rule they
+  generalise to.
+
+- (2026-08-19) **"No test can reach it" is a claim about where the code is, not about what can be
+  tested.** T3 built AC-7's *"Run now is absent, not disabled-looking"* correctly, as a ternary in
+  `components/tasks/Board.tsx`, and then reported the behaviour as untestable — verifying first,
+  correctly, that no acceptance script in this repo imports a component. Both halves were true and
+  the conclusion was still wrong: `lib/tasks/model.ts` was already in the ticket's own file list,
+  and CLAUDE.md already says a decision that can be wrong belongs in the pure model rather than a
+  dumb component. **When a behaviour looks untestable, the first question is whether it is in the
+  wrong file, not whether the harness needs extending.** The move cost four lines. → `showsRunControl`,
+  asserted by **AC-7b** — which also checks that the component *delegates* to it, because a pure
+  function that is correct, asserted and unused is the T7-2 failure exactly.
+
+- (2026-08-19) **A correctly-written authorization guard with no adversarial fixture is
+  indistinguishable, to the suite, from no guard at all.** Stage 3b T2 wrote its cross-project
+  ownership check exactly right — `agent.projectId !== owned.project.id`, refusing a crafted post
+  that names another project's agent. Review deleted it and **all three of the ticket's checks
+  stayed green**, because AC-4, AC-5 and AC-8 each operate on an agent that legitimately belongs to
+  the project in the form. The guard is the only thing between a form post and rewriting another
+  project's agent — its tool grants and `canCommit` included. This is the *third* appearance of the
+  same shape in this codebase and the first where the code was already right: T7 shipped **three**
+  server actions missing the check entirely and review found all three; the Stage 3 spec had warned
+  about it in advance; T2 then wrote it and nothing exercised it. **The rule: a guard is not covered
+  by a check that never violates it.** Every authorization boundary needs a fixture that is
+  *hostile by construction* — a second project, a foreign id, a value outside the offered set — and
+  the check must assert both the refusal **and that the protected row is unchanged**, because a
+  refusal that still writes is the worse bug. Same reasoning the spec already applies to the egress
+  floor (*"an invariant enforced only by seed data is enforced by nobody"*), applied to
+  authorization. → **AC-8b**.
+
+- (2026-08-19) **"Two independent lists that must agree" is a second source of truth wearing a
+  justification.** T2 needed the egress-denied tool list at write time; the existing copy at spawn
+  time (`runner/local.ts`) was private to a function and its file was outside the ticket's blast
+  radius, so the ticket declared a second `EGRESS_DENIED_TOOLS` and wrote a careful comment calling
+  the duplication *"the accepted cost of a floor that holds at both write time and spawn time."*
+  The reasoning about **two enforcement points** was right and both are still there. The error was
+  concluding that two enforcement points need two lists. **Divergence here is silent and the
+  boundary is a security one** — invariant 1's carve-out is the model API, not the internet.
+  **The tell:** a comment that argues for a duplication is a duplication that needed arguing for.
+  When a ticket's file list is what forces the copy, that is a finding to report, not a constraint
+  to design around — the lead can widen a file list, and did. → `lib/agentos/egress.ts`, one
+  definition imported by both, asserted by **AC-5b**.
+
 - (2026-08-19) **A cleanup step awaited before the write that records the outcome can strand the
   record it was supposed to complete.** `dispatch` did `await removeWorktree(wt)` and *then*
   `updateSession({status, endedAtISO, failureReason})`. `removeWorktree` throws when `git worktree
@@ -276,6 +330,68 @@ belongs in `docs/DECISIONS.md` instead.
   guaranteed no-op — the fix is to skip when the file does not exist, which costs nothing.
   **A side effect that only shows up on a clean machine will not show up in review**; this was found
   by deleting `data/` and booting, not by reading the diff.
+
+- (2026-08-19) **`git merge-file --union` silently eats a shared closing delimiter, and the result
+  type-checks.** Merging four stacked Stage 3b branches that each append checks to one suite file
+  produced the spurious conflicts the stacking rule predicts — every hunk resolved to "keep both".
+  Union is the correct driver for that, and it got the content right twice; both times it also
+  dropped one `}`, because the two sides ended with the identical `}` + blank line at the same
+  offset and a line-based union cannot tell a **shared closing delimiter** from duplicated content.
+  **The failure is quiet in the worst way:** `pnpm type-check` passed — `tsc` reads `.ts`, the
+  suite is `.mts` and only tsx transforms it — so the first symptom was a runtime
+  `Unexpected end of file` with *zero* checks run and *zero* reported. Two hand-resolutions before
+  reaching for the union driver each produced the same shape from a different mistake.
+  **Two rules.** After any union merge of a file built from repeated same-shaped blocks, **count
+  braces** (`sum of "{" minus "}"` must be 0) and **count the checks that actually ran** against
+  what the branches contributed — a suite that reports 0 PASS and 0 FAIL has not passed, and the
+  summary line is what says so. And: **`pnpm type-check` does not cover `scripts/*.mts`**, which is
+  worth knowing on its own.
+
+- (2026-08-19) **A scripted edit that slices between two anchors deleted 50 of 61 backlog entries,
+  and nothing caught it for two commits.** Moving one item in `docs/BACKLOG.md`, the edit took
+  `s[:start] + s[end:]` where `start` was the entry to move and `end` was the next entry it
+  expected to follow. The two were **323 lines apart**, with the `## Done / superseded` heading and
+  fifty unrelated entries between them. The file still looked structurally fine — one heading, a
+  list of entries — so a glance at the result showed nothing wrong, and it survived a commit, a
+  push, and a merge into another branch. It surfaced only because a reviewer asked why a resolved
+  item sat under *Open*: **the heading was gone, so everything was under Open.**
+  **The rule: a text edit that removes a range must assert what it is removing.** Count the items
+  before and after and refuse if the count moved by more than intended, or bound the slice to the
+  entry (*"refuse to cut more than N lines"*). Both are one line. Anchoring on `s.index(next_thing)`
+  is only safe when the two anchors are known to be adjacent, which is exactly the thing the code
+  does not check. Same class as `verify-before-claim`, applied to an edit rather than a claim: the
+  edit asserted "these two anchors are adjacent" and never ran the check that would falsify it.
+
+- (2026-08-19) **`git merge-file --union` silently eats a shared closing delimiter, and the result
+  type-checks.** Merging four stacked Stage 3b branches that each append checks to one suite file
+  produced the spurious conflicts the stacking rule predicts — every hunk resolved to "keep both".
+  Union is the right driver for that, and it got the content right both times; both times it also
+  dropped one `}`, because the two sides ended with the identical `}` + blank line at the same
+  offset and a line-based union cannot tell a **shared closing delimiter** from duplicated content.
+  **The failure is quiet in the worst way:** `pnpm type-check` passed — `tsc` reads `.ts`, the suite
+  is `.mts` and only tsx transforms it — so the first symptom was a runtime `Unexpected end of file`
+  with *zero* checks run and *zero* reported. Two hand-resolutions attempted before reaching for the
+  union driver each produced the same shape from a different mistake.
+  **Two rules.** After any union merge of a file built from repeated same-shaped blocks, **count
+  braces** (`"{"` minus `"}"` must be 0) and **count the checks that actually ran** against what the
+  branches contributed — a suite reporting 0 PASS and 0 FAIL has not passed, and the summary line is
+  what says so. And separately, worth knowing on its own: **`pnpm type-check` does not cover
+  `scripts/*.mts`.**
+
+- (2026-08-19) **A ticket's own file-scope restriction is enforced by the harness, not just the
+  brief — plan probes accordingly.** Stage 3b T4's brief forbade touching any `lib/` or `app/` file
+  and asked for a delete-a-guard probe in the same shape T2's review had used: edit the production
+  file, watch the check redden, revert. The Edit tool refused the very first attempt, against
+  `lib/agentos/mcp/agentos-server.ts`, with a permission denial naming the scope. Earlier tickets'
+  probes (T1's parser, T2's ownership guard, T3's assignee check) were run during **review**, which
+  carries no such restriction — T4 is the first ticket where the probing itself had to happen inside
+  the restriction. The fix was a throwaway harness (deleted before finishing, never committed) that
+  imports the same production functions **unmodified** and substitutes the one broken step directly
+  — reproducing byte-for-byte the database state a real regression would leave, without editing the
+  file the regression would have been in. **The generalisation:** when a ticket both forbids editing
+  a file and needs to prove a check would catch a defect in it, the probe has to construct the
+  broken *output* through injection at a seam, not by breaking the *source* — the same substitution
+  principle `Runner`/`FakeRunner` already use for the SDK, one level down.
 
 ## Tooling
 

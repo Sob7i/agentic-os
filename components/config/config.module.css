@@ -1,0 +1,115 @@
+/* T2 — the configuration surface. New surfaces use CSS Modules (CLAUDE.md);
+   app/board.css stays untouched. Reads the tokens in app/globals.css. */
+
+.notInit {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  background: var(--surface);
+  max-width: 62ch;
+}
+.notInit strong { color: var(--text); }
+
+.section { margin: 0 0 28px; }
+.h2 { font-size: 14px; margin: 0 0 12px; }
+
+.empty { font-size: 12px; color: var(--muted); }
+
+.agentList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 62ch;
+}
+.agentRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 13px;
+}
+.agentMonogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--surface-2);
+  flex: none;
+}
+.agentName { font-weight: 500; }
+.agentModel { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.editLink { margin-left: auto; font-size: 12px; color: var(--muted); text-decoration: underline; text-decoration-color: var(--line); }
+.editLink:hover { color: var(--text); }
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 62ch;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--surface);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.field input,
+.field textarea {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 9px;
+}
+.field textarea { resize: vertical; font-family: var(--mono); font-size: 12px; }
+
+.tools {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tools legend { font-size: 11px; color: var(--muted); padding: 0 4px; }
+.toolOption { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+.floorNote { font-size: 11px; color: var(--muted); font-style: italic; margin: 4px 0 0; }
+
+.checkboxField { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+
+.submit {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 6px 13px;
+  border: 1px solid var(--text);
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.submit:disabled { opacity: 0.6; cursor: default; }
+
+.note { font-size: 12px; color: var(--muted); margin: 0; }
+.error { font-size: 12px; color: var(--drift); margin: 0; }
