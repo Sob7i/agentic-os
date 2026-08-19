@@ -246,7 +246,15 @@
   rather than inventing rows. That connector needs a decision about what creates the row, and it is
   the next thing standing between this build and a first real run (`docs/BACKLOG.md`, and D27 which
   already chose `fractal-code` as the target repo).
-- **Next:** the owner gates. AC-12 (one real session, `AGENTOS_REAL_SESSION=1`) has never been run;
+- **Next to build: Stage 3b** ([`stage-3b-onboarding.spec.md`](specs/stage-3b-onboarding.spec.md),
+  written 2026-08-19). Stage 3 is complete and **cannot be used** — nothing turns an `agentos.yml`
+  into a `Project` row, so the only way to create an agent or a task is a seed script. 3b is the
+  smallest thing that closes the loop: initialize a project, create an agent, create a task. It is
+  sequenced **before Stage 4** because Stage 4's own spec says it introduces no new machinery — it
+  sequences parts that have already run, and right now none of them have run once. **One owner
+  decision is open**, §5.1: what creates the `Project` row. Recommendation is an explicit
+  *Initialize* button on the pane that already says *not initialized*.
+- **Then:** the owner gates. AC-12 (one real session, `AGENTOS_REAL_SESSION=1`) has never been run;
   nadim's fix proposal has never been approved, which is still Stage 2's unmet criterion.
 
 ## How to pick up
