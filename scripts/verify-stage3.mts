@@ -1989,6 +1989,12 @@ console.log("\nStage 3 acceptance — T7's Tasks board model (§8, no route rend
   }
 }
 
+// Every fixture repo created after the mid-file sweep above — T6's AC-1/3/6/7/8/10/12/13 families
+// included — is still on disk at this point, and `pnpm verify:stage3` runs on every `pnpm verify`.
+// Two sweeps that each cover only what preceded them leak everything written after the last one
+// (review of #16). This final pass is the one that has to be unconditional.
+for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
+
 console.log(
   failures === 0
     ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b, AC-14, AC-15a…e, AC-16, AC-17a/b, AC-18a/b, AC-19a/b, AC-19c, AC-9a, " +
