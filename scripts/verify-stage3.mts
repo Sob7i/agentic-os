@@ -1,8 +1,9 @@
 /**
- * AC-2, AC-9, AC-8a (worktree lifecycle, T2) and AC-4, AC-5 (the two MCP servers and the gate, T4)
- * from docs/specs/stage-3-execution-mvp.spec.md §4, as runnable checks.
+ * AC-2, AC-9, AC-8a (worktree lifecycle, T2), AC-4, AC-5, AC-5b (the two MCP servers and the
+ * gate, T4), and AC-14…AC-19 (`dispatch()` and the boot sweep, T5) from
+ * docs/specs/stage-3-execution-mvp.spec.md §4, as runnable checks.
  *
- * Later tickets (T5, T6) add AC-1, AC-3, AC-6…AC-8, AC-10…AC-19 to this file as they land.
+ * T6 still adds AC-1, AC-3, AC-6…AC-8, AC-10…AC-13 to this file.
  *
  * AC-2/AC-9/AC-8a run against a fixture repo generated in a temp directory — never a watched
  * project. Stage 2's suite established the pattern and the reason: a test proving we can write
@@ -15,22 +16,44 @@
  * could only reach the handler via a permitted SDK dispatch could never demonstrate [the handler
  * refuses regardless of what let the call through]." No model, no subprocess, no MCP wire format.
  *
+ * AC-14…AC-19 call the real `dispatch()` end to end, against fixture repos in a temp dir and an
+ * in-memory SQLite db, with a `FakeRunner` standing in for the Agent SDK (§9's Runner seam) —
+ * never a watched project, per the standing constraint in `docs/specs/stage-3-tickets.md`.
+ * AC-17's drift fixture is the one place this file reaches into `lib/reconcile/` (via `boardOnce`,
+ * never `buildBoard`, so `verify:stage3a`'s AC-3 stays green) — see `withOnlyProject` below for
+ * how it does that without ever reconciling a real watched repo.
+ *
  * Run: pnpm verify:stage3
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { createWorktree, removeWorktree, withWorktree } from "../lib/agentos/worktree";
 import {
   createAgent,
   createProject,
   createSession,
   createTask,
+  createToolCall,
   getSession,
   getTask,
   listTaskEvents,
+  listToolCallsBySession,
   openDb,
+  parseJsonColumn,
+  updateSession,
   writeTaskTransition,
 } from "../lib/agentos/db";
 import { createApprovalGate } from "../lib/agentos/mcp/gate";
@@ -44,6 +67,12 @@ import {
   TASK_UPDATE_STATUS,
   qualify,
 } from "../lib/agentos/mcp/names";
+import { dispatch, type DispatchDeps, type Precondition } from "../lib/agentos/dispatch";
+import { runBootSweep } from "../lib/agentos/sweep";
+import { FakeRunner } from "../lib/agentos/runner/fake";
+import type { DriftAtSpawn } from "../lib/agentos/types";
+import type { ProjectConfig } from "../projects.config";
+import { createRequire } from "node:module";
 
 let failures = 0;
 const pass = (id: string, msg: string) => console.log(`  PASS  ${id} — ${msg}`);
@@ -233,6 +262,14 @@ function makeDbFixture(approvalGate: boolean) {
 // ── AC-4 · a scripted task_update_status("review") moves the card and records the actor ────
 {
   const { db, task, session } = makeDbFixture(false);
+  // T5 adds data-layer state-machine enforcement (db.ts's assertLegalTransition, spec §7.6,
+  // AC-19): a session may move 'doing' -> 'review', never 'todo' -> 'review' directly — in real
+  // usage dispatch() always writes todo -> doing (actorType 'session') before a session's run
+  // even starts, so this fixture's task would never actually be sitting in 'todo' by the time an
+  // agent calls task_update_status. Mirror that here with the same session-actor transition
+  // dispatch itself writes — excluded from AC-4's own assertions below, which read only the LAST
+  // event — rather than leaving the fixture at its old, now-unrealistic starting state.
+  writeTaskTransition(db, { taskId: task.id, toStatus: "doing", actorType: "session", actorId: session.id, reason: "setup — mirrors dispatch's own todo->doing" });
   const ctx = { db, sessionId: session.id, taskId: task.id };
   const result = await createTaskUpdateStatusTool(ctx).handler(
     { status: "review", reason: "ready for review" },
@@ -372,9 +409,641 @@ function makeDbFixture(approvalGate: boolean) {
   }
 }
 
+console.log("\nStage 3 acceptance — dispatch() and the boot sweep (T5)\n");
+
+// ── Dispatch fixtures — a second temp-dir/in-memory-db family, cleaned up at the very end ───
+// (the mid-file `for (const t of TEMPS) rmSync(...)` above already ran for AC-2/AC-9/AC-8a's
+// own fixtures; these reuse the same TEMPS array so the bottom-of-file pass below catches them.)
+
+function makeDispatchFixtureRepo(opts: { withAgentosYml?: boolean } = {}): { dir: string } {
+  const dir = mkdtempSync(join(tmpdir(), "agentic-os-stage3-dispatch-"));
+  TEMPS.push(dir);
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: "pipe" });
+  if (opts.withAgentosYml !== false) writeFileSync(join(dir, "agentos.yml"), "project: fixture\n");
+  writeFileSync(join(dir, "README.md"), "# dispatch fixture\n");
+  git("init", "-q", "-b", "main");
+  git("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A");
+  git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "fixture");
+  return { dir };
+}
+
+/** A project + one agent, ready to dispatch against. `maxConcurrentSessions` defaults to 1. */
+function makeDispatchProject(
+  db: ReturnType<typeof openDb>,
+  repoDir: string,
+  opts: { maxConcurrentSessions?: number } = {},
+) {
+  const project = createProject(db, {
+    slug: `fixture-${randomUUID()}`,
+    primaryRepoPath: repoDir,
+    yamlPath: join(repoDir, "agentos.yml"),
+    maxConcurrentSessions: opts.maxConcurrentSessions ?? 1,
+  });
+  const agent = createAgent(db, {
+    projectId: project.id,
+    name: "Fixture Agent",
+    monogram: "FA",
+    model: "claude-opus-5",
+    rolePrompt: "fixture agent for T5's dispatch acceptance checks",
+    allowedTools: [],
+    disallowedTools: [],
+    canCommit: false,
+  });
+  return { project, agent };
+}
+
+function makeDispatchTask(
+  db: ReturnType<typeof openDb>,
+  project: ReturnType<typeof createProject>,
+  agent: ReturnType<typeof createAgent>,
+  opts: { assigneeAgentId?: string | null } = {},
+) {
+  return createTask(db, {
+    projectId: project.id,
+    name: `fixture task ${randomUUID().slice(0, 8)}`,
+    description: "exercises dispatch()",
+    approvalGate: false,
+    assigneeAgentId: opts.assigneeAgentId === undefined ? agent.id : opts.assigneeAgentId,
+  });
+}
+
+function countRows(db: ReturnType<typeof openDb>, table: "Session" | "TaskEvent"): number {
+  return (db.prepare(`SELECT COUNT(*) as n FROM ${table}`).get() as { n: number }).n;
+}
+
+/**
+ * Splices `PROJECTS`' *contents* — not the exported binding, which is `const` — to exactly the
+ * fixture config for the duration of `fn`, then restores the original list. `dispatch()`'s drift
+ * step (§7.5) must call the real `boardOnce()`/`buildBoard()` (never a mock — §9's seam table
+ * lists only Runner, the fixture repo, and bootId; a fourth "board fetcher" seam is not on it),
+ * but `buildBoard()` unconditionally reconciles *every* entry in `PROJECTS`. Swapping the array's
+ * contents rather than appending to them is what keeps this suite from touching nadim, itqan, or
+ * any other real watched project while still exercising the real reconciler against a fixture —
+ * the "fixture repo" seam §9 names AC-17 as using. `boardOnce`'s cache is React's `cache()`, which
+ * (verified empirically: it re-runs `buildBoard` every call outside of a render pass) does not
+ * survive across `withOnlyProject` calls to leak a stale board between them.
+ *
+ * **Reached via `createRequire`, not a top-level `import`.** This file is `.mts` — native ESM —
+ * but package.json carries no `"type": "module"`, so every plain `.ts` file (`dispatch.ts`,
+ * `board.ts`, `projects.config.ts` itself) loads through tsx's CommonJS-compat path, on Node's
+ * *CJS* `require` registry. An `import { PROJECTS } from "../projects.config"` written here
+ * would resolve through the *ESM* registry instead — a different cache, keyed by the same file
+ * but holding a **second, independent array** (confirmed empirically: splicing that binding never
+ * showed up on the array `dispatch.ts`'s own internal `require` chain sees). `createRequire`
+ * forces this file onto the same CJS registry `dispatch.ts` is already on, so the array is
+ * genuinely shared and the splice is genuinely visible where it needs to be.
+ */
+const projectsConfigRequire = createRequire(import.meta.url);
+function getProjects(): ProjectConfig[] {
+  return (projectsConfigRequire("../projects.config") as { PROJECTS: ProjectConfig[] }).PROJECTS;
+}
+
+async function withOnlyProject<T>(cfg: ProjectConfig, fn: () => Promise<T>): Promise<T> {
+  const PROJECTS = getProjects();
+  const saved = PROJECTS.splice(0, PROJECTS.length, cfg);
+  try {
+    return await fn();
+  } finally {
+    PROJECTS.splice(0, PROJECTS.length, ...saved);
+  }
+}
+
+// ── AC-14 · dispatch is the only door — the import graph, not the SQL text ─────────────────
+// Walks the FILESYSTEM (not `git ls-files`, which only sees tracked files — trap (i)) under
+// lib/ and app/, and matches `import { ... symbol ... } from "..."` regardless of whether the
+// specifier is relative (`./db`) or long-form (`agentos/db`) — trap (ii). `createSession` and
+// `LocalRunner` are each unique identifiers defined in exactly one file, so any file importing
+// either by name is definitionally importing it from there — no specifier-resolution needed.
+function walkTsFiles(dirs: string[]): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    if (!existsSync(dir)) return;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(e.name)) out.push(full);
+    }
+  };
+  for (const d of dirs) walk(d);
+  return out;
+}
+
+function importersOf(symbol: string, files: string[], definingFile: string): string[] {
+  const re = new RegExp(`import\\s+(?:type\\s+)?\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s*from`);
+  return files.filter((f) => f !== definingFile && re.test(readFileSync(f, "utf8")));
+}
+
+/**
+ * The named-import check above has one blind spot, and it is exactly the shape someone in a hurry
+ * writes: `import * as db from "./db"` followed by `db.createSession(...)` names no symbol, so the
+ * regex never sees it and the funnel is bypassed with AC-14 still green. §7.2's guarantee is worth
+ * only as much as the assurance that nothing goes around it, so a namespace import of either
+ * defining module is treated as a bypass regardless of whether the symbol is used.
+ */
+function namespaceImportersOf(moduleBasename: string, files: string[], definingFile: string): string[] {
+  const re = new RegExp(`import\\s+\\*\\s+as\\s+\\w+\\s+from\\s+["'][^"']*\\b${moduleBasename}["']`);
+  return files.filter((f) => f !== definingFile && re.test(readFileSync(f, "utf8")));
+}
+
+{
+  const files = walkTsFiles(["lib", "app"]);
+  const DEFINING_DISPATCH = join("lib", "agentos", "dispatch.ts");
+  const dbFile = join("lib", "agentos", "db.ts");
+  const localFile = join("lib", "agentos", "runner", "local.ts");
+  const createSessionImporters = importersOf("createSession", files, dbFile);
+  const localRunnerImporters = importersOf("LocalRunner", files, localFile);
+  // A namespace import reaches the same symbols while naming none of them — counted as a bypass.
+  const namespaceBypasses = [
+    ...namespaceImportersOf("db", files, dbFile),
+    ...namespaceImportersOf("local", files, localFile),
+  ].filter((f) => f !== DEFINING_DISPATCH);
+  const ok =
+    createSessionImporters.length === 1 &&
+    createSessionImporters[0] === DEFINING_DISPATCH &&
+    localRunnerImporters.length === 1 &&
+    localRunnerImporters[0] === DEFINING_DISPATCH &&
+    namespaceBypasses.length === 0;
+  if (!ok) {
+    fail(
+      "AC-14",
+      `createSession imported by [${createSessionImporters.join(", ")}]; LocalRunner imported by ` +
+        `[${localRunnerImporters.join(", ")}]; namespace-import bypasses [${namespaceBypasses.join(", ")}] ` +
+        `— expected exactly ["${DEFINING_DISPATCH}"] for both, and no bypasses`,
+    );
+  } else {
+    pass(
+      "AC-14",
+      `createSession and LocalRunner are each imported by exactly one module: ${DEFINING_DISPATCH}; ` +
+        `no namespace-import bypass (${files.length} files under lib/, app/ scanned)`,
+    );
+  }
+}
+
+// ── AC-15 · every refusal is stated and writes nothing — one fixture per precondition ──────
+// Each sub-case asserts started===false, the SPECIFIC refusedBy (never just "something
+// refused"), a non-empty reason, and zero new Session/TaskEvent rows (counted before/after,
+// after any setup step — matching AC-5's own established "eventsBeforeAttempt" pattern so a
+// fixture's own setup writes are never mistaken for what's under test).
+{
+  // 15a — precondition 1: no agentos.yml
+  const { dir } = makeDispatchFixtureRepo({ withAgentosYml: false });
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  const before = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const result = await dispatch(task.id, "manual", { db, runner: new FakeRunner({ messages: [] }) });
+  const after = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const refusedBy: Precondition | undefined = result.started ? undefined : result.refusedBy;
+  const ok =
+    result.started === false &&
+    refusedBy === "agentos.yml" &&
+    !result.started &&
+    result.reason.length > 0 &&
+    after.s === before.s &&
+    after.e === before.e;
+  if (!ok) fail("AC-15a", `expected refusedBy 'agentos.yml' with no new rows, got ${JSON.stringify(result)} (Δsession=${after.s - before.s}, Δevent=${after.e - before.e})`);
+  else pass("AC-15a", `no agentos.yml → refused by 'agentos.yml': "${(result as { reason: string }).reason.slice(0, 60)}" — 0 new Session/TaskEvent rows`);
+  db.close();
+}
+{
+  // 15b — precondition 2: task not 'todo'
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  writeTaskTransition(db, { taskId: task.id, toStatus: "doing", actorType: "human", actorId: "owner", reason: "setup — task no longer todo" });
+  const before = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const result = await dispatch(task.id, "manual", { db, runner: new FakeRunner({ messages: [] }) });
+  const after = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const ok = !result.started && result.refusedBy === "dispatchable" && result.reason.length > 0 && after.s === before.s && after.e === before.e;
+  if (!ok) fail("AC-15b", `expected refusedBy 'dispatchable' with no new rows, got ${JSON.stringify(result)} (Δsession=${after.s - before.s}, Δevent=${after.e - before.e})`);
+  else pass("AC-15b", `task already 'doing' → refused by 'dispatchable': "${(result as { reason: string }).reason.slice(0, 60)}" — 0 new Session/TaskEvent rows`);
+  db.close();
+}
+{
+  // 15c — precondition 3: concurrency cap (seeded directly, not via a real dispatch — see AC-16's
+  // own note on why this avoids a race against a live background run).
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir, { maxConcurrentSessions: 1 });
+  const runningTask = makeDispatchTask(db, project, agent);
+  createSession(db, {
+    taskId: runningTask.id, agentId: agent.id, triggerKind: "manual",
+    worktreePath: "/nonexistent/worktree", baseRef: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    pid: process.pid, bootId: "fixture-boot",
+    driftAtSpawn: { severity: "in-sync", claim: "x", verified: "x", source: "x", check: "x", checkedAtISO: new Date().toISOString() },
+  });
+  const task = makeDispatchTask(db, project, agent);
+  const before = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const result = await dispatch(task.id, "manual", { db, runner: new FakeRunner({ messages: [] }) });
+  const after = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const ok = !result.started && result.refusedBy === "concurrency" && result.reason.length > 0 && after.s === before.s && after.e === before.e;
+  if (!ok) fail("AC-15c", `expected refusedBy 'concurrency' with no new rows, got ${JSON.stringify(result)} (Δsession=${after.s - before.s}, Δevent=${after.e - before.e})`);
+  else pass("AC-15c", `project at its cap (1/1 running) → refused by 'concurrency': "${(result as { reason: string }).reason.slice(0, 60)}" — 0 new Session/TaskEvent rows`);
+  db.close();
+}
+{
+  // 15d — precondition 4: null assignee (human-only, never defaulted at dispatch)
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent, { assigneeAgentId: null });
+  const before = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const result = await dispatch(task.id, "manual", { db, runner: new FakeRunner({ messages: [] }) });
+  const after = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const ok = !result.started && result.refusedBy === "agent" && result.reason.length > 0 && after.s === before.s && after.e === before.e;
+  if (!ok) fail("AC-15d", `expected refusedBy 'agent' with no new rows, got ${JSON.stringify(result)} (Δsession=${after.s - before.s}, Δevent=${after.e - before.e})`);
+  else pass("AC-15d", `null assigneeAgentId (human-only) → refused by 'agent': "${(result as { reason: string }).reason.slice(0, 60)}" — 0 new Session/TaskEvent rows`);
+  db.close();
+}
+{
+  // 15e — precondition 5: base ref does not resolve (not even a git repo)
+  const dir = mkdtempSync(join(tmpdir(), "agentic-os-stage3-dispatch-nogit-"));
+  TEMPS.push(dir);
+  writeFileSync(join(dir, "agentos.yml"), "project: fixture\n"); // precondition 1 passes; no git init
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  const before = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const result = await dispatch(task.id, "manual", { db, runner: new FakeRunner({ messages: [] }) });
+  const after = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const ok = !result.started && result.refusedBy === "baseRef" && result.reason.length > 0 && after.s === before.s && after.e === before.e;
+  if (!ok) fail("AC-15e", `expected refusedBy 'baseRef' with no new rows, got ${JSON.stringify(result)} (Δsession=${after.s - before.s}, Δevent=${after.e - before.e})`);
+  else pass("AC-15e", `no git repo at all → refused by 'baseRef': "${(result as { reason: string }).reason.slice(0, 60)}" — 0 new Session/TaskEvent rows`);
+  db.close();
+}
+
+// ── AC-16 · the concurrency cap is per project, not global ─────────────────────────────────
+// The "one session running" precondition is seeded directly (createSession), exactly as AC-15c
+// does, rather than via a real dispatch() call — a real dispatch's background continuation
+// (unawaited, per §7.4) would race this test's own very next dispatch() call with no guaranteed
+// ordering between them. Seeding directly keeps the assertion about the CAP, not about timing.
+{
+  const { dir: dirA } = makeDispatchFixtureRepo();
+  const { dir: dirB } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project: projectA, agent: agentA } = makeDispatchProject(db, dirA, { maxConcurrentSessions: 1 });
+  const { project: projectB, agent: agentB } = makeDispatchProject(db, dirB, { maxConcurrentSessions: 1 });
+
+  const runningTaskA = makeDispatchTask(db, projectA, agentA);
+  createSession(db, {
+    taskId: runningTaskA.id, agentId: agentA.id, triggerKind: "manual",
+    worktreePath: "/nonexistent/worktree", baseRef: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    pid: process.pid, bootId: "fixture-boot",
+    driftAtSpawn: { severity: "in-sync", claim: "x", verified: "x", source: "x", check: "x", checkedAtISO: new Date().toISOString() },
+  });
+
+  const secondTaskA = makeDispatchTask(db, projectA, agentA);
+  const firstTaskB = makeDispatchTask(db, projectB, agentB);
+  const runner = new FakeRunner({ messages: [] });
+
+  const sameProject = await dispatch(secondTaskA.id, "manual", { db, runner });
+  const otherProject = await dispatch(firstTaskB.id, "manual", { db, runner });
+
+  const ok =
+    sameProject.started === false && sameProject.refusedBy === "concurrency" && otherProject.started === true;
+  if (!ok) {
+    fail("AC-16", `same-project dispatch: ${JSON.stringify(sameProject)}; other-project dispatch: ${JSON.stringify(otherProject)}`);
+  } else {
+    pass(
+      "AC-16",
+      `project A at its cap refuses a second dispatch there (${(sameProject as { refusedBy: string }).refusedBy}), ` +
+        `while project B — its own cap, unaffected — accepts one (session ${(otherProject as { sessionId: string }).sessionId.slice(0, 8)})`,
+    );
+  }
+  // Not closed: otherProject's real dispatch kicked off an unawaited background continuation
+  // (§7.4) against this in-memory db; closing here could race it into a benign, caught "database
+  // is closed" log line (dispatch.ts's own .catch()) — harmless, but avoided rather than invited.
+}
+
+// ── AC-17 · the premise is recorded — drift, and in-sync recorded explicitly (not null) ────
+// DC3 ("state doc older than the last commit", checks.ts) is the one drift check that needs
+// neither a GitHub remote nor stubbed facts — purely git + a docs/HANDOFF.md mtime, which is
+// exactly "a fixture whose state doc contradicts its git history." `isFrameworkRepo: true` on
+// the fixture's ProjectConfig skips DC8 (role coverage), the one other check this minimal
+// fixture would otherwise trip and which is not this test's subject.
+function makeDriftFixtureRepo(opts: { backdateDays?: number } = {}): { dir: string } {
+  const dir = mkdtempSync(join(tmpdir(), "agentic-os-stage3-drift-"));
+  TEMPS.push(dir);
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: "pipe" });
+  mkdirSync(join(dir, "docs"), { recursive: true });
+  writeFileSync(join(dir, "docs/HANDOFF.md"), "# Fixture handoff\n\nNothing claimed here.\n");
+  writeFileSync(join(dir, "agentos.yml"), "project: fixture\n");
+  git("init", "-q", "-b", "main");
+  git("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A");
+  git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "fixture");
+  if (opts.backdateDays) {
+    const past = new Date(Date.now() - opts.backdateDays * 86_400_000);
+    utimesSync(join(dir, "docs/HANDOFF.md"), past, past);
+  }
+  return { dir };
+}
+
+{
+  // 17a — a fixture whose state doc is 10 days stale relative to the last commit (DC3: gap>=7
+  // is 'drift').
+  const { dir } = makeDriftFixtureRepo({ backdateDays: 10 });
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  const cfg: ProjectConfig = { name: "t5-ac17-drift", path: dir, stalledAfterDays: 365, dirtyThreshold: 50, isFrameworkRepo: true };
+  const runner = new FakeRunner({ messages: [] });
+
+  const result = await withOnlyProject(cfg, () => dispatch(task.id, "manual", { db, runner }));
+  if (!result.started) {
+    fail("AC-17a", `dispatch refused instead of recording drift: ${JSON.stringify(result)}`);
+  } else {
+    const session = getSession(db, result.sessionId)!;
+    const drift = parseJsonColumn<DriftAtSpawn>(session.driftAtSpawnJson);
+    const ok =
+      drift.severity === "drift" &&
+      drift.check === "DC3" &&
+      typeof drift.claim === "string" && drift.claim.length > 0 &&
+      typeof drift.verified === "string" && drift.verified.length > 0 &&
+      drift.source === "docs/HANDOFF.md" &&
+      typeof drift.checkedAtISO === "string" && !Number.isNaN(Date.parse(drift.checkedAtISO));
+    if (!ok) fail("AC-17a", `driftAtSpawnJson missing the claim/verified/source/check/timestamp record: ${JSON.stringify(drift)}`);
+    else pass("AC-17a", `session recorded drift at spawn — ${drift.check}: claim "${drift.claim.slice(0, 50)}…" vs verified "${drift.verified.slice(0, 50)}…" (source ${drift.source})`);
+  }
+}
+{
+  // 17b — a fixture in sync: NOT backdated, so DC3 finds no gap and nothing else fires. Must
+  // still carry a record — "an absent record and a clean project must not look alike."
+  const { dir } = makeDriftFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  const cfg: ProjectConfig = { name: "t5-ac17-in-sync", path: dir, stalledAfterDays: 365, dirtyThreshold: 50, isFrameworkRepo: true };
+  const runner = new FakeRunner({ messages: [] });
+
+  const result = await withOnlyProject(cfg, () => dispatch(task.id, "manual", { db, runner }));
+  if (!result.started) {
+    fail("AC-17b", `dispatch refused instead of recording the in-sync state: ${JSON.stringify(result)}`);
+  } else {
+    const session = getSession(db, result.sessionId)!;
+    const drift = parseJsonColumn<DriftAtSpawn>(session.driftAtSpawnJson);
+    const ok =
+      drift.severity === "in-sync" &&
+      typeof drift.claim === "string" && drift.claim.length > 0 &&
+      typeof drift.verified === "string" && drift.verified.length > 0 &&
+      typeof drift.checkedAtISO === "string" && !Number.isNaN(Date.parse(drift.checkedAtISO));
+    if (!ok) fail("AC-17b", `in-sync project did not record an explicit in-sync severity: ${JSON.stringify(drift)}`);
+    else pass("AC-17b", `session recorded severity '${drift.severity}' (not null) for a clean project — an absent record and a clean project do not look alike`);
+  }
+}
+
+// ── AC-18 · a dead session cannot claim to be running — 'running', then 'waiting-inbox' ────
+{
+  // 18a — a 'running' session with a foreign bootId and a REAL worktree on disk.
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  writeTaskTransition(db, { taskId: task.id, toStatus: "doing", actorType: "human", actorId: "owner", reason: "setup — mirrors dispatch's own todo->doing" });
+
+  const wt = await createWorktree(dir, "HEAD", "ac18-running-session");
+  const session = createSession(db, {
+    taskId: task.id, agentId: agent.id, triggerKind: "manual",
+    worktreePath: wt.path, baseRef: wt.baseRef, pid: 999999, bootId: "foreign-boot-id",
+    driftAtSpawn: { severity: "in-sync", claim: "x", verified: "x", source: "x", check: "x", checkedAtISO: new Date().toISOString() },
+  });
+  createToolCall(db, { sessionId: session.id, seq: 0, name: "task_read", input: {} });
+
+  const { swept } = await runBootSweep(db, "current-boot-id");
+  const after = getSession(db, session.id)!;
+  const events = listTaskEvents(db, task.id);
+  const lastEvent = events[events.length - 1];
+  const toolCalls = listToolCallsBySession(db, session.id);
+
+  const ok =
+    // Not just "the id is in the list": the returned ROW must carry post-sweep state. It was read
+    // before the sweep's own writes, so a function whose job is to end a lie would otherwise hand
+    // its caller `status: 'running'` — the lie itself (review of #14).
+    swept.some((s) => s.id === session.id && s.status === "interrupted") &&
+    after.status === "interrupted" &&
+    typeof after.failureReason === "string" && after.failureReason.length > 0 &&
+    after.worktreePath === null &&
+    !existsSync(wt.path) &&
+    !worktreePaths(dir).includes(wt.path) &&
+    toolCalls.length === 1 &&
+    !!lastEvent && lastEvent.actorType === "system" && lastEvent.toStatus === "todo";
+
+  if (!ok) {
+    fail(
+      "AC-18a",
+      `after=${JSON.stringify(after)} onDisk=${existsSync(wt.path)} inWorktreeList=${worktreePaths(dir).includes(wt.path)} toolCalls=${toolCalls.length} lastEvent=${JSON.stringify(lastEvent)}`,
+    );
+  } else {
+    pass(
+      "AC-18a",
+      `'running' session with a foreign bootId → 'interrupted' ("${after.failureReason!.slice(0, 50)}…"), worktree gone from disk and 'git worktree list', 1 ToolCall preserved, task moved back to 'todo' by actorType 'system'`,
+    );
+  }
+  db.close();
+}
+{
+  // 18b — repeat for 'waiting-inbox': no worktree to remove (already gone by §3.5's design),
+  // but the sweep must still key on "no live owner," not on status === 'running'.
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  writeTaskTransition(db, { taskId: task.id, toStatus: "doing", actorType: "human", actorId: "owner", reason: "setup — mirrors dispatch's own todo->doing" });
+
+  const session = createSession(db, {
+    taskId: task.id, agentId: agent.id, triggerKind: "manual",
+    worktreePath: "/tmp/agentos/already-removed-by-inbox-ask", baseRef: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    pid: 999999, bootId: "foreign-boot-id-2",
+    driftAtSpawn: { severity: "in-sync", claim: "x", verified: "x", source: "x", check: "x", checkedAtISO: new Date().toISOString() },
+  });
+  // Simulate §3.5: the inbox tool already flipped status and tore down the worktree itself.
+  updateSession(db, session.id, { status: "waiting-inbox", worktreePath: null });
+  createToolCall(db, { sessionId: session.id, seq: 0, name: "inbox_ask", input: { question: "which env?" } });
+
+  const { swept } = await runBootSweep(db, "current-boot-id");
+  const after = getSession(db, session.id)!;
+  const events = listTaskEvents(db, task.id);
+  const lastEvent = events[events.length - 1];
+  const toolCalls = listToolCallsBySession(db, session.id);
+
+  const ok =
+    // Not just "the id is in the list": the returned ROW must carry post-sweep state. It was read
+    // before the sweep's own writes, so a function whose job is to end a lie would otherwise hand
+    // its caller `status: 'running'` — the lie itself (review of #14).
+    swept.some((s) => s.id === session.id && s.status === "interrupted") &&
+    after.status === "interrupted" &&
+    typeof after.failureReason === "string" && after.failureReason.length > 0 &&
+    after.worktreePath === null &&
+    toolCalls.length === 1 &&
+    !!lastEvent && lastEvent.actorType === "system" && lastEvent.toStatus === "todo";
+
+  if (!ok) {
+    fail("AC-18b", `after=${JSON.stringify(after)} toolCalls=${toolCalls.length} lastEvent=${JSON.stringify(lastEvent)}`);
+  } else {
+    pass(
+      "AC-18b",
+      `'waiting-inbox' session (already-gone worktree, stale bootId) → swept too: 'interrupted', 1 ToolCall preserved, task moved back to 'todo' — keyed on "no live owner," not on status`,
+    );
+  }
+  db.close();
+}
+
+// ── AC-19 · the state machine refuses illegal moves, at the data layer ─────────────────────
+// db.ts's assertLegalTransition (wired into writeTaskTransition) is what actually enforces this
+// — see that file's docstring for why it lives there and not here. This check drives the one
+// arrow AC-19 names explicitly (todo -> done from a session) and proves the rejection happens
+// BEFORE any write (zero new Session/TaskEvent rows — reusing AC-15's before/after pattern), then
+// proves structurally that nothing else in lib/agentos writes Task.status directly.
+{
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent); // fresh task: status 'todo'
+  const before = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+
+  let threw: string | null = null;
+  try {
+    writeTaskTransition(db, { taskId: task.id, toStatus: "done", actorType: "session", actorId: "some-session-id", reason: "an agent tried to skip straight to done" });
+  } catch (err) {
+    threw = err instanceof Error ? err.message : String(err);
+  }
+
+  const after = { s: countRows(db, "Session"), e: countRows(db, "TaskEvent") };
+  const taskAfter = getTask(db, task.id)!;
+  const rejectedAtDataLayer =
+    threw !== null && /todo.*done|illegal transition/i.test(threw) && taskAfter.status === "todo" && after.e === before.e;
+
+  if (!rejectedAtDataLayer) {
+    fail("AC-19a", `expected writeTaskTransition to throw and write nothing for todo->done by a session; threw=${threw} taskAfter.status=${taskAfter.status} Δevent=${after.e - before.e}`);
+  } else {
+    pass("AC-19a", `todo -> done by actorType 'session' rejected at the data layer: "${threw}" — task stayed 'todo', 0 new TaskEvent rows`);
+  }
+  db.close();
+}
+{
+  // 19b — structural: Task.status is written from exactly one place (db.ts's
+  // writeTaskTransition), which is what guarantees "no Task.status without a TaskEvent" — the
+  // two writes are in the same transaction there and nowhere else raw-UPDATEs the column.
+  const files = walkTsFiles(["lib", "app"]);
+  const DEFINING_DB = join("lib", "agentos", "db.ts");
+  const rawUpdaters = files.filter((f) => {
+    if (f === DEFINING_DB) return false;
+    return /UPDATE\s+Task\s+SET\s+status/i.test(readFileSync(f, "utf8"));
+  });
+  const inDbTs = /UPDATE\s+Task\s+SET\s+status/i.test(readFileSync(DEFINING_DB, "utf8"));
+  if (rawUpdaters.length > 0 || !inDbTs) {
+    fail("AC-19b", `Task.status written outside writeTaskTransition: [${rawUpdaters.join(", ")}] (present in db.ts: ${inDbTs})`);
+  } else {
+    pass("AC-19b", `'UPDATE Task SET status' appears only inside ${DEFINING_DB} (writeTaskTransition), paired with the TaskEvent insert in one transaction`);
+  }
+}
+
+// ── Prove AC-14 fails when it should — run once, by hand, not part of the suite's exit code ──
+// (See the T5 report for the exact failure message this produced and the file added/removed to
+// trigger it. Left as this comment, not code, so `pnpm verify:stage3` doesn't leave a stray file
+// behind on every run.)
+
+for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
+
+// ── AC-9a · a teardown failure still writes a terminal status ──────────────────────────────
+// AC-9 covers "the run threw, the worktree is gone". This covers the inverse and nastier case:
+// the run finished but TEARDOWN threw. `removeWorktree` was awaited before the terminal
+// updateSession, so a throw left the row saying 'running' forever, with no endedAtISO and no
+// reason — a stored claim contradicted by reality, inside the product whose subject is exactly
+// that (§7.7), and one the boot sweep would only notice after a restart. Found in review of #14.
+//
+// Driven through DispatchDeps.removeWorktree, because the real function throws only when
+// `git worktree remove` AND `git worktree prune` both fail, which a fixture cannot arrange
+// without corrupting a real repo.
+{
+  const { dir } = makeDispatchFixtureRepo();
+  const db = openDb(":memory:");
+  const { project, agent } = makeDispatchProject(db, dir);
+  const task = makeDispatchTask(db, project, agent);
+  const runner = new FakeRunner({ messages: [] });
+
+  const result = await dispatch(task.id, "manual", {
+    db,
+    runner,
+    removeWorktree: async () => {
+      throw new Error("git worktree remove and prune both failed (fixture)");
+    },
+  });
+
+  if (!result.started) {
+    fail("AC-9a", `dispatch refused before the teardown path could be reached: ${JSON.stringify(result)}`);
+  } else {
+    // The continuation is unawaited by design (§7.4); poll for it to settle rather than sleeping
+    // a fixed amount, so the check is not timing-tuned.
+    const deadline = Date.now() + 5000;
+    let session = getSession(db, result.sessionId)!;
+    while (session.endedAtISO === null && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+      session = getSession(db, result.sessionId)!;
+    }
+
+    const ok =
+      session.endedAtISO !== null &&
+      session.status === "completed" &&
+      typeof session.failureReason === "string" &&
+      session.failureReason.includes("teardown") &&
+      // The path is the only pointer to a directory that may still exist — nulling it would lose
+      // the one thing needed to clean it up later.
+      session.worktreePath !== null;
+
+    if (!ok) {
+      fail("AC-9a", `teardown failure left the session unterminated or lost its worktree path: ${JSON.stringify(session)}`);
+    } else {
+      pass(
+        "AC-9a",
+        `teardown threw, and the session still reached a terminal status ('${session.status}') with the reason recorded ` +
+          `and worktreePath kept — no row left claiming to be running`,
+      );
+    }
+  }
+  db.close();
+}
+
+// ── AC-19c · an illegal transition from an agent is a tool error, not a crashed session ─────
+// AC-19a/b assert the data layer REJECTS the arrow. This asserts what the agent experiences when
+// it asks for one. T5 made writeTaskTransition throw, and T4's handler called it uncaught — so an
+// agent making an ordinary mistake ('review' -> 'todo') would have taken the whole session down
+// with an unhandled rejection. Raised in review of #14.
+{
+  const { db, task, session } = makeDbFixture(false);
+  writeTaskTransition(db, { taskId: task.id, toStatus: "doing", actorType: "session", actorId: session.id, reason: "setup" });
+  writeTaskTransition(db, { taskId: task.id, toStatus: "review", actorType: "session", actorId: session.id, reason: "setup" });
+  const ctx = { db, sessionId: session.id, taskId: task.id };
+
+  let threw: unknown = null;
+  let result: Awaited<ReturnType<ReturnType<typeof createTaskUpdateStatusTool>["handler"]>> | null = null;
+  try {
+    result = await createTaskUpdateStatusTool(ctx).handler({ status: "todo" }, {} as never);
+  } catch (err) {
+    threw = err;
+  }
+
+  const after = getTask(db, task.id)!;
+  const text = result?.content?.[0] as { text?: string } | undefined;
+  const ok =
+    threw === null &&
+    (result as { isError?: boolean } | null)?.isError === true &&
+    after.status === "review" &&
+    typeof text?.text === "string" && text.text.length > 0;
+
+  if (!ok) {
+    fail("AC-19c", `expected a tool error and an unmoved card; threw=${String(threw)} result=${JSON.stringify(result)} status=${after.status}`);
+  } else {
+    pass("AC-19c", `an illegal 'review' -> 'todo' from a session returned a tool error the agent can read, and did not throw — card stayed in 'review'`);
+  }
+  db.close();
+}
+
 console.log(
   failures === 0
-    ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b).\n"
+    ? "\nAll Stage 3 acceptance criteria pass (AC-2, AC-9, AC-8a, AC-4, AC-5, AC-5b, AC-14, AC-15a…e, AC-16, AC-17a/b, AC-18a/b, AC-19a/b, AC-19c, AC-9a).\n"
     : `\n${failures} FAILING.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);

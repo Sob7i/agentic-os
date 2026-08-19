@@ -126,7 +126,7 @@ against the real SDK without being called.
 
 ## T4 — The two in-process MCP servers, and the gate
 
-**Spec:** §3.3, §3.4 (**the gate, in two layers**), §3.5 (**read before designing `inbox.ask`**),
+**Spec:** §3.3, §3.4 (**the gate, in two layers**), §3.5 (**read before designing `inbox_ask`**),
 §5.8, §6.4. **Depends on:** T1, T3.
 
 **May touch:** `lib/agentos/mcp/*`. **Must not touch:** `lib/agentos/dispatch.ts` (T5).
@@ -142,9 +142,9 @@ session's id and task id.
 - **The gate is two layers and the test asserts the second one** (§3.4). `canUseTool` is the cheap
   first pass; the handler refuses regardless of what let the call through. AC-5 asserts **which
   layer refused** — not merely that something did.
-- **`inbox.ask` returns immediately and ends the turn** (§3.5 design B). Blocking inside the handler
+- **`inbox_ask` returns immediately and ends the turn** (§3.5 design B). Blocking inside the handler
   is less code and is **wrong**; §3.5 says why in three sentences. Read them.
-- **`inbox.send` does not exist** (§5.8). A tool that cannot be misused beats an instruction not to
+- **`inbox_send` does not exist** (§5.8). A tool that cannot be misused beats an instruction not to
   misuse it.
 
 **Done when:** AC-4 and AC-5 pass, including the human-vs-session attribution, and the refusal
