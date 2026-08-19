@@ -12,7 +12,8 @@
     "verify:stage1": "tsx scripts/verify-acceptance.mts",
     "verify:stage2": "tsx scripts/verify-stage2.mts",
     "verify:stage3": "tsx scripts/verify-stage3.mts",
-    "verify:stage3a": "tsx scripts/verify-stage3a.mts"
+    "verify:stage3a": "tsx scripts/verify-stage3a.mts",
+    "stage3:real-session": "AGENTOS_REAL_SESSION=1 tsx scripts/verify-stage3.mts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.233",
