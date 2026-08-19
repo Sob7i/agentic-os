@@ -57,7 +57,12 @@ function Column({
             key={card.id}
             card={card}
             slug={slug}
-            runNowAction={col.key === "todo" ? runNowAction : undefined}
+            // A human-only card (card.agent === null, spec §7.1: a null assignee is deliberately
+            // human, never unassigned) gets no Run now control at all — never a disabled-looking
+            // one — so the card cannot imply a machine could have done it (AC-7). `card.agent` is
+            // already decided by `lib/tasks/model.ts`'s `cardModel`; this reads it, it does not
+            // recompute it.
+            runNowAction={col.key === "todo" && card.agent !== null ? runNowAction : undefined}
             approveDoneAction={col.key === "review" ? approveDoneAction : undefined}
           />
         ))}

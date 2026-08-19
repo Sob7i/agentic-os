@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import {
   answerInboxMessage,
   createProject,
+  createTask,
   getDb,
   getInboxMessage,
   getSession,
@@ -157,6 +158,87 @@ async function resolveOwnedTask(slug: string, taskId: string) {
   const task = getTask(getDb(), taskId);
   if (!task || task.projectId !== data.project.id) return null;
   return { task, project: data.project };
+}
+
+/**
+ * The create-task form's testable core (T3, docs/specs/stage-3b-tickets.md). Injectable `db` for
+ * `scripts/verify-stage3b.mts`, the same split `initializeProject` and `createAgentForSlug`
+ * already established.
+ *
+ * Resolves the execution-layer project **from the slug, server-side** — never a path or id the
+ * browser supplied — and confirms a submitted assignee id actually belongs to this project before
+ * it ever reaches `createTask`. Without that check a crafted form post could bind a task to an
+ * agent in a *different* project (`resolveOwnedTask`'s own comment above explains why this
+ * posture exists in this file; T2's `updateAgentForSlug` needed the identical guard and review
+ * found it missing — AC-8b there, the same shape here).
+ *
+ * `""` on the `assigneeAgentId` field means **deliberately human-only** (spec §7.1 of the Stage 3
+ * spec), never "unassigned" — resolved to `null` and passed straight to `createTask`, which does
+ * not default it from `Project.defaultAgentId` and must not start.
+ */
+export interface CreateTaskResult {
+  ok: boolean;
+  reason: string | null;
+  taskId: string | null;
+}
+
+const EMPTY_TASK_RESULT: CreateTaskResult = { ok: false, reason: null, taskId: null };
+
+async function resolveExecutionProject(slug: string, db: DatabaseSync) {
+  const nav = await resolveNav(slug);
+  if (!nav) return null;
+  return loadProjectExecutionData(nav.project.path, db);
+}
+
+export async function createTaskForSlug(
+  slug: string,
+  formData: FormData,
+  deps: { db?: DatabaseSync } = {},
+): Promise<CreateTaskResult> {
+  const db = deps.db ?? getDb();
+  const data = await resolveExecutionProject(slug, db);
+  if (!data) {
+    return { ...EMPTY_TASK_RESULT, reason: `no such project '${slug}', or it has not been initialized` };
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { ...EMPTY_TASK_RESULT, reason: "title is required" };
+  const description = String(formData.get("description") ?? "").trim();
+  const approvalGate = formData.get("approvalGate") === "on";
+
+  // "" is the select's own "human-only" option value — resolved to null, never to a guess.
+  const rawAssignee = String(formData.get("assigneeAgentId") ?? "");
+  let assigneeAgentId: string | null = null;
+  if (rawAssignee !== "") {
+    if (!data.agentsById.has(rawAssignee)) {
+      return {
+        ...EMPTY_TASK_RESULT,
+        reason: `agent ${rawAssignee} does not belong to project '${slug}'`,
+      };
+    }
+    assigneeAgentId = rawAssignee;
+  }
+
+  const task = createTask(db, {
+    projectId: data.project.id,
+    name,
+    description,
+    approvalGate,
+    assigneeAgentId,
+  });
+
+  return { ok: true, reason: null, taskId: task.id };
+}
+
+export async function createTaskAction(
+  _prevState: CreateTaskResult,
+  formData: FormData,
+): Promise<CreateTaskResult> {
+  const slug = String(formData.get("slug") ?? "");
+  if (!slug) return { ...EMPTY_TASK_RESULT, reason: "missing project slug" };
+  const result = await createTaskForSlug(slug, formData);
+  revalidatePath(`/p/${slug}/tasks`);
+  return result;
 }
 
 export async function runNowAction(formData: FormData): Promise<void> {

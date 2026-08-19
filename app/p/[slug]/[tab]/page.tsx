@@ -13,7 +13,14 @@ import { inboxModel } from "@/lib/tasks/inbox-model";
 import { Board } from "@/components/tasks/Board";
 import { Inbox } from "@/components/tasks/Inbox";
 import { InitializeButton } from "@/components/tasks/InitializeButton";
-import { runNowAction, approveDoneAction, answerInboxAction, initializeProjectAction } from "./actions";
+import { TaskForm } from "@/components/tasks/TaskForm";
+import {
+  runNowAction,
+  approveDoneAction,
+  answerInboxAction,
+  initializeProjectAction,
+  createTaskAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +93,10 @@ function TabBody({ tab, slug, projectPath }: { tab: string; slug: string; projec
       );
       const columns = columnsFor(cards, data.tasks);
       return (
-        <Board columns={columns} slug={slug} runNowAction={runNowAction} approveDoneAction={approveDoneAction} />
+        <>
+          <TaskForm slug={slug} agents={[...data.agentsById.values()]} action={createTaskAction} />
+          <Board columns={columns} slug={slug} runNowAction={runNowAction} approveDoneAction={approveDoneAction} />
+        </>
       );
     }
     // tab === "inbox"

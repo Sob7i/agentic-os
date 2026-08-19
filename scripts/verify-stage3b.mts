@@ -15,6 +15,15 @@
  * `primaryRepoPath` at, and writes the `Project` row directly with `createProject` rather than
  * going through `initializeProject` (T1's own connector, already covered by AC-1..AC-2b above).
  *
+ * AC-6, AC-7 (T3, "task create") append below AC-8b, plus AC-6b, a lead-review-style addition in
+ * the same spirit as AC-8b: the ticket's own file names the exact hole ("what stops it naming an
+ * agent in a different project?") so the check is written alongside the guard, not after a later
+ * review finds it missing. AC-6 exercises `dispatch()` for real with a `FakeRunner` (empty script,
+ * same shape as most of `verify-stage3.mts`'s own precondition checks) to prove the bound
+ * assignee is actually dispatchable, not merely stored. AC-7 does the same for a human-only task
+ * and asserts the SPECIFIC precondition dispatch refused by (`'agent'`), never just `started:
+ * false`.
+ *
  * Fixture repos in a temp dir; the model is never called. `initializeProject`'s only non-injected
  * dependency is `boardOnce()` (spec §7's seam table names only `Runner` and the fixture repo — a
  * "board fetcher" seam is not on it), so a fixture project is substituted by splicing
@@ -39,18 +48,23 @@ import { createRequire } from "node:module";
 import {
   openDb,
   listProjects,
+  listTasksByProject,
   createProject,
+  createAgent,
   createTask,
   createSession,
   updateSession,
   getAgent,
+  getTask,
 } from "../lib/agentos/db";
-import { initializeProject } from "../app/p/[slug]/[tab]/actions";
+import { initializeProject, createTaskForSlug } from "../app/p/[slug]/[tab]/actions";
 import { createAgentForSlug, updateAgentForSlug } from "../app/p/[slug]/config/actions";
 import { parseAgentosYml } from "../lib/agentos/config";
 import { EGRESS_DENIED_TOOLS } from "../lib/agentos/egress";
 import { resolveToolGrants } from "../lib/agentos/agent-form";
 import { loadProjectExecutionData } from "../lib/tasks/data";
+import { dispatch } from "../lib/agentos/dispatch";
+import { FakeRunner } from "../lib/agentos/runner/fake";
 import type { ProjectConfig } from "../projects.config";
 
 let failures = 0;
@@ -483,6 +497,191 @@ console.log("\nStage 3b acceptance — the connector, fixture repos only\n");
   else if (after?.name !== "Victim Agent" || after.canCommit !== false)
     fail("AC-8b", `the victim's row changed despite the refusal — name "${after?.name}", canCommit ${after?.canCommit}`);
   else pass("AC-8b", `refused: "${attempt.reason}" — the victim's row is untouched (name "${after.name}", canCommit false)`);
+  db.close();
+}
+
+// ── AC-6 · a task is created with its assignee bound at creation, and dispatch succeeds ───
+// T3, "task create". Both halves matter (docs/specs/stage-3b-tickets.md): the row carries the
+// agent AND the task is actually dispatchable. Uses the scripted `FakeRunner`
+// (`lib/agentos/runner/fake.ts`) — the model is never called, per spec §4.
+{
+  const { dir } = makeConnectorFixtureRepo();
+  const cfg = fixtureConfig("t3-ac6", dir);
+  const db = openDb(":memory:");
+  const project = createProject(db, {
+    slug: "t3-ac6",
+    primaryRepoPath: dir,
+    yamlPath: join(dir, "agentos.yml"),
+    maxConcurrentSessions: 1,
+  });
+  const agent = createAgent(db, {
+    projectId: project.id,
+    name: "Fixer",
+    monogram: "FX",
+    model: "claude-opus-5",
+    rolePrompt: "Fixes things.",
+    allowedTools: ["Read"],
+    disallowedTools: [],
+    canCommit: false,
+  });
+
+  const form = new FormData();
+  form.set("slug", "t3-ac6");
+  form.set("name", "Fix the flaky test");
+  form.set("description", "It fails on CI about 1 in 10 runs.");
+  form.set("assigneeAgentId", agent.id);
+  form.set("approvalGate", "on");
+
+  const created = await withOnlyProject(cfg, () => createTaskForSlug("t3-ac6", form, { db }));
+  const task = created.taskId ? getTask(db, created.taskId) : null;
+
+  // Left open (never `db.close()`ed) once a real dispatch is attempted below: a `dispatch()` that
+  // starts kicks off an unawaited background continuation (§7.4) against this in-memory db, and
+  // closing immediately after could race it into a benign, caught "database is not open" log line
+  // (`dispatch.ts`'s own `.catch()`) — harmless, but avoided rather than invited, the same posture
+  // `verify-stage3.mts`'s AC-16 documents at its own trailing comment.
+  let dispatchAttempted = false;
+
+  if (!created.ok || !task) {
+    fail("AC-6", `task creation refused or unreadable: ${created.reason}`);
+  } else if (task.assigneeAgentId !== agent.id) {
+    fail(
+      "AC-6",
+      `assignee not bound at creation — assigneeAgentId is ${task.assigneeAgentId}, expected ${agent.id}`,
+    );
+  } else if (
+    task.name !== "Fix the flaky test" ||
+    task.description !== "It fails on CI about 1 in 10 runs." ||
+    task.approvalGate !== true
+  ) {
+    fail(
+      "AC-6",
+      `task fields did not round-trip — name="${task.name}", description="${task.description}", approvalGate=${task.approvalGate}`,
+    );
+  } else {
+    dispatchAttempted = true;
+    const dispatched = await dispatch(task.id, "manual", { db, runner: new FakeRunner({ messages: [] }) });
+    if (!dispatched.started) {
+      fail("AC-6", `task carried its assignee but dispatch refused: (${dispatched.refusedBy}) ${dispatched.reason}`);
+    } else {
+      pass(
+        "AC-6",
+        `assignee "${agent.id}" bound at creation (task ${task.id}), title/description/approvalGate round-tripped, dispatch started session ${dispatched.sessionId}`,
+      );
+    }
+  }
+  if (!dispatchAttempted) db.close();
+}
+
+// ── AC-6b · one project cannot assign another project's agent at task creation ────────────
+// Not spec-numbered — the same hole T2's AC-8b caught, and this ticket's own file warns about it
+// by name (docs/specs/stage-3b-tickets.md T3: "what stops it naming an agent in a different
+// project? If nothing checks that, that is the same hole T2 had."). Proven by doing exactly
+// that: a crafted post, posted as the attacker project, names the victim project's agent.
+{
+  const victimRepo = makeConnectorFixtureRepo();
+  const attackerRepo = makeConnectorFixtureRepo();
+  const db = openDb(":memory:");
+  const victimProject = createProject(db, {
+    slug: "t3-victim",
+    primaryRepoPath: victimRepo.dir,
+    yamlPath: join(victimRepo.dir, "agentos.yml"),
+    maxConcurrentSessions: 1,
+  });
+  const attackerProject = createProject(db, {
+    slug: "t3-attacker",
+    primaryRepoPath: attackerRepo.dir,
+    yamlPath: join(attackerRepo.dir, "agentos.yml"),
+    maxConcurrentSessions: 1,
+  });
+  const victimAgent = createAgent(db, {
+    projectId: victimProject.id,
+    name: "Victim Agent",
+    monogram: "VA",
+    model: "claude-opus-5",
+    rolePrompt: "Belongs to the victim project.",
+    allowedTools: [],
+    disallowedTools: [],
+    canCommit: false,
+  });
+
+  const craftedForm = new FormData();
+  craftedForm.set("slug", "t3-attacker");
+  craftedForm.set("name", "Steal the victim's agent");
+  craftedForm.set("description", "");
+  craftedForm.set("assigneeAgentId", victimAgent.id);
+
+  const attempt = await withOnlyProject(fixtureConfig("t3-attacker", attackerRepo.dir), () =>
+    createTaskForSlug("t3-attacker", craftedForm, { db }),
+  );
+  const attackerTasks = listTasksByProject(db, attackerProject.id).length;
+
+  if (attempt.ok) fail("AC-6b", "one project assigned another project's agent to a new task");
+  else if (!attempt.reason?.includes(victimAgent.id))
+    fail("AC-6b", `refusal did not name the agent it refused: ${JSON.stringify(attempt.reason)}`);
+  else if (attackerTasks !== 0)
+    fail("AC-6b", `expected 0 tasks written for the attacker project, got ${attackerTasks}`);
+  else pass("AC-6b", `refused: "${attempt.reason}" — 0 tasks written for project 't3-attacker'`);
+  db.close();
+}
+
+// ── AC-7 · a human-only task refuses dispatch by precondition 4, naming it ────────────────
+// A null assignee is deliberately human (Stage 3 spec §7.1), never unassigned. Asserts the
+// SPECIFIC precondition ('agent'), not merely started === false — any of the five preconditions
+// could produce that, and a check that cannot tell them apart is not testing this one.
+{
+  const { dir } = makeConnectorFixtureRepo();
+  const cfg = fixtureConfig("t3-ac7", dir);
+  const db = openDb(":memory:");
+  const project = createProject(db, {
+    slug: "t3-ac7",
+    primaryRepoPath: dir,
+    yamlPath: join(dir, "agentos.yml"),
+    maxConcurrentSessions: 1,
+  });
+  // An agent exists in the project — proves the human-only choice was deliberate, not "there
+  // was nothing to pick."
+  createAgent(db, {
+    projectId: project.id,
+    name: "Bystander",
+    monogram: "BY",
+    model: "claude-opus-5",
+    rolePrompt: "Exists to prove human-only was a choice, not a default.",
+    allowedTools: [],
+    disallowedTools: [],
+    canCommit: false,
+  });
+
+  const form = new FormData();
+  form.set("slug", "t3-ac7");
+  form.set("name", "Human review of the release notes");
+  form.set("description", "Needs a person's judgement.");
+  // No assigneeAgentId field posted at all — the same as the select's own human-only option
+  // ("") once read back with `String(formData.get(...) ?? "")`.
+
+  const created = await withOnlyProject(cfg, () => createTaskForSlug("t3-ac7", form, { db }));
+  const task = created.taskId ? getTask(db, created.taskId) : null;
+
+  if (!created.ok || !task) {
+    fail("AC-7", `task creation refused or unreadable: ${created.reason}`);
+  } else if (task.assigneeAgentId !== null) {
+    fail("AC-7", `assigneeAgentId was not null for a human-only task — got ${task.assigneeAgentId}`);
+  } else {
+    const dispatched = await dispatch(task.id, "manual", { db, runner: new FakeRunner({ messages: [] }) });
+    if (dispatched.started) {
+      fail("AC-7", "dispatch started a session for a human-only (null-assignee) task");
+    } else if (dispatched.refusedBy !== "agent") {
+      fail(
+        "AC-7",
+        `refused by the wrong precondition — expected 'agent', got '${dispatched.refusedBy}' (${dispatched.reason})`,
+      );
+    } else {
+      pass(
+        "AC-7",
+        `human-only task (assigneeAgentId null) refused dispatch by precondition 'agent': "${dispatched.reason}"`,
+      );
+    }
+  }
   db.close();
 }
 
