@@ -61,8 +61,15 @@ function minutes(startISO: string, endISO: string | null, nowMs: number): number
   return Math.max(0, Math.round((end - new Date(startISO).getTime()) / 60_000));
 }
 
+/**
+ * `null` means the SDK never reported a cost — **unknown, not zero.** Rendering it as `$0.00`
+ * states a fact about spend that nothing checked, which is the one thing this product exists to
+ * stop; it also disagreed with the session view, which already said "cost unknown" for the same
+ * row (review of #17). Callers concatenate this into a mono evidence line, so the unknown case
+ * has to read as a phrase rather than a number.
+ */
 function money(costUsd: number | null): string {
-  return `$${(costUsd ?? 0).toFixed(2)}`;
+  return costUsd === null ? "cost unknown" : `$${costUsd.toFixed(2)}`;
 }
 
 /** Everything `evidenceLineFor` needs, gathered once per task by the (non-pure) page loader. */
@@ -123,7 +130,7 @@ export function evidenceLineFor(input: EvidenceInput): EvidenceLine {
       "running",
       `${minutes(session.startedAtISO, null, nowMs)}m`,
       pluralize(toolCalls, "tool call"),
-      `${money(session.costUsd)} so far`,
+      session.costUsd === null ? "cost unknown" : `${money(session.costUsd)} so far`,
     ];
     return { kind: "running", sessionId: session.id, text: parts.join(" · ") };
   }

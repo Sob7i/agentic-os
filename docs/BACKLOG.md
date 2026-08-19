@@ -10,6 +10,15 @@ and things explicitly punted with a reason.
 
 ## Open
 
+- **`lib/tasks/data.ts` loads the Tasks board with N+1 queries** *(added 2026-08-19)*. Events are
+  fetched per task, and tool calls, commit shas and inbox messages per session. Correct, and fine
+  against the fixture-sized databases everything is currently tested on — but it grows linearly with
+  a project's history, and the board is the page someone leaves open. Raised in review of #17 and
+  **deliberately not fixed there**: the honest fix is a handful of grouped queries, and doing it
+  before any real project has accumulated a single session would be optimising against a guess.
+  **Unblock condition:** the first project with enough real tasks and sessions to measure — at which
+  point measure first, then batch the three per-session loads.
+
 - **Nothing connects an `agentos.yml` on disk to a `Project` row in `data/agentos.sqlite`**
   *(added 2026-08-19)*. The shell (D18) checks the file and shows the tabs; T7's Tasks and Inbox
   pages check one level deeper and render an honest *"not initialized"* pane rather than inventing

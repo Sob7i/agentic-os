@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
+  dbIfExists,
   getAgent,
-  getDb,
   getSession,
   getTask,
   listAgentsByProject,
@@ -57,8 +57,12 @@ export interface ProjectExecutionData {
  */
 export function loadProjectExecutionData(
   primaryRepoPath: string,
-  db: DatabaseSync = getDb(),
+  dbOverride?: DatabaseSync,
 ): ProjectExecutionData | null {
+  // Never `getDb()` here — it would CREATE the store just because someone opened the page. Same
+  // side effect the boot hook was fixed for; review of #17 found the page path still had it.
+  const db = dbOverride ?? dbIfExists();
+  if (!db) return null;
   const project = listProjects(db).find((p) => p.primaryRepoPath === primaryRepoPath);
   if (!project) return null;
 
@@ -103,8 +107,10 @@ export function loadProjectExecutionData(
 export function loadSessionDetail(
   primaryRepoPath: string,
   sessionId: string,
-  db: DatabaseSync = getDb(),
+  dbOverride?: DatabaseSync,
 ): SessionViewInput | null {
+  const db = dbOverride ?? dbIfExists();
+  if (!db) return null;
   const project = listProjects(db).find((p) => p.primaryRepoPath === primaryRepoPath);
   if (!project) return null;
   const session = getSession(db, sessionId);

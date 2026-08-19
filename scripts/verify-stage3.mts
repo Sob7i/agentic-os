@@ -1969,16 +1969,23 @@ console.log("\nStage 3 acceptance — T7's Tasks board model (§8, no route rend
   const todoCol = columns.find((c) => c.key === "todo");
   const doingCol = columns.find((c) => c.key === "doing");
   const reviewCol = columns.find((c) => c.key === "review");
+  // §8.5 is about FOUR columns. Checking three would still pass with `done` missing entirely —
+  // a check that does not check what its own label claims (review of #17).
+  const doneCol = columns.find((c) => c.key === "done");
+  const allFour = !!todoCol && !!doingCol && !!reviewCol && !!doneCol && columns.length === 4;
 
   const forbiddenKeys = ["severity", "colour", "color", "badge", "pill"];
   const leaked = columns.flatMap((c) => Object.keys(c).filter((k) => forbiddenKeys.includes(k.toLowerCase())));
 
-  if (!todoCol || !doingCol || !reviewCol) {
-    fail("T7-4", "columnsFor did not return all four columns");
-  } else if (typeof todoCol.count !== "number" || typeof doingCol.count !== "number") {
+  if (!allFour) {
+    fail(
+      "T7-4",
+      `columnsFor did not return all four columns — got [${columns.map((c) => c.key).join(", ")}]`,
+    );
+  } else if (typeof todoCol.count !== "number" || typeof doingCol.count !== "number" || typeof doneCol.count !== "number") {
     fail("T7-4", `column count was not a number: todo=${typeof todoCol.count}, doing=${typeof doingCol.count}`);
-  } else if (todoCol.count !== 2 || doingCol.count !== 1 || reviewCol.count !== 0) {
-    fail("T7-4", `wrong counts: todo=${todoCol.count} (want 2), doing=${doingCol.count} (want 1), review=${reviewCol.count} (want 0)`);
+  } else if (todoCol.count !== 2 || doingCol.count !== 1 || reviewCol.count !== 0 || doneCol.count !== 0) {
+    fail("T7-4", `wrong counts: todo=${todoCol.count} (want 2), doing=${doingCol.count} (want 1), review=${reviewCol.count} (want 0), done=${doneCol.count} (want 0)`);
   } else if (leaked.length > 0) {
     fail("T7-4", `ColumnModel exposed a badge-shaped field: ${JSON.stringify(leaked)} — §8.5 says plain numerals, no pill, no colour`);
   } else {
