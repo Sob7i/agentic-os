@@ -285,8 +285,8 @@ Commit it however you normally commit to that repo. Nothing below happens until 
 > `Tasks · Goals · Inbox · Sessions · Costs`. Click Initialize again later and it says
 > *already initialized*, writing nothing a second time.
 
-**Step 3 — create an agent.** Behind **Configuration** (the rail's sixth link, outside the five work
-tabs), add one: a name, a monogram, a model, a role prompt, and the tools it actually needs.
+**Step 3 — create an agent.** Behind **Configuration** — a link below the rail, deliberately **not** a sixth tab; the
+five work tabs are capped and setup lives outside them (D23) — add one: a name, a monogram, a model, a role prompt, and the tools it actually needs.
 WebFetch and WebSearch are not offered as checkboxes at all — the egress floor denies both
 unconditionally, so the form does not pretend to offer what it cannot grant. For a first real run on
 a real repo, leave **canCommit off** — the same conservative default D27 chose for this project.

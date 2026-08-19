@@ -336,6 +336,15 @@
   original risk named. `docs/HUMAN-TEST.md` gained **Part 7**, a seven-step walkthrough whose first
   step is the one thing this ticket cannot do itself: the owner adding `agentos.yml` to
   `fractal-code` (D27), with the exact two-line file to paste.
+  **Lead review closed the one gap the ticket's own scope left open.** T4's four probes ran against
+  a harness that reuses the production functions unmodified — sound, and the right adaptation to a
+  file-scope rule, but it proves the *check* fires on bad data rather than proving it fires on a
+  real regression. Review is not scope-limited, so the same probes were re-run by editing the
+  production code in place: forcing `writeTaskTransition` to record every actor as `human` reddens
+  AC-9 with *"no TaskEvent recorded dispatch's own todo->doing move with actor session …"*, and
+  making `resumeSession` pass `"continue"` instead of the human's answer reddens it with *"the
+  resume did not carry the human's answer into the run"*. Both reverted. That is the assertion
+  worth having: **AC-9 catches a defect in the code, not merely a defect in a fixture.**
 - **Then:** the owner gates. **Nobody has run Part 7 by hand yet** — that is Stage 3b's own stated
   acceptance criterion (§4: *"Stage 3b's value is only realised once a human runs the cycle by
   hand"*), unmet the same way Stage 2's drift-correction click still is. AC-12 (one real session,
