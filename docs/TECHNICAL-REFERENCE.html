@@ -1,0 +1,2006 @@
+<title>Agentic OS Technical Reference</title>
+
+<style>
+/* ───────────────────────────────────────────────────────────────────────────
+   Tokens are lifted verbatim from the project's own app/globals.css — the
+   validated surface/text/line set and the three status colours that passed the
+   dataviz validator in both modes. Do not substitute by eye.
+
+   One token is added here and nowhere in the app: --accent. The product's three
+   colours are *semantic* (drift / attention / in-sync); a document needs a
+   non-semantic hue for links, rules and diagram emphasis, and borrowing a status
+   colour for decoration would make this page do exactly what the product forbids.
+   A desaturated steel-blue sits against the warm neutral ground without
+   competing with the crimson.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --bg: #faf8f5;
+  --surface: #ffffff;
+  --surface-2: #f2eee8;
+  --surface-3: #eae4db;
+  --line: #e0d9cf;
+  --line-strong: #c9c0b3;
+  --text: #1c1a17;
+  --muted: #6b645c;
+
+  --sync: #007d64;
+  --attention: #a1620a;
+  --drift: #9f1239;
+  --sync-soft: #007d6414;
+  --attention-soft: #a1620a14;
+  --drift-soft: #9f123914;
+
+  --accent: #2f5468;
+  --accent-soft: #2f546814;
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+
+  --radius: 10px;
+  --measure: 70ch;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131211;
+    --surface: #1b1917;
+    --surface-2: #232019;
+    --surface-3: #2b2721;
+    --line: #322d27;
+    --line-strong: #4a4239;
+    --text: #ece8e2;
+    --muted: #9a938a;
+
+    --sync: #0faaaa;
+    --attention: #c3871e;
+    --drift: #eb5f73;
+    --sync-soft: #0faaaa1a;
+    --attention-soft: #c3871e1a;
+    --drift-soft: #eb5f731a;
+
+    --accent: #7fb0c9;
+    --accent-soft: #7fb0c91a;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #131211;
+  --surface: #1b1917;
+  --surface-2: #232019;
+  --surface-3: #2b2721;
+  --line: #322d27;
+  --line-strong: #4a4239;
+  --text: #ece8e2;
+  --muted: #9a938a;
+
+  --sync: #0faaaa;
+  --attention: #c3871e;
+  --drift: #eb5f73;
+  --sync-soft: #0faaaa1a;
+  --attention-soft: #c3871e1a;
+  --drift-soft: #eb5f731a;
+
+  --accent: #7fb0c9;
+  --accent-soft: #7fb0c91a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+
+.page {
+  display: grid;
+  grid-template-columns: 1fr;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 24px 120px;
+}
+
+@media (min-width: 1080px) {
+  .page {
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 56px;
+    padding: 0 40px 140px;
+  }
+}
+
+.rail { display: none; }
+
+@media (min-width: 1080px) {
+  .rail {
+    display: block;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    max-height: 100vh;
+    overflow-y: auto;
+    padding: 40px 0 40px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    line-height: 1.5;
+  }
+  .rail-title {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  .rail a {
+    display: grid;
+    grid-template-columns: 2.4em 1fr;
+    gap: 6px;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 3px 6px 3px 0;
+    border-radius: 4px;
+  }
+  .rail a:hover { color: var(--text); background: var(--surface-2); }
+  .rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .rail .n { color: var(--accent); }
+}
+
+main { min-width: 0; padding-top: 40px; }
+
+/* ── Masthead ───────────────────────────────────────────────────────────── */
+
+.masthead { padding: 40px 0 44px; border-bottom: 2px solid var(--text); margin-bottom: 44px; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 20px;
+}
+
+h1 {
+  font-size: clamp(2.4rem, 6vw, 3.9rem);
+  line-height: 1.02;
+  letter-spacing: -0.032em;
+  font-weight: 680;
+  margin: 0 0 20px;
+  text-wrap: balance;
+}
+
+.standfirst {
+  font-size: 1.16rem;
+  line-height: 1.55;
+  color: var(--text);
+  max-width: 62ch;
+  margin: 0 0 32px;
+}
+
+.standfirst em { font-style: normal; border-bottom: 2px solid var(--accent); padding-bottom: 1px; }
+
+.factstrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.factstrip div { background: var(--surface); padding: 14px 16px; }
+.factstrip dt {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.factstrip dd { margin: 0; font-size: 0.94rem; font-weight: 560; }
+
+/* ── Sections & type ────────────────────────────────────────────────────── */
+
+section { margin-bottom: 76px; scroll-margin-top: 24px; }
+
+h2 {
+  font-size: clamp(1.6rem, 3.2vw, 2.15rem);
+  line-height: 1.14;
+  letter-spacing: -0.022em;
+  font-weight: 660;
+  margin: 0 0 8px;
+  text-wrap: balance;
+}
+
+.sec-num {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 10px;
+}
+
+.sec-intro { max-width: var(--measure); color: var(--muted); font-size: 1.02rem; margin: 0 0 32px; }
+
+h3 {
+  font-size: 1.16rem;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  margin: 44px 0 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+h3:first-of-type { }
+
+h4 { font-size: 1rem; font-weight: 620; margin: 28px 0 8px; }
+
+p, ul, ol { max-width: var(--measure); }
+p { margin: 0 0 16px; }
+ul, ol { margin: 0 0 16px; padding-left: 1.3em; }
+li { margin-bottom: 8px; }
+li::marker { color: var(--muted); }
+
+a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+strong { font-weight: 620; }
+
+/* Mono is a semantic signal in this product, not decoration: it marks machine
+   truth. Carried into this document so the two read as one family. */
+code, .mono {
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+p code, li code, td code, th code {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.08em 0.34em;
+  white-space: nowrap;
+}
+
+pre {
+  font-family: var(--mono);
+  font-size: 0.79rem;
+  line-height: 1.6;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin: 0 0 20px;
+}
+pre .c { color: var(--muted); }
+pre .k { color: var(--accent); }
+
+/* ── Callouts ───────────────────────────────────────────────────────────── */
+
+.note {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 18px 20px;
+  margin: 0 0 24px;
+  max-width: var(--measure);
+}
+.note > :last-child { margin-bottom: 0; }
+.note .label {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 8px;
+}
+.note.trap { border-left-color: var(--drift); background: var(--drift-soft); }
+.note.trap .label { color: var(--drift); }
+.note.rule { border-left-color: var(--accent); background: var(--accent-soft); }
+.note.rule .label { color: var(--accent); }
+.note.gate { border-left-color: var(--attention); background: var(--attention-soft); }
+.note.gate .label { color: var(--attention); }
+
+/* ── Chips ──────────────────────────────────────────────────────────────── */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.chip.drift { color: var(--drift); border-color: var(--drift); background: var(--drift-soft); }
+.chip.attention { color: var(--attention); border-color: var(--attention); background: var(--attention-soft); }
+.chip.sync { color: var(--sync); border-color: var(--sync); background: var(--sync-soft); }
+.chip.unver { color: var(--muted); border-style: dashed; }
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+
+.tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin: 0 0 24px;
+  background: var(--surface);
+}
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--surface-2); }
+td.id { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
+td.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* ── Figures ────────────────────────────────────────────────────────────── */
+
+figure {
+  margin: 0 0 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 22px 22px 16px;
+  overflow-x: auto;
+}
+figure svg { display: block; width: 100%; max-width: 100%; height: auto; min-width: 460px; }
+figcaption {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 78ch;
+}
+figcaption b { color: var(--text); font-weight: 600; }
+
+/* Diagram vocabulary — one set of classes across every figure. */
+.d-band { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+.d-box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.25; }
+.d-box-2 { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.25; }
+.d-box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.d-box-drift { fill: var(--drift-soft); stroke: var(--drift); stroke-width: 1.25; }
+.d-box-sync { fill: var(--sync-soft); stroke: var(--sync); stroke-width: 1.25; }
+.d-box-att { fill: var(--attention-soft); stroke: var(--attention); stroke-width: 1.25; }
+.d-edge { stroke: var(--line-strong); stroke-width: 1.4; fill: none; }
+.d-edge-accent { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.d-edge-drift { stroke: var(--drift); stroke-width: 1.4; fill: none; }
+.d-edge-dash { stroke: var(--line-strong); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+.d-rule { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-head { fill: var(--line-strong); }
+.d-head-accent { fill: var(--accent); }
+.d-head-drift { fill: var(--drift); }
+.d-t { fill: var(--text); font-family: var(--sans); font-size: 13px; font-weight: 560; }
+.d-t-s { fill: var(--text); font-family: var(--sans); font-size: 11.5px; font-weight: 560; }
+.d-m { fill: var(--muted); font-family: var(--sans); font-size: 11px; }
+.d-code { fill: var(--text); font-family: var(--mono); font-size: 11.5px; }
+.d-code-m { fill: var(--muted); font-family: var(--mono); font-size: 10.5px; }
+.d-lab { fill: var(--muted); font-family: var(--mono); font-size: 9.6px; letter-spacing: 0.13em; }
+.d-drift-t { fill: var(--drift); font-family: var(--mono); font-size: 10.5px; }
+.d-accent-t { fill: var(--accent); font-family: var(--mono); font-size: 10.5px; }
+
+/* ── Charts ─────────────────────────────────────────────────────────────── */
+
+.chartgrid { display: grid; gap: 24px; }
+@media (min-width: 760px) { .chartgrid.two { grid-template-columns: 1fr 1fr; } }
+
+.c-bar { fill: var(--accent); }
+.c-bar-2 { fill: var(--line-strong); }
+.c-grid { stroke: var(--line); stroke-width: 1; }
+.c-axis { stroke: var(--line-strong); stroke-width: 1; }
+.c-lab { fill: var(--muted); font-family: var(--mono); font-size: 10.5px; }
+.c-val { fill: var(--text); font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.c-cat { fill: var(--text); font-family: var(--sans); font-size: 11.5px; }
+.c-title { fill: var(--text); font-family: var(--sans); font-size: 13px; font-weight: 620; }
+rect.c-bar:hover, rect.c-bar-2:hover { fill: var(--text); }
+
+/* ── Stat tiles ─────────────────────────────────────────────────────────── */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 0 0 28px;
+}
+.stat { background: var(--surface); padding: 18px 18px 16px; }
+.stat .v {
+  font-family: var(--mono);
+  font-size: 1.75rem;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  display: block;
+  margin-bottom: 8px;
+}
+.stat .k { font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+
+/* ── Definition grid ────────────────────────────────────────────────────── */
+
+.deflist { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: 0 0 24px; }
+.deflist > div { background: var(--surface); padding: 16px 18px; display: grid; gap: 6px; }
+@media (min-width: 720px) { .deflist > div { grid-template-columns: 190px 1fr; gap: 20px; } }
+.deflist .term { font-family: var(--mono); font-size: 0.82rem; font-weight: 600; }
+.deflist .desc { font-size: 0.92rem; color: var(--muted); }
+.deflist .desc strong { color: var(--text); }
+
+footer {
+  border-top: 2px solid var(--text);
+  padding-top: 24px;
+  margin-top: 20px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  max-width: var(--measure);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="page">
+
+<nav class="rail" aria-label="Contents">
+  <div class="rail-title">Contents</div>
+  <ol>
+    <li><a href="#s1"><span class="n">§1</span><span>What it is</span></a></li>
+    <li><a href="#s2"><span class="n">§2</span><span>System map</span></a></li>
+    <li><a href="#s3"><span class="n">§3</span><span>Portfolio layer</span></a></li>
+    <li><a href="#s4"><span class="n">§4</span><span>The write path</span></a></li>
+    <li><a href="#s5"><span class="n">§5</span><span>Execution data model</span></a></li>
+    <li><a href="#s6"><span class="n">§6</span><span>The dispatch funnel</span></a></li>
+    <li><a href="#s7"><span class="n">§7</span><span>Session lifecycle</span></a></li>
+    <li><a href="#s8"><span class="n">§8</span><span>Agent surface &amp; gate</span></a></li>
+    <li><a href="#s9"><span class="n">§9</span><span>Shell &amp; surfaces</span></a></li>
+    <li><a href="#s10"><span class="n">§10</span><span>Verification</span></a></li>
+    <li><a href="#s11"><span class="n">§11</span><span>Invariants</span></a></li>
+    <li><a href="#s12"><span class="n">§12</span><span>Build record</span></a></li>
+    <li><a href="#s13"><span class="n">§13</span><span>Gaps &amp; gates</span></a></li>
+    <li><a href="#s14"><span class="n">§14</span><span>Reference</span></a></li>
+  </ol>
+</nav>
+
+<main>
+
+<header class="masthead">
+  <p class="eyebrow">Technical reference · agentic-os · compiled 2026-08-20</p>
+  <h1>Agentic OS</h1>
+  <p class="standfirst">
+    A local dashboard that reads six repositories and reports where their state documents
+    disagree with git — and, per project and opt-in, an execution layer that runs agents against
+    the same repositories. <em>One product, because an executor that trusts a stale document is
+    the failure the dashboard exists to catch.</em>
+  </p>
+  <dl class="factstrip">
+    <div><dt>Stack</dt><dd>Next.js 15 · React 19 · TypeScript 5.7</dd></div>
+    <div><dt>Store</dt><dd><code>node:sqlite</code>, no ORM</dd></div>
+    <div><dt>Agent runtime</dt><dd>claude-agent-sdk 0.3.233</dd></div>
+    <div><dt>Egress</dt><dd><code>gh</code> + the model API. Nothing else.</dd></div>
+    <div><dt>Built</dt><dd>Stages 1, 2, 3, 3a, 3b</dd></div>
+  </dl>
+</header>
+
+<div class="note rule">
+  <span class="label">How to read this page</span>
+  <p>The product sets <span class="mono">monospace for machine-verified fact</span> and proportional
+  type for a claim a document makes — the typographic split does the epistemic work. This page keeps
+  that rule: anything in mono was read out of the code or out of git.</p>
+  <p style="margin-bottom:0"><strong>No suite counts, PR numbers or branch heads appear anywhere below.</strong>
+  Those rot on someone else's schedule, and the project's own convention confines them to one block in
+  <code>docs/HANDOFF.md</code>. Where this document would want such a number, it names the command that
+  produces it instead.</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s1">
+  <span class="sec-num">§1</span>
+  <h2>What it is, and why the two halves ship together</h2>
+  <p class="sec-intro">Two layers in one window, with a boundary between them that is enforced in
+  code rather than described in a document.</p>
+
+  <p>The <strong>portfolio layer</strong> runs a session-start ritual across every watched project and
+  renders the disagreements between what each project's documents claim and what git and GitHub
+  actually say. It is read-only, stores nothing about the projects it watches, and its only network
+  call is <code>gh</code>.</p>
+
+  <p>The <strong>execution layer</strong> is per project and opt-in: a repository declares itself in by
+  carrying an <code>agentos.yml</code>, and an explicit button turns that file into a database row.
+  From there the project gets tasks, agents, sessions and an inbox, and work runs in ephemeral git
+  worktrees.</p>
+
+  <p>The reason they are one product: an executor can spend hours and real money pursuing a goal
+  drafted from a twelve-day-stale document without tripping any of its own safety rails — every one
+  of those rails measures the loop, none of them measures its premise. The portfolio layer is the
+  check on the premise, and it is the half that already works.</p>
+
+  <figure>
+    <svg viewBox="0 0 940 430" role="img" aria-label="Two stacked layers: the portfolio layer reads six watched repos through collectors and checks into the Board; the execution layer dispatches sessions into git worktrees. One arrow crosses downward, carrying the Board's verdict into the session record. No arrow crosses upward.">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head"/>
+        </marker>
+        <marker id="a1x" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head-accent"/>
+        </marker>
+      </defs>
+
+      <!-- portfolio band -->
+      <rect x="24" y="30" width="892" height="132" rx="8" class="d-band"/>
+      <text x="42" y="52" class="d-lab">PORTFOLIO LAYER — ALWAYS ON, READ-ONLY</text>
+
+      <rect x="42" y="66" width="186" height="72" rx="6" class="d-box"/>
+      <text x="58" y="94" class="d-t">6 watched repos</text>
+      <text x="58" y="112" class="d-m">explicit set, never discovered</text>
+      <text x="58" y="128" class="d-code-m">projects.config.ts</text>
+
+      <rect x="264" y="66" width="186" height="72" rx="6" class="d-box"/>
+      <text x="280" y="94" class="d-t">collectors</text>
+      <text x="280" y="112" class="d-m">git · gh · itqan docs</text>
+      <text x="280" y="128" class="d-code-m">lib/collectors/</text>
+
+      <rect x="486" y="66" width="186" height="72" rx="6" class="d-box"/>
+      <text x="502" y="94" class="d-t">checks DC1–DC8</text>
+      <text x="502" y="112" class="d-m">claim vs. verified</text>
+      <text x="502" y="128" class="d-code-m">lib/reconcile/checks.ts</text>
+
+      <rect x="708" y="66" width="190" height="72" rx="6" class="d-box"/>
+      <text x="724" y="94" class="d-t">Board · ribbon</text>
+      <text x="724" y="112" class="d-m">one run per request</text>
+      <text x="724" y="128" class="d-code-m">boardOnce()</text>
+
+      <line x1="230" y1="102" x2="260" y2="102" class="d-edge" marker-end="url(#a1)"/>
+      <line x1="452" y1="102" x2="482" y2="102" class="d-edge" marker-end="url(#a1)"/>
+      <line x1="674" y1="102" x2="704" y2="102" class="d-edge" marker-end="url(#a1)"/>
+
+      <!-- boundary -->
+      <line x1="24" y1="212" x2="916" y2="212" class="d-rule"/>
+      <text x="24" y="204" class="d-lab">THE ENFORCEMENT BOUNDARY (D19) — CROSSED IN ONE DIRECTION ONLY</text>
+
+      <!-- the permitted crossing -->
+      <path d="M 579 140 C 579 180, 135 180, 135 264" class="d-edge-accent" marker-end="url(#a1x)"/>
+      <text x="330" y="176" class="d-accent-t">driftAtSpawn — the session records the premise it started from</text>
+
+      <!-- the forbidden one -->
+      <line x1="860" y1="264" x2="860" y2="170" class="d-edge-drift" stroke-dasharray="5 4"/>
+      <path d="M853 200 l14 14 M867 200 l-14 14" class="d-edge-drift"/>
+      <text x="704" y="248" class="d-drift-t">the portfolio never reads</text>
+      <text x="704" y="260" class="d-drift-t">the execution store</text>
+
+      <!-- execution band -->
+      <rect x="24" y="248" width="892" height="150" rx="8" class="d-band"/>
+      <text x="42" y="284" class="d-lab">EXECUTION LAYER — PER PROJECT, OPT-IN VIA agentos.yml</text>
+
+      <rect x="42" y="296" width="186" height="82" rx="6" class="d-box-accent"/>
+      <text x="58" y="324" class="d-t">dispatch()</text>
+      <text x="58" y="342" class="d-m">5 preconditions</text>
+      <text x="58" y="360" class="d-m">one funnel, never a scanner</text>
+
+      <rect x="264" y="296" width="186" height="82" rx="6" class="d-box"/>
+      <text x="280" y="324" class="d-t">git worktree</text>
+      <text x="280" y="342" class="d-m">detached, ephemeral</text>
+      <text x="280" y="360" class="d-code-m">$TMPDIR/agentos/&lt;sid&gt;</text>
+
+      <rect x="486" y="296" width="186" height="82" rx="6" class="d-box"/>
+      <text x="502" y="324" class="d-t">Agent SDK session</text>
+      <text x="502" y="342" class="d-m">2 in-process MCP servers</text>
+      <text x="502" y="360" class="d-m">+ a two-layer approval gate</text>
+
+      <rect x="708" y="296" width="190" height="82" rx="6" class="d-box"/>
+      <text x="724" y="324" class="d-t">the record</text>
+      <text x="724" y="342" class="d-m">sessions · tool calls · shas</text>
+      <text x="724" y="360" class="d-code-m">data/agentos.sqlite</text>
+
+      <line x1="230" y1="337" x2="260" y2="337" class="d-edge" marker-end="url(#a1)"/>
+      <line x1="452" y1="337" x2="482" y2="337" class="d-edge" marker-end="url(#a1)"/>
+      <line x1="674" y1="337" x2="704" y2="337" class="d-edge" marker-end="url(#a1)"/>
+    </svg>
+    <figcaption><b>The layer boundary is a code fact, not a diagram convention.</b> Nothing under
+    <code>lib/reconcile/</code> imports anything under <code>lib/agentos/</code>. The single crossing runs
+    the other way: <code>dispatch()</code> calls <code>boardOnce()</code> and freezes the project's
+    reconciliation verdict onto the session row, so a session that ran on a false premise says so
+    afterwards. Even the boot hook honours it — <code>instrumentation.ts</code> opens the execution
+    store only if the file already exists, so a portfolio-only install never conjures one.</figcaption>
+  </figure>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s2">
+  <span class="sec-num">§2</span>
+  <h2>System map</h2>
+  <p class="sec-intro">Where the code lives, and how much of it there is.</p>
+
+  <div class="stats">
+    <div class="stat"><span class="v">4,315</span><span class="k">lines of logic in <span class="mono" style="font-size:.9em">lib/</span><br>with 2,495 more in routes and components</span></div>
+    <div class="stat"><span class="v">4,255</span><span class="k">lines of acceptance harness<br><span class="mono" style="font-size:.9em">scripts/*.mts</span> + the runner smoke test</span></div>
+    <div class="stat"><span class="v">8</span><span class="k">tables in the execution store, one migration</span></div>
+    <div class="stat"><span class="v">30</span><span class="k">closed decision records, D1–D30</span></div>
+    <div class="stat"><span class="v">1</span><span class="k">mockable seam in the whole execution slice</span></div>
+  </div>
+
+  <p>The ratio in the first two tiles is the project's most characteristic number: the verification
+  harness is roughly the size of the thing it verifies. That is deliberate — the execution layer
+  spawns processes, writes files and spends money, and every check that could be run without doing
+  any of those was written so that it is.</p>
+
+  <figure>
+    <svg viewBox="0 0 900 300" role="img" aria-label="Horizontal bar chart of source lines by module. lib/agentos 2395 lines, app routes and actions 1477, components 1018, portfolio reconcile and collectors 791, lib/tasks 577, lib/fix 447, lib/shell 105.">
+      <text x="0" y="14" class="c-title">Source lines by module</text>
+      <text x="0" y="32" class="c-lab">EXCLUDING TESTS · MEASURED WITH wc -l</text>
+
+      <g transform="translate(212,52)">
+        <line x1="0" y1="0" x2="0" y2="224" class="c-axis"/>
+        <line x1="139" y1="0" x2="139" y2="224" class="c-grid"/>
+        <line x1="278" y1="0" x2="278" y2="224" class="c-grid"/>
+        <line x1="417" y1="0" x2="417" y2="224" class="c-grid"/>
+        <line x1="556" y1="0" x2="556" y2="224" class="c-grid"/>
+        <text x="139" y="240" class="c-lab" text-anchor="middle">600</text>
+        <text x="278" y="240" class="c-lab" text-anchor="middle">1200</text>
+        <text x="417" y="240" class="c-lab" text-anchor="middle">1800</text>
+        <text x="556" y="240" class="c-lab" text-anchor="middle">2400</text>
+
+        <rect x="0" y="4" width="555" height="20" rx="4" class="c-bar"><title>lib/agentos — 2,395 lines</title></rect>
+        <text x="565" y="19" class="c-val">2,395</text>
+        <rect x="0" y="36" width="342" height="20" rx="4" class="c-bar"><title>app/ routes and server actions — 1,477 lines</title></rect>
+        <text x="352" y="51" class="c-val">1,477</text>
+        <rect x="0" y="68" width="236" height="20" rx="4" class="c-bar"><title>components/ — 1,018 lines</title></rect>
+        <text x="246" y="83" class="c-val">1,018</text>
+        <rect x="0" y="100" width="183" height="20" rx="4" class="c-bar"><title>lib/reconcile + lib/collectors + types — 791 lines</title></rect>
+        <text x="193" y="115" class="c-val">791</text>
+        <rect x="0" y="132" width="134" height="20" rx="4" class="c-bar"><title>lib/tasks — 577 lines</title></rect>
+        <text x="144" y="147" class="c-val">577</text>
+        <rect x="0" y="164" width="104" height="20" rx="4" class="c-bar"><title>lib/fix — 447 lines</title></rect>
+        <text x="114" y="179" class="c-val">447</text>
+        <rect x="0" y="196" width="24" height="20" rx="4" class="c-bar"><title>lib/shell — 105 lines</title></rect>
+        <text x="34" y="211" class="c-val">105</text>
+      </g>
+
+      <g class="c-cat" text-anchor="end">
+        <text x="200" y="71">lib/agentos</text>
+        <text x="200" y="103">app/ routes + actions</text>
+        <text x="200" y="135">components/</text>
+        <text x="200" y="167">lib/reconcile + collectors</text>
+        <text x="200" y="199">lib/tasks</text>
+        <text x="200" y="231">lib/fix</text>
+        <text x="200" y="263">lib/shell</text>
+      </g>
+    </svg>
+    <figcaption><b><code>lib/shell</code> is the smallest module and holds the most rules per line.</b>
+    The shell's components are deliberately dumb; every decision that could be <em>wrong</em> — which
+    projects the ribbon may show, whether a drift band appears, what a slug resolves to — is a pure
+    function there, so the acceptance suite asserts it without rendering a route.</figcaption>
+  </figure>
+
+  <div class="deflist">
+    <div><span class="term">lib/collectors/</span><span class="desc">Facts from outside: <code>git.ts</code>, <code>github.ts</code> (via the <code>gh</code> CLI), <code>itqan-docs.ts</code> (role coverage and claim extraction), <code>exec.ts</code> (the subprocess wrapper).</span></div>
+    <div><span class="term">lib/reconcile/</span><span class="desc">The eight drift checks, the severity ranking, and <code>boardOnce</code> — a React <code>cache()</code> wrapper that guarantees one collector run per request.</span></div>
+    <div><span class="term">lib/fix/</span><span class="desc">The only write path toward a watched repo. <code>propose.ts</code> is pure and reads only; <code>apply.ts</code> holds four guards; <code>verified.ts</code> stores local acknowledgements.</span></div>
+    <div><span class="term">lib/shell/</span><span class="desc">The app shell as pure functions over a board report: ribbon model, drift band, project navigation.</span></div>
+    <div><span class="term">lib/agentos/</span><span class="desc">The execution layer: schema and accessors, worktrees, the runner seam, two MCP servers, the approval gate, <code>dispatch()</code>, the boot sweep.</span></div>
+    <div><span class="term">lib/tasks/</span><span class="desc">Card, session and inbox view models — again pure, again so the suite can assert them without a DOM.</span></div>
+    <div><span class="term">scripts/*.mts</span><span class="desc">One acceptance script per stage, discovered rather than listed.</span></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s3">
+  <span class="sec-num">§3</span>
+  <h2>The portfolio layer</h2>
+  <p class="sec-intro">Collect facts, compare them against what documents claim, and never let the
+  comparison assert more than it checked.</p>
+
+  <figure>
+    <svg viewBox="0 0 1000 330" role="img" aria-label="Reconciliation pipeline: a repo on disk feeds three independent collectors, whose facts feed eight drift checks, which are ranked into one project severity and sorted onto the Board.">
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head"/>
+        </marker>
+      </defs>
+
+      <rect x="16" y="124" width="118" height="80" rx="6" class="d-box"/>
+      <text x="32" y="152" class="d-t-s">repo on disk</text>
+      <text x="32" y="170" class="d-m">+ its remote</text>
+      <text x="32" y="188" class="d-code-m">gh api</text>
+
+      <rect x="178" y="44" width="172" height="58" rx="6" class="d-box"/>
+      <text x="192" y="68" class="d-code">collectGit</text>
+      <text x="192" y="88" class="d-m">branch · dirty · ahead/behind</text>
+
+      <rect x="178" y="132" width="172" height="58" rx="6" class="d-box"/>
+      <text x="192" y="156" class="d-code">collectGitHub</text>
+      <text x="192" y="176" class="d-m">open PRs · merged frontier</text>
+
+      <rect x="178" y="220" width="172" height="58" rx="6" class="d-box"/>
+      <text x="192" y="244" class="d-code">collectDocs</text>
+      <text x="192" y="264" class="d-m">7 roles · claims · mtime</text>
+
+      <path d="M134 164 C 156 164, 156 73, 174 73" class="d-edge" marker-end="url(#a2)"/>
+      <line x1="134" y1="164" x2="174" y2="161" class="d-edge" marker-end="url(#a2)"/>
+      <path d="M134 164 C 156 164, 156 249, 174 249" class="d-edge" marker-end="url(#a2)"/>
+
+      <rect x="394" y="34" width="212" height="256" rx="6" class="d-box-2"/>
+      <text x="410" y="56" class="d-lab">EIGHT CHECKS, INDEPENDENT</text>
+      <g class="d-code">
+        <text x="410" y="82">DC1 PR frontier</text>
+        <text x="410" y="108">DC2 "Next up" done</text>
+        <text x="410" y="134">DC3 doc older than HEAD</text>
+        <text x="410" y="160">DC4 uncommitted work</text>
+        <text x="410" y="186">DC5 ahead / behind</text>
+        <text x="410" y="212">DC6 PR aging, no review</text>
+        <text x="410" y="238">DC7 stalled</text>
+        <text x="410" y="264">DC8 role gaps</text>
+      </g>
+      <rect x="576" y="72" width="8" height="14" rx="2" fill="var(--drift)"/>
+      <rect x="576" y="98" width="8" height="14" rx="2" fill="var(--drift)"/>
+      <rect x="576" y="124" width="8" height="14" rx="2" fill="var(--attention)"/>
+      <rect x="576" y="150" width="8" height="14" rx="2" fill="var(--attention)"/>
+      <rect x="576" y="176" width="8" height="14" rx="2" fill="var(--attention)"/>
+      <rect x="576" y="202" width="8" height="14" rx="2" fill="var(--attention)"/>
+      <rect x="576" y="228" width="8" height="14" rx="2" fill="var(--attention)"/>
+      <rect x="576" y="254" width="8" height="14" rx="2" fill="var(--attention)"/>
+
+      <line x1="354" y1="73" x2="390" y2="120" class="d-edge" marker-end="url(#a2)"/>
+      <line x1="354" y1="161" x2="390" y2="161" class="d-edge" marker-end="url(#a2)"/>
+      <line x1="354" y1="249" x2="390" y2="202" class="d-edge" marker-end="url(#a2)"/>
+
+      <rect x="650" y="118" width="172" height="88" rx="6" class="d-box"/>
+      <text x="666" y="144" class="d-code">overallSeverity()</text>
+      <text x="666" y="164" class="d-m">worst check wins …</text>
+      <text x="666" y="182" class="d-m">… unless nothing was</text>
+      <text x="666" y="198" class="d-m">checkable at all</text>
+      <line x1="610" y1="162" x2="646" y2="162" class="d-edge" marker-end="url(#a2)"/>
+
+      <rect x="866" y="118" width="118" height="88" rx="6" class="d-box"/>
+      <text x="880" y="144" class="d-t-s">one board row</text>
+      <text x="880" y="164" class="d-m">sorted worst-first</text>
+      <text x="880" y="184" class="d-code-m">checkedAtISO</text>
+      <line x1="826" y1="162" x2="862" y2="162" class="d-edge" marker-end="url(#a2)"/>
+
+      <text x="16" y="316" class="d-m">Collectors run in parallel and fail independently — a dead <tspan class="d-code">gh</tspan> degrades one row's GitHub facts, never the board.</text>
+    </svg>
+    <figcaption><b>Failure is per-collector, not per-board.</b> <code>buildBoard</code> uses
+    <code>Promise.allSettled</code>, so a project whose reconciliation throws becomes one
+    <span class="chip unver">unverifiable</span> row carrying the reason, and every other project still
+    renders. A <code>degraded</code> flag on the report is what makes the ribbon refuse to show
+    severities at all.</figcaption>
+  </figure>
+
+  <h3>The check catalogue</h3>
+  <p>Each check produces a <code>CheckResult</code> carrying a severity, a one-line headline, the claim
+  it read <em>verbatim</em>, what git said instead, a confidence, and the file the claim came from. Only
+  DC1 carries fix data — and its absence, not a disabled button, is how the interface signals that a
+  drift has no automatic correction.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>Check</th><th>Fires when</th><th>Severity</th><th>Conf.</th><th>Fix</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="id">DC1</td>
+          <td>A document claims a merged-PR range whose upper bound trails the real frontier, or open PRs sit past it</td>
+          <td><span class="chip drift">drift</span></td>
+          <td class="num">claim's own</td>
+          <td><strong>Yes</strong> — one integer, spliced</td>
+        </tr>
+        <tr>
+          <td class="id">DC2</td>
+          <td>A "Next up" line names a PR that has already merged</td>
+          <td><span class="chip drift">drift</span></td>
+          <td class="num">0.6</td>
+          <td>No — deleting a plan line is editorial judgement, and this runs at a coin-flip</td>
+        </tr>
+        <tr>
+          <td class="id">DC3</td>
+          <td>The state document is older than the last commit</td>
+          <td><span class="chip attention">attention</span> &lt; 7d<br><span class="chip drift">drift</span> ≥ 7d</td>
+          <td class="num">1.0</td>
+          <td>No — nothing in the text is <em>wrong</em>; the fix is authorship</td>
+        </tr>
+        <tr>
+          <td class="id">DC4</td>
+          <td>Uncommitted files reach the project's own <code>dirtyThreshold</code></td>
+          <td><span class="chip attention">attention</span></td>
+          <td class="num">1.0</td>
+          <td>No — not a claim. A working tree is a fact, not a sentence</td>
+        </tr>
+        <tr>
+          <td class="id">DC5</td>
+          <td>The branch is ahead of or behind its remote</td>
+          <td><span class="chip attention">attention</span></td>
+          <td class="num">1.0</td>
+          <td>No — not a claim</td>
+        </tr>
+        <tr>
+          <td class="id">DC6</td>
+          <td>A non-draft PR has been open ≥ 3 days with no review decision</td>
+          <td><span class="chip attention">attention</span></td>
+          <td class="num">1.0</td>
+          <td>No — it needs a review, not an edit</td>
+        </tr>
+        <tr>
+          <td class="id">DC7</td>
+          <td>No commit for the project's own <code>stalledAfterDays</code></td>
+          <td><span class="chip attention">attention</span></td>
+          <td class="num">1.0</td>
+          <td>No — it needs a commit</td>
+        </tr>
+        <tr>
+          <td class="id">DC8</td>
+          <td>One of the seven itqan roles is not instantiated <span class="mono">(skipped for the framework repo, which defines them)</span></td>
+          <td><span class="chip attention">attention</span></td>
+          <td class="num">1.0</td>
+          <td>No — someone has to write the missing role</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note rule">
+    <span class="label">Design rule</span>
+    <p style="margin-bottom:0">Every "No" above ships with the sentence in the last column, rendered on
+    the card. "No fix available" with no explanation reads as a broken feature; the truth — that most
+    drift is not a wrong string — is a better answer and is stored in
+    <code>NO_FIX_REASON</code> alongside the code that decides it.</p>
+  </div>
+
+  <h3>Four severities, because three would lie</h3>
+  <p>A project's severity is the worst of its checks, ranked
+  <span class="mono">drift 3 &gt; attention 2 &gt; unverifiable 1 &gt; in-sync 0</span> — with one
+  override that is the whole reason the fourth state exists.</p>
+
+  <pre><span class="c">// lib/reconcile/checks.ts</span>
+if (worst === "drift") return "drift";
+<span class="c">// No state doc and not the framework repo → nothing was verifiable.</span>
+if (!stateDocPath &amp;&amp; !cfg.isFrameworkRepo) return "unverifiable";
+return worst;</pre>
+
+  <p>A project with no state document has <em>made no claim</em>, so nothing was compared against
+  reality. Calling that "in sync" would assert a verification that never ran — the product breaking
+  its own never-assert-without-a-check rule on its main screen. <span class="chip unver">unverifiable</span>
+  is not a degraded green; it is a different sentence: <em>nothing to check</em> as against
+  <em>checked, and fine</em>.</p>
+
+  <h3>Claim extraction is high-precision only</h3>
+  <p>Claims are pulled out of state documents by patterns that must match a full claim including its
+  verb. A proximity pattern of the shape <code>/PR #(\d+) .{0,40}? (merged|open)/</code> was written,
+  tested against a real handoff document, and rejected.</p>
+
+  <div class="note trap">
+    <span class="label">Why proximity matching is prohibited</span>
+    <p>It captured <span class="mono">"PR #5 unmerged"</span> as <strong>merged</strong> — because
+    <code>merged</code> matches as a substring of <code>unmerged</code>. It also paired
+    <span class="mono">"#24"</span> with a <code>merged</code> belonging to a different clause.</p>
+    <p style="margin-bottom:0">Both would have shipped confident, wrong drift reports. A drift dashboard
+    that invents drift is worse than no dashboard, because it teaches you to ignore it.</p>
+  </div>
+
+  <p>Each surviving claim keeps two representations: <code>text</code>, whitespace-normalised, for
+  quoting in the interface, and <code>raw</code>, byte-exact with its line breaks, which is the only
+  thing a correction is ever allowed to splice. It also keeps its character offset in the source file.</p>
+
+  <h3>Acknowledgements expire by construction</h3>
+  <p>"Mark verified" records that a human looked at a drift and accepted it. It is keyed by a
+  <code>claimHash</code> built from the claim's own text <em>and</em> the verified frontier:</p>
+
+  <pre>claimHash = sha256(project + <span class="k">":DC1:"</span> + claim.text + <span class="k">":"</span> + github.maxMerged).slice(0, 12)</pre>
+
+  <p>So the acknowledgement dies the moment either side of the comparison moves. There is no expiry
+  logic to get wrong and no way to silence a drift that has since become a different drift. It records
+  that you <em>looked</em>, never what is true — storing a status there would be the second source of
+  truth the product exists to prevent.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s4">
+  <span class="sec-num">§4</span>
+  <h2>The write path</h2>
+  <p class="sec-intro">Everything else in the portfolio layer reads. This is the one thing that
+  writes, and it is built as if the browser were hostile.</p>
+
+  <figure>
+    <svg viewBox="0 0 960 380" role="img" aria-label="The approval write path: the browser posts only a project name and a claim hash; the server rebuilds the proposal from disk, runs four guards, and either writes every file or none. The result is an unstaged working-tree edit with no git operations.">
+      <defs>
+        <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head"/>
+        </marker>
+        <marker id="a3d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head-drift"/>
+        </marker>
+      </defs>
+
+      <rect x="16" y="40" width="166" height="86" rx="6" class="d-box"/>
+      <text x="30" y="64" class="d-lab">BROWSER</text>
+      <text x="30" y="86" class="d-code">project name</text>
+      <text x="30" y="104" class="d-code">claimHash</text>
+      <text x="30" y="120" class="d-m">— and nothing else</text>
+
+      <line x1="184" y1="83" x2="222" y2="83" class="d-edge" marker-end="url(#a3)"/>
+
+      <rect x="226" y="40" width="200" height="86" rx="6" class="d-box-accent"/>
+      <text x="240" y="64" class="d-lab">SERVER ACTION</text>
+      <text x="240" y="86" class="d-t-s">re-reconcile the project</text>
+      <text x="240" y="106" class="d-t-s">rebuild the proposal</text>
+      <text x="240" y="122" class="d-m">from disk, from scratch</text>
+
+      <line x1="326" y1="128" x2="326" y2="162" class="d-edge" marker-end="url(#a3)"/>
+
+      <rect x="150" y="166" width="352" height="176" rx="6" class="d-box-2"/>
+      <text x="166" y="188" class="d-lab">FOUR GUARDS — ALL MUST PASS, FOR EVERY FILE</text>
+
+      <rect x="166" y="200" width="320" height="30" rx="4" class="d-box"/>
+      <text x="180" y="220" class="d-code">1  resolves inside the project root</text>
+      <rect x="166" y="236" width="320" height="30" rx="4" class="d-box"/>
+      <text x="180" y="256" class="d-code">2  is a state or lessons file</text>
+      <rect x="166" y="272" width="320" height="30" rx="4" class="d-box"/>
+      <text x="180" y="292" class="d-code">3  sha256 unchanged since proposal</text>
+      <rect x="166" y="308" width="320" height="30" rx="4" class="d-box"/>
+      <text x="180" y="328" class="d-code">4  verify all, then write all</text>
+
+      <line x1="506" y1="254" x2="560" y2="254" class="d-edge" marker-end="url(#a3)"/>
+
+      <rect x="564" y="212" width="200" height="86" rx="6" class="d-box-sync"/>
+      <text x="578" y="238" class="d-t-s">two files written</text>
+      <text x="578" y="258" class="d-m">the correction, and the</text>
+      <text x="578" y="274" class="d-m">lesson that pairs with it</text>
+      <text x="578" y="292" class="d-code-m">unstaged. stop.</text>
+
+      <line x1="506" y1="220" x2="560" y2="150" class="d-edge-drift" marker-end="url(#a3d)"/>
+      <rect x="564" y="104" width="200" height="80" rx="6" class="d-box-drift"/>
+      <text x="578" y="128" class="d-lab">ANY GUARD FAILS</text>
+      <text x="578" y="150" class="d-t-s">nothing is written</text>
+      <text x="578" y="170" class="d-m">the reason is shown verbatim</text>
+
+      <rect x="790" y="212" width="154" height="86" rx="6" class="d-box"/>
+      <text x="804" y="238" class="d-lab">NEVER HAPPENS</text>
+      <text x="804" y="258" class="d-code-m">git add</text>
+      <text x="804" y="274" class="d-code-m">git commit</text>
+      <text x="804" y="290" class="d-code-m">git push</text>
+      <line x1="768" y1="255" x2="786" y2="255" class="d-edge-dash"/>
+
+      <text x="16" y="366" class="d-m">Undo is <tspan class="d-code">git checkout -- &lt;file&gt;</tspan>, and the interface says so. Tracking prior state in the app would be a second source of truth; git already has one.</text>
+    </svg>
+    <figcaption><b>The browser cannot name a write target or supply the bytes to write.</b> The form
+    posts a project name and a claim hash; the server re-runs reconciliation, finds the check with that
+    hash, and rebuilds the proposal from the repository's current contents. A drift that changed while
+    the page sat open no longer hash-matches, and the approval is refused with a sentence saying
+    exactly that — which is the correct outcome, not a failure.</figcaption>
+  </figure>
+
+  <div class="note trap">
+    <span class="label">A guard must not take its bounds from the thing it is bounding</span>
+    <p style="margin-bottom:0">An earlier version of guard 2 read the allowed target out of
+    <code>proposal.writes[0].relPath</code>. That is circular: a proposal naming <code>README.md</code>
+    had <code>README.md</code> allowed, and only the content hash further down stopped the write.
+    <code>allowedTargets()</code> now resolves the state and lessons files from the <em>repository's own</em>
+    role detection, independently of the proposal.</p>
+  </div>
+
+  <p>Corrections are computed, never generated. The no-egress invariant forbids asking a model to draft
+  the prose, and that constraint produced the better design anyway: a one-integer splice is reviewable at
+  a glance, which is the only thing that makes an approval gate meaningful. The gate's second button
+  <em>acknowledges</em> rather than rejects — a rejection would be a stored opinion about a fact, and
+  facts are re-derived on every load.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s5">
+  <span class="sec-num">§5</span>
+  <h2>The execution store</h2>
+  <p class="sec-intro">Eight tables in <code>data/agentos.sqlite</code>, opened through Node's built-in
+  <code>node:sqlite</code>, migrated by <code>PRAGMA user_version</code>, with foreign keys on.</p>
+
+  <figure>
+    <svg viewBox="0 0 980 560" role="img" aria-label="Entity relationship diagram of eight tables: Project owns Agent and Task; Task owns TaskEvent and Session; Session owns ToolCall, InboxMessage and CommitSha; InboxMessage also references Task.">
+      <defs>
+        <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head"/>
+        </marker>
+      </defs>
+
+      <!-- Project -->
+      <rect x="20" y="30" width="216" height="146" rx="6" class="d-box"/>
+      <rect x="20" y="30" width="216" height="28" rx="6" class="d-box-accent"/>
+      <text x="34" y="49" class="d-t-s">Project</text>
+      <g class="d-code-m">
+        <text x="34" y="76">id · slug (unique)</text>
+        <text x="34" y="94">primaryRepoPath</text>
+        <text x="34" y="112">yamlPath</text>
+        <text x="34" y="130">defaultAgentId →</text>
+        <text x="34" y="148">maxConcurrentSessions</text>
+        <text x="34" y="166">createdAt</text>
+      </g>
+
+      <!-- Agent -->
+      <rect x="300" y="30" width="216" height="164" rx="6" class="d-box"/>
+      <rect x="300" y="30" width="216" height="28" rx="6" class="d-box-2"/>
+      <text x="314" y="49" class="d-t-s">Agent</text>
+      <g class="d-code-m">
+        <text x="314" y="76">id · projectId</text>
+        <text x="314" y="94">name · monogram · model</text>
+        <text x="314" y="112">rolePrompt</text>
+        <text x="314" y="130">allowedToolsJson</text>
+        <text x="314" y="148">disallowedToolsJson</text>
+        <text x="314" y="166">canCommit</text>
+        <text x="314" y="184">maxTurns · maxBudgetUsd</text>
+      </g>
+      <line x1="240" y1="88" x2="296" y2="88" class="d-edge" marker-end="url(#a4)"/>
+      <text x="244" y="80" class="d-lab">1..N</text>
+
+      <!-- Task -->
+      <rect x="300" y="230" width="216" height="146" rx="6" class="d-box"/>
+      <rect x="300" y="230" width="216" height="28" rx="6" class="d-box-2"/>
+      <text x="314" y="249" class="d-t-s">Task</text>
+      <g class="d-code-m">
+        <text x="314" y="276">id · projectId</text>
+        <text x="314" y="294">name · description</text>
+        <text x="314" y="312">status  todo|doing|review|done</text>
+        <text x="314" y="330">blockedReason</text>
+        <text x="314" y="348">approvalGate</text>
+        <text x="314" y="366">assigneeAgentId →</text>
+      </g>
+      <path d="M128 180 L128 300 L296 300" class="d-edge" marker-end="url(#a4)"/>
+      <text x="134" y="240" class="d-lab">1..N</text>
+      <path d="M408 198 L408 226" class="d-edge-dash" marker-end="url(#a4)"/>
+      <text x="414" y="216" class="d-lab">ASSIGNEE · NULL = HUMAN-ONLY</text>
+
+      <!-- TaskEvent -->
+      <rect x="20" y="392" width="216" height="128" rx="6" class="d-box"/>
+      <rect x="20" y="392" width="216" height="28" rx="6" class="d-box-2"/>
+      <text x="34" y="411" class="d-t-s">TaskEvent</text>
+      <g class="d-code-m">
+        <text x="34" y="438">id · taskId</text>
+        <text x="34" y="456">fromStatus → toStatus</text>
+        <text x="34" y="474">actorType session|human|system</text>
+        <text x="34" y="492">actorId · reason</text>
+        <text x="34" y="510">atISO</text>
+      </g>
+      <path d="M304 340 L268 340 L268 440 L240 440" class="d-edge" marker-end="url(#a4)"/>
+      <text x="150" y="380" class="d-lab">EVERY STATUS WRITE, PAIRED, IN ONE TRANSACTION</text>
+
+      <!-- Session -->
+      <rect x="580" y="230" width="220" height="200" rx="6" class="d-box"/>
+      <rect x="580" y="230" width="220" height="28" rx="6" class="d-box-accent"/>
+      <text x="594" y="249" class="d-t-s">Session</text>
+      <g class="d-code-m">
+        <text x="594" y="276">id · taskId · agentId</text>
+        <text x="594" y="294">sdkSessionId</text>
+        <text x="594" y="312">status (5 values)</text>
+        <text x="594" y="330">triggerKind</text>
+        <text x="594" y="348">worktreePath · baseRef</text>
+        <text x="594" y="366">costUsd</text>
+        <text x="594" y="384">pid · bootId</text>
+        <text x="594" y="402">driftAtSpawnJson</text>
+        <text x="594" y="420">started/endedAtISO · reason</text>
+      </g>
+      <line x1="520" y1="300" x2="576" y2="300" class="d-edge" marker-end="url(#a4)"/>
+      <text x="524" y="292" class="d-lab">1..N</text>
+
+      <!-- ToolCall -->
+      <rect x="854" y="46" width="112" height="94" rx="6" class="d-box"/>
+      <rect x="854" y="46" width="112" height="26" rx="6" class="d-box-2"/>
+      <text x="866" y="64" class="d-t-s">ToolCall</text>
+      <g class="d-code-m">
+        <text x="866" y="90">sessionId</text>
+        <text x="866" y="108">seq · name</text>
+        <text x="866" y="126">inputJson</text>
+      </g>
+      <path d="M760 226 L760 93 L850 93" class="d-edge" marker-end="url(#a4)"/>
+
+      <!-- InboxMessage -->
+      <rect x="854" y="170" width="112" height="130" rx="6" class="d-box"/>
+      <rect x="854" y="170" width="112" height="26" rx="6" class="d-box-2"/>
+      <text x="866" y="188" class="d-t-s">InboxMessage</text>
+      <g class="d-code-m">
+        <text x="866" y="214">sessionId</text>
+        <text x="866" y="232">taskId</text>
+        <text x="866" y="250">kind question</text>
+        <text x="866" y="268">body · choices</text>
+        <text x="866" y="286">answer · status</text>
+      </g>
+      <line x1="804" y1="236" x2="850" y2="236" class="d-edge" marker-end="url(#a4)"/>
+
+      <!-- CommitSha -->
+      <rect x="854" y="330" width="112" height="80" rx="6" class="d-box"/>
+      <rect x="854" y="330" width="112" height="26" rx="6" class="d-box-2"/>
+      <text x="866" y="348" class="d-t-s">CommitSha</text>
+      <g class="d-code-m">
+        <text x="866" y="374">sessionId</text>
+        <text x="866" y="392">sha</text>
+        <text x="866" y="404">PK = the pair</text>
+      </g>
+      <line x1="804" y1="368" x2="850" y2="368" class="d-edge" marker-end="url(#a4)"/>
+
+      <text x="20" y="546" class="d-m">JSON columns are stored — and typed — as <tspan class="d-code">text</tspan>. The caller that needs the value parses it; neither the row types nor the accessors do.</text>
+    </svg>
+    <figcaption><b>Three columns exist only so the store cannot lie about itself.</b>
+    <code>pid</code> and <code>bootId</code> let a restart detect sessions that claim to be running
+    behind a process that is gone. <code>driftAtSpawnJson</code> is never null — an in-sync project gets
+    an explicit <span class="mono">in-sync</span> record, because an absent record and a clean project
+    must not look alike.</figcaption>
+  </figure>
+
+  <h3>Every status change is two writes or none</h3>
+  <p><code>writeTaskTransition</code> is the only function in the codebase that writes
+  <code>Task.status</code>. It updates the row and inserts the paired <code>TaskEvent</code> inside one
+  transaction, so a status with no event recording who moved it cannot exist. It is also where the
+  legality table lives — deliberately, because the most likely source of an illegal move is an agent's
+  own MCP tool call, and this is the one place a check holds for every caller at once.</p>
+
+  <pre><span class="c">// lib/agentos/db.ts — a human may always move a card, so there is no 'human' row</span>
+const LEGAL_TRANSITIONS = {
+  session: new Set([<span class="k">"todo&gt;doing"</span>, <span class="k">"doing&gt;review"</span>, <span class="k">"doing&gt;done"</span>]),
+  system:  new Set([<span class="k">"doing&gt;todo"</span>]),
+};</pre>
+
+  <figure>
+    <svg viewBox="0 0 900 260" role="img" aria-label="Task state machine. A session may move todo to doing, doing to review, and doing to done. The system may move doing back to todo. A human may make any move, recorded as hand-moved.">
+      <defs>
+        <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head"/>
+        </marker>
+        <marker id="a5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head-accent"/>
+        </marker>
+      </defs>
+
+      <rect x="30" y="90" width="150" height="56" rx="28" class="d-box"/>
+      <text x="105" y="124" class="d-t" text-anchor="middle">todo</text>
+
+      <rect x="270" y="90" width="150" height="56" rx="28" class="d-box"/>
+      <text x="345" y="124" class="d-t" text-anchor="middle">doing</text>
+
+      <rect x="510" y="90" width="150" height="56" rx="28" class="d-box"/>
+      <text x="585" y="124" class="d-t" text-anchor="middle">review</text>
+
+      <rect x="750" y="90" width="120" height="56" rx="28" class="d-box-sync"/>
+      <text x="810" y="124" class="d-t" text-anchor="middle">done</text>
+
+      <line x1="184" y1="118" x2="264" y2="118" class="d-edge-accent" marker-end="url(#a5a)"/>
+      <text x="224" y="108" class="d-accent-t" text-anchor="middle">session</text>
+      <text x="224" y="142" class="d-code-m" text-anchor="middle">dispatch()</text>
+
+      <line x1="424" y1="118" x2="504" y2="118" class="d-edge-accent" marker-end="url(#a5a)"/>
+      <text x="464" y="108" class="d-accent-t" text-anchor="middle">session</text>
+
+      <path d="M420 104 C 520 40, 700 40, 780 86" class="d-edge" marker-end="url(#a5)"/>
+      <text x="600" y="46" class="d-code-m" text-anchor="middle">session — only while approvalGate is false</text>
+
+      <path d="M300 150 C 240 200, 180 200, 130 152" class="d-edge" marker-end="url(#a5)"/>
+      <text x="215" y="196" class="d-code-m" text-anchor="middle">system — failed or interrupted, reason recorded</text>
+
+      <line x1="664" y1="118" x2="744" y2="118" class="d-edge" marker-end="url(#a5)"/>
+      <text x="704" y="108" class="d-lab" text-anchor="middle">HUMAN</text>
+
+      <rect x="510" y="196" width="360" height="46" rx="6" class="d-box-2"/>
+      <text x="526" y="216" class="d-t-s">A human may make any move at all —</text>
+      <text x="526" y="234" class="d-m">recorded as <tspan class="d-code">hand-moved</tspan>, and the card says so in a different typeface.</text>
+    </svg>
+    <figcaption><b>The gate is not encoded twice.</b> The <code>doing → done</code> arrow above is legal
+    in the shape table; whether <em>this</em> task may take it is decided by <code>approvalGate</code> in
+    the MCP tool handler, before the call reaches the data layer. The table judges the arrow's shape,
+    never the task's flags.</figcaption>
+  </figure>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s6">
+  <span class="sec-num">§6</span>
+  <h2>The dispatch funnel</h2>
+  <p class="sec-intro">Work is dispatched, never picked up. There is no poller, no worker and no queue —
+  a process that finds work and starts it is precisely the failure mode this product exists to catch,
+  automated.</p>
+
+  <p><code>dispatch(taskId, trigger)</code> only ever acts on a task id that something else already
+  named. It is the only door to a session: <code>createSession</code> is the sole function that inserts a
+  <code>Session</code> row, and one acceptance check asserts structurally that nothing outside
+  <code>dispatch.ts</code> imports it — by name <em>or</em> through a namespace import.</p>
+
+  <figure>
+    <svg viewBox="0 0 880 500" role="img" aria-label="The dispatch funnel: five preconditions checked in order, each with a named refusal, followed by the drift snapshot, worktree creation, session row, and the todo-to-doing transition. The run itself is started but not awaited.">
+      <defs>
+        <marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head"/>
+        </marker>
+        <marker id="a6d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head-drift"/>
+        </marker>
+      </defs>
+
+      <rect x="150" y="16" width="300" height="40" rx="6" class="d-box-accent"/>
+      <text x="300" y="41" class="d-code" text-anchor="middle">dispatch(taskId, trigger)</text>
+
+      <g>
+        <rect x="150" y="76" width="300" height="42" rx="6" class="d-box"/>
+        <text x="166" y="94" class="d-t-s">1 · the project has an execution layer</text>
+        <text x="166" y="111" class="d-code-m">existsSync(project.yamlPath)</text>
+        <line x1="454" y1="97" x2="516" y2="97" class="d-edge-drift" marker-end="url(#a6d)"/>
+        <text x="524" y="101" class="d-drift-t">refusedBy: "agentos.yml"</text>
+      </g>
+      <g>
+        <rect x="150" y="132" width="300" height="42" rx="6" class="d-box"/>
+        <text x="166" y="150" class="d-t-s">2 · the task is dispatchable</text>
+        <text x="166" y="167" class="d-code-m">status === 'todo' &amp;&amp; no live session on it</text>
+        <line x1="454" y1="153" x2="516" y2="153" class="d-edge-drift" marker-end="url(#a6d)"/>
+        <text x="524" y="157" class="d-drift-t">refusedBy: "dispatchable"</text>
+      </g>
+      <g>
+        <rect x="150" y="188" width="300" height="42" rx="6" class="d-box"/>
+        <text x="166" y="206" class="d-t-s">3 · the project is under its cap</text>
+        <text x="166" y="223" class="d-code-m">live &lt; project.maxConcurrentSessions</text>
+        <line x1="454" y1="209" x2="516" y2="209" class="d-edge-drift" marker-end="url(#a6d)"/>
+        <text x="524" y="213" class="d-drift-t">refusedBy: "concurrency"</text>
+      </g>
+      <g>
+        <rect x="150" y="244" width="300" height="42" rx="6" class="d-box"/>
+        <text x="166" y="262" class="d-t-s">4 · the agent resolves and composes</text>
+        <text x="166" y="279" class="d-code-m">assignee ≠ null · row exists · options build</text>
+        <line x1="454" y1="265" x2="516" y2="265" class="d-edge-drift" marker-end="url(#a6d)"/>
+        <text x="524" y="269" class="d-drift-t">refusedBy: "agent"</text>
+      </g>
+      <g>
+        <rect x="150" y="300" width="300" height="42" rx="6" class="d-box"/>
+        <text x="166" y="318" class="d-t-s">5 · the base ref resolves</text>
+        <text x="166" y="335" class="d-code-m">git rev-parse HEAD in the primary repo</text>
+        <line x1="454" y1="321" x2="516" y2="321" class="d-edge-drift" marker-end="url(#a6d)"/>
+        <text x="524" y="325" class="d-drift-t">refusedBy: "baseRef"</text>
+      </g>
+
+      <line x1="300" y1="60" x2="300" y2="72" class="d-edge" marker-end="url(#a6)"/>
+      <line x1="300" y1="120" x2="300" y2="128" class="d-edge" marker-end="url(#a6)"/>
+      <line x1="300" y1="176" x2="300" y2="184" class="d-edge" marker-end="url(#a6)"/>
+      <line x1="300" y1="232" x2="300" y2="240" class="d-edge" marker-end="url(#a6)"/>
+      <line x1="300" y1="288" x2="300" y2="296" class="d-edge" marker-end="url(#a6)"/>
+      <line x1="300" y1="344" x2="300" y2="366" class="d-edge" marker-end="url(#a6)"/>
+
+      <rect x="60" y="370" width="480" height="86" rx="6" class="d-box-2"/>
+      <text x="76" y="392" class="d-lab">ALL FIVE PASS — IN THIS ORDER, NOTHING BEFORE IT</text>
+      <text x="76" y="414" class="d-code-m">1  driftAtSpawn ← boardOnce()      the premise, frozen</text>
+      <text x="76" y="431" class="d-code-m">2  sessionId ← randomUUID()        names the worktree too</text>
+      <text x="76" y="448" class="d-code-m">3  worktree ← baseRef resolved to a sha, never "HEAD"</text>
+
+      <line x1="544" y1="412" x2="580" y2="412" class="d-edge" marker-end="url(#a6)"/>
+      <rect x="584" y="370" width="240" height="86" rx="6" class="d-box-sync"/>
+      <text x="600" y="392" class="d-lab">THEN, AND ONLY THEN</text>
+      <text x="600" y="414" class="d-code-m">createSession(...)</text>
+      <text x="600" y="431" class="d-code-m">todo → doing, actor = session</text>
+      <text x="600" y="448" class="d-code-m">void run(...)  — not awaited</text>
+
+      <text x="60" y="482" class="d-m">The HTTP request returns at the last line. The run settles on its own time, inside the same Node process.</text>
+    </svg>
+    <figcaption><b>A task id that names nothing throws rather than refusing.</b> The five refusals are
+    normal outcomes with names a UI can render; a missing task or a missing project row is a caller bug,
+    and inventing a sixth precondition for it would have made the refusal type stop being an exhaustive
+    list of the things that legitimately stop a dispatch.</figcaption>
+  </figure>
+
+  <h3>The worktree</h3>
+  <p>Every session runs in its own detached git worktree at
+  <code>$TMPDIR/agentos/&lt;sessionId&gt;</code>. Distinct session ids are what guarantee two runs never
+  share a directory.</p>
+
+  <figure>
+    <svg viewBox="0 0 940 190" role="img" aria-label="Worktree lifecycle: resolve the base ref to a sha, add a detached worktree, run the session there, read commit shas, then force-remove the worktree. Commits are read before removal.">
+      <defs>
+        <marker id="a7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head"/>
+        </marker>
+      </defs>
+      <line x1="30" y1="66" x2="912" y2="66" class="d-edge"/>
+      <g>
+        <circle cx="70" cy="66" r="7" class="d-box-accent"/>
+        <text x="70" y="44" class="d-t-s" text-anchor="middle">resolve</text>
+        <text x="70" y="94" class="d-code-m" text-anchor="middle">rev-parse</text>
+        <text x="70" y="110" class="d-code-m" text-anchor="middle">→ sha</text>
+      </g>
+      <g>
+        <circle cx="270" cy="66" r="7" class="d-box-accent"/>
+        <text x="270" y="44" class="d-t-s" text-anchor="middle">add</text>
+        <text x="270" y="94" class="d-code-m" text-anchor="middle">worktree add --detach</text>
+        <text x="270" y="110" class="d-code-m" text-anchor="middle">clean tree, every time</text>
+      </g>
+      <g>
+        <circle cx="480" cy="66" r="7" class="d-box-accent"/>
+        <text x="480" y="44" class="d-t-s" text-anchor="middle">run</text>
+        <text x="480" y="94" class="d-code-m" text-anchor="middle">options.cwd = worktree</text>
+        <text x="480" y="110" class="d-code-m" text-anchor="middle">commits land locally, detached</text>
+      </g>
+      <g>
+        <circle cx="700" cy="66" r="7" fill="var(--sync)"/>
+        <text x="700" y="44" class="d-t-s" text-anchor="middle">read shas</text>
+        <text x="700" y="94" class="d-code-m" text-anchor="middle">log &lt;sha&gt;..HEAD</text>
+        <text x="700" y="110" class="d-code-m" text-anchor="middle">before teardown — always</text>
+      </g>
+      <g>
+        <circle cx="880" cy="66" r="7" class="d-box"/>
+        <text x="880" y="44" class="d-t-s" text-anchor="middle">remove</text>
+        <text x="880" y="94" class="d-code-m" text-anchor="middle">--force</text>
+        <text x="880" y="110" class="d-code-m" text-anchor="middle">best-effort</text>
+      </g>
+      <text x="30" y="150" class="d-m">Storing <tspan class="d-code">baseRef: "HEAD"</tspan> verbatim would make <tspan class="d-code">git log HEAD..HEAD</tspan> empty — a committing session would record no commits at all. The ref is pinned to a sha before anything is created.</text>
+      <text x="30" y="174" class="d-m">A worktree is <tspan style="fill:var(--drift)">not a security boundary</tspan>: a local process can read outside its cwd. It buys a clean tree, an untouched owner checkout, and real local commits — nothing more.</text>
+    </svg>
+    <figcaption><b><code>--force</code> on removal is a decision, not laziness.</b> A failed run leaves a
+    dirty worktree, and refusing to clean up after exactly the runs most likely to need it is the wrong
+    default. Because forced removal leaves those commits unreferenced, the recorded sha is the only way
+    back to them — which is why the read happens first, on the failure path as well as the success one.</figcaption>
+  </figure>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s7">
+  <span class="sec-num">§7</span>
+  <h2>Session lifecycle</h2>
+  <p class="sec-intro">Five states, one of which exists purely so that a crashed server cannot leave a
+  row claiming to be alive.</p>
+
+  <figure>
+    <svg viewBox="0 0 940 340" role="img" aria-label="Session state machine. Running can pause to waiting-inbox and resume, or end as completed or failed. Both running and waiting-inbox are swept to interrupted on a server restart.">
+      <defs>
+        <marker id="a8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head"/>
+        </marker>
+        <marker id="a8a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head-accent"/>
+        </marker>
+      </defs>
+
+      <rect x="330" y="24" width="180" height="52" rx="26" class="d-box-accent"/>
+      <text x="420" y="55" class="d-t" text-anchor="middle">running</text>
+
+      <rect x="40" y="24" width="196" height="52" rx="26" class="d-box-att"/>
+      <text x="138" y="55" class="d-t" text-anchor="middle">waiting-inbox</text>
+
+      <rect x="640" y="24" width="180" height="52" rx="26" class="d-box-sync"/>
+      <text x="730" y="55" class="d-t" text-anchor="middle">completed</text>
+
+      <rect x="640" y="132" width="180" height="52" rx="26" class="d-box-drift"/>
+      <text x="730" y="163" class="d-t" text-anchor="middle">failed</text>
+
+      <rect x="330" y="240" width="180" height="52" rx="26" class="d-box-2"/>
+      <text x="420" y="271" class="d-t" text-anchor="middle">interrupted</text>
+
+      <path d="M326 40 L240 40" class="d-edge-accent" marker-end="url(#a8a)"/>
+      <text x="283" y="30" class="d-accent-t" text-anchor="middle">inbox_ask</text>
+      <path d="M240 62 L326 62" class="d-edge-accent" marker-end="url(#a8a)"/>
+      <text x="283" y="78" class="d-code-m" text-anchor="middle">a human answers</text>
+
+      <line x1="514" y1="40" x2="636" y2="40" class="d-edge" marker-end="url(#a8)"/>
+      <text x="575" y="30" class="d-code-m" text-anchor="middle">stream drains</text>
+
+      <path d="M470 80 L560 156 L636 158" class="d-edge" marker-end="url(#a8)"/>
+      <text x="556" y="126" class="d-code-m">run() rejects</text>
+
+      <path d="M420 80 L420 236" class="d-edge" marker-end="url(#a8)"/>
+      <path d="M138 80 C 138 200, 250 262, 326 266" class="d-edge" marker-end="url(#a8)"/>
+      <text x="200" y="220" class="d-code-m">bootId ≠ current</text>
+
+      <rect x="560" y="230" width="380" height="86" rx="6" class="d-box-2"/>
+      <text x="576" y="252" class="d-lab">THE SWEEP KEYS ON "NO LIVE OWNER", NOT ON status</text>
+      <text x="576" y="274" class="d-m">A <tspan class="d-code">waiting-inbox</tspan> session holds no process either, and its</text>
+      <text x="576" y="292" class="d-m"><tspan class="d-code">bootId</tspan> is just as stale. Nothing would ever resume it once the row</text>
+      <text x="576" y="310" class="d-m">naming its <tspan class="d-code">sdkSessionId</tspan> is orphaned from a dead process.</text>
+
+      <text x="40" y="322" class="d-m">Every terminal move also writes <tspan class="d-code">endedAtISO</tspan> and, on failure, a reason —</text>
+      <text x="40" y="338" class="d-m">and moves the task <tspan class="d-code">doing → todo</tspan> with actor <tspan class="d-code">system</tspan>.</text>
+    </svg>
+    <figcaption><b>A <code>running</code> row whose process is dead is a lie — inside the product whose
+    subject is exactly that.</b> Every session stores the process id and a <code>bootId</code> minted once
+    per server process. On startup, <code>instrumentation.ts</code> sweeps every session whose
+    <code>bootId</code> is not the current one, removes its worktree, records why, and moves the card
+    back. The loss shows on the card rather than being hidden.</figcaption>
+  </figure>
+
+  <h3>Pause and resume</h3>
+  <p>When an agent calls <code>inbox_ask</code>, the turn ends: the session goes to
+  <code>waiting-inbox</code> and its worktree is torn down. Answering creates a <em>fresh</em> worktree
+  from the same pinned base sha and resumes the SDK conversation via the stored
+  <code>sdkSessionId</code>.</p>
+
+  <div class="note trap">
+    <span class="label">The conversation resumes; the filesystem does not</span>
+    <p style="margin-bottom:0">Uncommitted work from the paused turn is gone. The tool's own description
+    is what tells the agent to commit before asking — a fact about the prompt, deliberately, rather than
+    a fact the system tries to enforce for it.</p>
+  </div>
+
+  <p>Two error paths here were found by review rather than by tests, and both are worth stating because
+  the fix for one created the other:</p>
+  <ul>
+    <li><strong>Teardown used to run before the terminal write.</strong> A failing
+    <code>worktree remove</code> therefore left the row saying <code>running</code> forever, with no end
+    time and no reason. Teardown is best-effort now and the terminal write always happens — and on
+    failure the session <em>keeps</em> its <code>worktreePath</code>, because that path is the only
+    pointer to a directory that may still exist.</li>
+    <li><strong>Keeping the path then collided on resume</strong>, since <code>createWorktree</code>
+    derives the same path from the same session id. <code>resumeSession</code> clears it first, and
+    otherwise fails with an error naming the path and telling you to remove it by hand.</li>
+  </ul>
+
+  <h3>The one capture point that survives a throw</h3>
+  <p>A single-shot <code>query()</code> in the Agent SDK throws <em>after</em> yielding its error
+  result — so the result, carrying the session id and the cost of work already done, arrives before the
+  throw. Code that wraps the loop in a <code>try</code> and treats the <code>catch</code> as "nothing
+  happened" discards a real session and a real charge.</p>
+
+  <pre><span class="c">// lib/agentos/runner/runner.ts — onMessage fires before run() settles, on both paths</span>
+onMessage: (message: SDKMessage) =&gt; void | Promise&lt;void&gt;;</pre>
+
+  <p><code>ToolCall</code> rows are written from that callback as they happen. Cost is recorded as the
+  SDK's own figure, verbatim and labelled as an estimate; a null cost renders as
+  <span class="mono">"cost unknown"</span> and never as <span class="mono">$0.00</span>, because a zero
+  states a fact about spend that nothing checked.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s8">
+  <span class="sec-num">§8</span>
+  <h2>The agent's surface, and the gate across it</h2>
+  <p class="sec-intro">Two in-process MCP servers, four tools, no task id parameter anywhere, and an
+  approval rule enforced twice on purpose.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Wire name</th><th>Server</th><th>Does</th></tr></thead>
+      <tbody>
+        <tr><td class="id">mcp__agentos__task_read</td><td>agentos</td><td>Reads <em>this session's</em> task. Takes no input at all.</td></tr>
+        <tr><td class="id">mcp__agentos__task_update_status</td><td>agentos</td><td>Moves the card. Where the approval gate bites.</td></tr>
+        <tr><td class="id">mcp__agentos__task_append_activity</td><td>agentos</td><td>Appends a note to the task's activity.</td></tr>
+        <tr><td class="id">mcp__inbox__inbox_ask</td><td>inbox</td><td>Asks the human a question and ends the turn. There is deliberately no <code>inbox_send</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Each server is constructed <em>per session</em>, closing over that session's task id. No tool takes
+  a task id as a parameter, so the agent has no way to name a different task to act on — the guard
+  derives its own bounds rather than trusting an argument.</p>
+
+  <figure>
+    <svg viewBox="0 0 900 320" role="img" aria-label="The two-layer approval gate. A tool call passes first through canUseTool, which denies with a readable message, and then through the tool handler, which re-derives the task from the database and refuses independently.">
+      <defs>
+        <marker id="a9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head"/>
+        </marker>
+        <marker id="a9d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" class="d-head-drift"/>
+        </marker>
+      </defs>
+
+      <rect x="20" y="112" width="150" height="64" rx="6" class="d-box"/>
+      <text x="36" y="138" class="d-t-s">the agent calls</text>
+      <text x="36" y="158" class="d-code-m">task_update_status</text>
+      <text x="36" y="172" class="d-code-m">{ status: "done" }</text>
+
+      <line x1="174" y1="144" x2="216" y2="144" class="d-edge" marker-end="url(#a9)"/>
+
+      <rect x="220" y="96" width="220" height="96" rx="6" class="d-box-att"/>
+      <text x="236" y="118" class="d-lab">LAYER 1 · canUseTool</text>
+      <text x="236" y="142" class="d-t-s">the SDK's runtime callback</text>
+      <text x="236" y="162" class="d-m">matches the <tspan style="font-weight:600">qualified</tspan> wire name</text>
+      <text x="236" y="180" class="d-m">denies with a message it can read</text>
+
+      <line x1="444" y1="144" x2="486" y2="144" class="d-edge" marker-end="url(#a9)"/>
+
+      <rect x="490" y="96" width="230" height="96" rx="6" class="d-box-accent"/>
+      <text x="506" y="118" class="d-lab">LAYER 2 · THE TOOL HANDLER</text>
+      <text x="506" y="142" class="d-t-s">re-reads the task from SQLite</text>
+      <text x="506" y="162" class="d-m">refuses on its own authority —</text>
+      <text x="506" y="180" class="d-m">this is the layer the suite asserts</text>
+
+      <line x1="724" y1="144" x2="766" y2="144" class="d-edge" marker-end="url(#a9)"/>
+      <rect x="770" y="112" width="112" height="64" rx="6" class="d-box-sync"/>
+      <text x="786" y="140" class="d-t-s">the write,</text>
+      <text x="786" y="158" class="d-t-s">if allowed</text>
+
+      <line x1="330" y1="196" x2="330" y2="238" class="d-edge-drift" marker-end="url(#a9d)"/>
+      <line x1="605" y1="196" x2="605" y2="238" class="d-edge-drift" marker-end="url(#a9d)"/>
+      <rect x="220" y="242" width="500" height="56" rx="6" class="d-box-drift"/>
+      <text x="236" y="264" class="d-lab">ONE REFUSAL STRING, SHARED BY BOTH LAYERS</text>
+      <text x="236" y="286" class="d-code-m">gateRefusalReason(taskId) — imported, never copied</text>
+    </svg>
+    <figcaption><b>Layer 2 is the one the acceptance suite asserts, because it is the one that still
+    holds if layer 1 is ever misconfigured.</b> It does not trust that the call was vetted; it re-derives
+    the task and its <code>approvalGate</code> from the database itself.</figcaption>
+  </figure>
+
+  <div class="note trap">
+    <span class="label">Layer 1 was one string away from being dead on arrival</span>
+    <p><code>canUseTool</code> is handed the <em>fully-qualified</em> name
+    <code>mcp__agentos__task_update_status</code>, not the bare one the server registers. A callback
+    matching the bare name would never fire — and the test would still have passed, because layer 2
+    refuses on its own.</p>
+    <p style="margin-bottom:0"><code>qualify()</code> is now the single source both the gate and its test
+    import. A test that builds its own qualified name proves nothing about whether the gate's idea of that
+    name agrees with it.</p>
+  </div>
+
+  <div class="note trap">
+    <span class="label">Why the tools are named with underscores</span>
+    <p style="margin-bottom:0">The spec named them <code>task.read</code>, <code>inbox.ask</code> and so
+    on. Dots register fine at the MCP layer — the server keeps them verbatim — but the Messages API's own
+    tool-name field is <code>^[a-zA-Z0-9_-]{1,64}$</code>, and nothing in the installed SDK rewrites the
+    tool half of the pair. Because the two gate checks call the handler and the callback <em>directly</em>,
+    no check in the suite crosses that boundary: the first thing to hit it would have been a real,
+    paid dispatch.</p>
+  </div>
+
+  <h3>The egress floor</h3>
+  <p>An agent's tool grants are configuration. The prohibition on <code>WebFetch</code> and
+  <code>WebSearch</code> is not — it is invariant 1's boundary, and one mistyped configuration value must
+  not be able to widen "the model API" into "the internet". So the list lives in one file and is applied
+  at both moments it could take effect:</p>
+
+  <div class="deflist">
+    <div><span class="term">at write time</span><span class="desc"><code>lib/agentos/agent-form.ts</code> — an <code>Agent</code> row can never be <em>stored</em> claiming a grant it may not have.</span></div>
+    <div><span class="term">at spawn time</span><span class="desc"><code>composeOptions()</code> strips them from <code>allowedTools</code> and forces them into <code>disallowedTools</code> on every composed call, whatever the row says.</span></div>
+  </div>
+
+  <p>Neither point is redundant: a row written before the floor existed still has to be stripped at spawn,
+  and a floor that only ran at spawn would leave the stored row lying about what the agent may reach. What
+  was <em>not</em> deliberate was two copies of the list — a security boundary with two definitions is a
+  silent second source of truth, and it was extracted into one during review.</p>
+
+  <div class="note rule">
+    <span class="label">One more mandatory literal</span>
+    <p style="margin-bottom:0"><code>strictMcpConfig: true</code> on every composed call. Without it the
+    SDK reads the machine's own <code>.mcp.json</code> and user settings, so a spawned agent would silently
+    inherit the owner's MCP servers — including authenticated ones. That is a real leak, not a style
+    point, and a check asserts the literal.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s9">
+  <span class="sec-num">§9</span>
+  <h2>The shell and its surfaces</h2>
+  <p class="sec-intro">A mode switch with a persistent portfolio ribbon, and a drift band that appears
+  only when this project has drifted.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Route</th><th>Renders</th></tr></thead>
+      <tbody>
+        <tr><td class="id">/</td><td>The Board — every watched project, worst-first — inside the portfolio rail</td></tr>
+        <tr><td class="id">/p/&lt;slug&gt;</td><td>One project: the always-present ribbon, the conditional drift band, and either the execution tabs or an honest watched-only view</td></tr>
+        <tr><td class="id">/p/&lt;slug&gt;/&lt;tab&gt;</td><td><code>tasks</code> · <code>goals</code> · <code>inbox</code> · <code>sessions</code> · <code>costs</code></td></tr>
+        <tr><td class="id">/p/&lt;slug&gt;/&lt;tab&gt;/&lt;id&gt;</td><td>The session view — tool calls in order, commits, cost, and the drift the session started from</td></tr>
+        <tr><td class="id">/p/&lt;slug&gt;/config</td><td>Agents. Reached from a rail link <em>outside</em> the five tabs — a sixth tab would be a decision against the closed shell design</td></tr>
+        <tr><td class="id">/overview</td><td>Says honestly that it is a later stage rather than rendering an empty frame</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Three rules the shell's pure functions enforce</h3>
+  <ul>
+    <li><strong>A degraded board shows no severities at all.</strong> Six confident glyphs sourced from a
+    failed collector run would break the never-assert-without-a-check rule in the one component that is on
+    screen at all times. <code>ribbonModel</code> returns <code>{ ok: false, reason }</code> instead.</li>
+    <li><strong>The drift band is a quotation with a link.</strong> It returns the project's own drift
+    check verbatim and never re-derives, re-words or re-scores anything — which is what keeps it from
+    becoming a second drift board.</li>
+    <li><strong>An unknown slug is refused, never rendered blank.</strong> An empty frame reads as
+    "nothing here yet" instead of "no such project".</li>
+  </ul>
+
+  <p>The ribbon itself stays present even when nothing has drifted, and that was an amendment to the
+  original instruction rather than a silent implementation choice: a ribbon that appears only on drift
+  makes its own absence an unsourced claim.</p>
+
+  <h3>Evidence lines on a card</h3>
+  <p>A task card's evidence line is a discriminated union with five cases, and the register — the
+  typeface it renders in — is a separate field, so a component that only ever reads
+  <code>.register</code> still draws the distinction correctly.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Case</th><th>Register</th><th>Reads</th></tr></thead>
+      <tbody>
+        <tr><td class="id">none</td><td><span class="chip">—</span></td><td>Nothing at all. A <code>todo</code> card carries <em>no other field</em> — not an empty string, not a placeholder — so a check can assert the absence structurally</td></tr>
+        <tr><td class="id">running</td><td><span class="chip">mono</span></td><td>A live session, named</td></tr>
+        <tr><td class="id">executed</td><td><span class="chip">mono</span></td><td>Session, duration, tool calls, cost, commit shas</td></tr>
+        <tr><td class="id">failed</td><td><span class="chip">mono</span></td><td>The same, plus the recorded reason</td></tr>
+        <tr><td class="id">hand-moved</td><td><span class="chip attention">claim</span></td><td>"moved by hand · no session produced this"</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Even a task that ran, failed and was swept back to <code>todo</code> shows nothing — it is back at
+  the start, and an evidence line naming the failed attempt would describe a run this card is no longer
+  claiming credit, or blame, for.</p>
+
+  <div class="note rule">
+    <span class="label">The one legitimate counter in the product</span>
+    <p style="margin-bottom:0">Open inbox questions. Everywhere else a count renders as a plain number,
+    because a badge asserts urgency that nothing measured.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s10">
+  <span class="sec-num">§10</span>
+  <h2>Verification architecture</h2>
+  <p class="sec-intro">Five acceptance suites, discovered rather than listed, none of which is allowed to
+  suppress another.</p>
+
+  <figure>
+    <svg viewBox="0 0 900 250" role="img" aria-label="Horizontal bar chart of acceptance harness size in lines. Stage 3 is 2032 lines, Stage 3b 1185, Stage 2 347, Stage 3a 214, Stage 1 153.">
+      <text x="0" y="14" class="c-title">Acceptance harness, lines per suite</text>
+      <text x="0" y="32" class="c-lab">HOW MANY CHECKS EACH ONE HOLDS IS A LIVE FACT — RUN pnpm verify</text>
+
+      <g transform="translate(190,54)">
+        <line x1="0" y1="0" x2="0" y2="164" class="c-axis"/>
+        <line x1="148" y1="0" x2="148" y2="164" class="c-grid"/>
+        <line x1="296" y1="0" x2="296" y2="164" class="c-grid"/>
+        <line x1="444" y1="0" x2="444" y2="164" class="c-grid"/>
+        <line x1="592" y1="0" x2="592" y2="164" class="c-grid"/>
+        <text x="148" y="180" class="c-lab" text-anchor="middle">500</text>
+        <text x="296" y="180" class="c-lab" text-anchor="middle">1000</text>
+        <text x="444" y="180" class="c-lab" text-anchor="middle">1500</text>
+        <text x="592" y="180" class="c-lab" text-anchor="middle">2000</text>
+
+        <rect x="0" y="4" width="601" height="20" rx="4" class="c-bar"><title>verify:stage3 — 2,032 lines</title></rect>
+        <text x="611" y="19" class="c-val">2,032</text>
+        <rect x="0" y="36" width="351" height="20" rx="4" class="c-bar"><title>verify:stage3b — 1,185 lines</title></rect>
+        <text x="361" y="51" class="c-val">1,185</text>
+        <rect x="0" y="68" width="103" height="20" rx="4" class="c-bar"><title>verify:stage2 — 347 lines</title></rect>
+        <text x="113" y="83" class="c-val">347</text>
+        <rect x="0" y="100" width="63" height="20" rx="4" class="c-bar"><title>verify:stage3a — 214 lines</title></rect>
+        <text x="73" y="115" class="c-val">214</text>
+        <rect x="0" y="132" width="45" height="20" rx="4" class="c-bar"><title>verify:stage1 — 153 lines</title></rect>
+        <text x="55" y="147" class="c-val">153</text>
+      </g>
+
+      <g class="c-cat" text-anchor="end">
+        <text x="178" y="73">stage 3 · execution</text>
+        <text x="178" y="105">stage 3b · onboarding</text>
+        <text x="178" y="137">stage 2 · fix proposals</text>
+        <text x="178" y="169">stage 3a · shell</text>
+        <text x="178" y="201">stage 1 · reconciliation</text>
+      </g>
+    </svg>
+    <figcaption><b>Stage 1's suite is the smallest and the only non-hermetic one</b> — it runs against the
+    real watched repositories and needs a live <code>gh</code> call. Stage 2's runs entirely against
+    generated fixture repositories in a temporary directory; no watched project is ever written to by a
+    test.</figcaption>
+  </figure>
+
+  <h3>Two decisions the runner script exists to hold</h3>
+  <div class="deflist">
+    <div><span class="term">every suite runs</span><span class="desc">Chaining with <code>&amp;&amp;</code> meant one known failure hid another suite's checks entirely for three days, and nobody noticed until a third suite was added and also never ran. <strong>A red test that suppresses other tests converts one known failure into unknown coverage.</strong></span></div>
+    <div><span class="term">the exit code is a flag</span><span class="desc">Exit status is mod 256, so summing the suites' codes can land on zero and report a false green — the one thing a verification harness may never do.</span></div>
+    <div><span class="term">the list is discovered</span><span class="desc">Suites come from <code>package.json</code>'s own <code>verify:*</code> keys. Adding a stage is an insert, not an edit to a line another branch is also editing — this was a real merge conflict before it was a rule.</span></div>
+  </div>
+
+  <h3>Exactly one thing may be mocked</h3>
+  <p>The <code>Runner</code> interface. SQLite is real, git is real, the MCP servers are real in-process
+  functions, and <code>dispatch()</code> is called for real. <code>FakeRunner</code> satisfies the
+  interface by replaying a chosen message sequence with no model, no subprocess and no network — which is
+  how the full cycle (create agent → create task → dispatch → the agent asks a question → a human answers
+  → the session moves the card to review → the human approves) is proven end to end without spending
+  anything.</p>
+
+  <p>That interface was required anyway so a cloud runner can be substituted later; its testability is a
+  side effect, not the reason it exists.</p>
+
+  <div class="note gate">
+    <span class="label">The one check that costs money</span>
+    <p style="margin-bottom:0">A single real session against the real Agent SDK sits behind
+    <code>AGENTOS_REAL_SESSION=1</code> under a <code>stage3:real-session</code> script — deliberately
+    named so that the <code>verify:*</code> discovery <em>cannot</em> pick it up. The default run can
+    never spend money. It is also the only proof the other checks are testing something real, and it has
+    not been run.</p>
+  </div>
+
+  <h3>A recurring failure worth naming</h3>
+  <p>Four separate times, a check passed for the wrong reason and review found it — in each case by
+  deleting the guard the check supposedly covered and watching the suite stay green:</p>
+  <ul>
+    <li>A test that the egress floor holds was fed an agent row that already excluded the two tools — it
+    proved the fixture, not the behaviour. It is now checked against a <em>hostile</em> row that asks for
+    both.</li>
+    <li>The check that <code>createSession</code> is only called from the funnel matched named imports
+    only, so <code>import * as db</code> followed by <code>db.createSession(...)</code> bypassed it while
+    the check stayed green.</li>
+    <li>A configuration parser was dead weight: both parsed values could be deleted and three checks
+    stayed green.</li>
+    <li>A cross-project ownership guard — the only thing between a crafted request and editing another
+    project's agent — had no coverage at all.</li>
+  </ul>
+  <p>The practice that came out of it is standing rather than advisory: <strong>delete the guard, and if
+  the suite stays green, the check is not testing what it claims to.</strong></p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s11">
+  <span class="sec-num">§11</span>
+  <h2>Invariants, and where they were narrowed</h2>
+  <p class="sec-intro">Five rules that define the product. Each holds unchanged at the portfolio layer;
+  three are narrowed — by a stated boundary, in a recorded decision — inside a project that has opted into
+  an execution layer.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th style="width:2ch">#</th><th>At the portfolio layer</th><th>Inside an execution layer</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="id">1</td>
+          <td><strong>Local-only, no egress.</strong> Everything is parsed on-machine; the only network call is <code>gh</code></td>
+          <td>Plus the model API and the hosts a session's environment explicitly allow-lists. <strong>Nothing else — telemetry stays forbidden.</strong></td>
+        </tr>
+        <tr>
+          <td class="id">2</td>
+          <td><strong>Never assert without a check.</strong> Every displayed fact carries what was checked and when</td>
+          <td>Unchanged.</td>
+        </tr>
+        <tr>
+          <td class="id">3</td>
+          <td><strong>Reality wins; a document is a hypothesis.</strong> Git is ground truth; state docs are last-known claims</td>
+          <td>Unchanged.</td>
+        </tr>
+        <tr>
+          <td class="id">4</td>
+          <td><strong>Read-only by default; writes are gated.</strong> No file in another repo changes without a per-change approval click</td>
+          <td>The gate moves from per-write to <strong>per-session</strong> — authorized once, at spawn, against a declared manifest of repos, paths and permissions.</td>
+        </tr>
+        <tr>
+          <td class="id">5</td>
+          <td><strong>No second source of truth.</strong> Every item traces to a file or to git; the dashboard stores no task, status or plan of its own</td>
+          <td>The portfolio still stores nothing. A project's execution layer may — and everything it stores carries a session id and a commit sha as evidence. <strong>A status that cannot name the session that produced it is a claim, and renders as one.</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>The narrowing was itself gated: the invariants were scoped in a written decision rather than quietly
+  relaxed, and the same decision requires the layer boundary to be <em>real in code</em>. That requirement
+  is what §1's diagram draws.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s12">
+  <span class="sec-num">§12</span>
+  <h2>How it was built</h2>
+  <p class="sec-intro">Ninety commits across seven working days, and thirty decision records closed
+  alongside them.</p>
+
+  <div class="chartgrid two">
+    <figure>
+      <svg viewBox="0 0 440 250" role="img" aria-label="Column chart of commits per working day: 3 on 26 July, 11 on 27 July, 8 on 15 August, 2 on 16 August, 24 on 18 August, 41 on 19 August, 1 on 20 August.">
+        <text x="0" y="14" class="c-title">Commits per working day</text>
+        <text x="0" y="32" class="c-lab">90 TOTAL · git log --date=short</text>
+        <g transform="translate(30,50)">
+          <line x1="0" y1="150" x2="400" y2="150" class="c-axis"/>
+          <line x1="0" y1="100" x2="400" y2="100" class="c-grid"/>
+          <line x1="0" y1="50" x2="400" y2="50" class="c-grid"/>
+          <line x1="0" y1="0" x2="400" y2="0" class="c-grid"/>
+          <text x="404" y="103" class="c-lab">15</text>
+          <text x="404" y="53" class="c-lab">30</text>
+          <text x="404" y="4" class="c-lab">45</text>
+
+          <rect x="8" y="140" width="38" height="10" rx="4" class="c-bar"><title>26 Jul — 3 commits</title></rect>
+          <text x="27" y="134" class="c-val" text-anchor="middle">3</text>
+          <rect x="62" y="113" width="38" height="37" rx="4" class="c-bar"><title>27 Jul — 11 commits</title></rect>
+          <text x="81" y="107" class="c-val" text-anchor="middle">11</text>
+          <rect x="116" y="123" width="38" height="27" rx="4" class="c-bar"><title>15 Aug — 8 commits</title></rect>
+          <text x="135" y="117" class="c-val" text-anchor="middle">8</text>
+          <rect x="170" y="143" width="38" height="7" rx="4" class="c-bar"><title>16 Aug — 2 commits</title></rect>
+          <text x="189" y="137" class="c-val" text-anchor="middle">2</text>
+          <rect x="224" y="70" width="38" height="80" rx="4" class="c-bar"><title>18 Aug — 24 commits</title></rect>
+          <text x="243" y="64" class="c-val" text-anchor="middle">24</text>
+          <rect x="278" y="13" width="38" height="137" rx="4" class="c-bar"><title>19 Aug — 41 commits</title></rect>
+          <text x="297" y="7" class="c-val" text-anchor="middle">41</text>
+          <rect x="332" y="147" width="38" height="3" rx="1.5" class="c-bar"><title>20 Aug — 1 commit</title></rect>
+          <text x="351" y="141" class="c-val" text-anchor="middle">1</text>
+
+          <g class="c-lab" text-anchor="middle">
+            <text x="27" y="166">26 JUL</text>
+            <text x="81" y="166">27 JUL</text>
+            <text x="135" y="166">15 AUG</text>
+            <text x="189" y="166">16 AUG</text>
+            <text x="243" y="166">18 AUG</text>
+            <text x="297" y="166">19 AUG</text>
+            <text x="351" y="166">20 AUG</text>
+          </g>
+        </g>
+      </svg>
+      <figcaption>Two clusters: Stage 1 and 2 in late July, then the re-scope and the whole execution
+      layer in mid-August.</figcaption>
+    </figure>
+
+    <figure>
+      <svg viewBox="0 0 440 250" role="img" aria-label="Column chart of decision records closed per day: 4 on 26 July, 13 on 27 July, 5 on 15 August, 7 on 18 August, 1 on 19 August.">
+        <text x="0" y="14" class="c-title">Decisions closed per day</text>
+        <text x="0" y="32" class="c-lab">D1–D30 · docs/DECISIONS.md</text>
+        <g transform="translate(30,50)">
+          <line x1="0" y1="150" x2="400" y2="150" class="c-axis"/>
+          <line x1="0" y1="100" x2="400" y2="100" class="c-grid"/>
+          <line x1="0" y1="50" x2="400" y2="50" class="c-grid"/>
+          <line x1="0" y1="0" x2="400" y2="0" class="c-grid"/>
+          <text x="404" y="103" class="c-lab">5</text>
+          <text x="404" y="53" class="c-lab">10</text>
+          <text x="404" y="4" class="c-lab">15</text>
+
+          <rect x="8" y="110" width="38" height="40" rx="4" class="c-bar-2"><title>26 Jul — 4 decisions</title></rect>
+          <text x="27" y="104" class="c-val" text-anchor="middle">4</text>
+          <rect x="62" y="20" width="38" height="130" rx="4" class="c-bar-2"><title>27 Jul — 13 decisions</title></rect>
+          <text x="81" y="14" class="c-val" text-anchor="middle">13</text>
+          <rect x="116" y="100" width="38" height="50" rx="4" class="c-bar-2"><title>15 Aug — 5 decisions, the re-scope</title></rect>
+          <text x="135" y="94" class="c-val" text-anchor="middle">5</text>
+          <rect x="170" y="150" width="38" height="0" rx="0" class="c-bar-2"><title>16 Aug — none</title></rect>
+          <text x="189" y="144" class="c-lab" text-anchor="middle">–</text>
+          <rect x="224" y="80" width="38" height="70" rx="4" class="c-bar-2"><title>18 Aug — 7 decisions</title></rect>
+          <text x="243" y="74" class="c-val" text-anchor="middle">7</text>
+          <rect x="278" y="140" width="38" height="10" rx="4" class="c-bar-2"><title>19 Aug — 1 decision</title></rect>
+          <text x="297" y="134" class="c-val" text-anchor="middle">1</text>
+          <rect x="332" y="150" width="38" height="0" class="c-bar-2"><title>20 Aug — none</title></rect>
+          <text x="351" y="144" class="c-lab" text-anchor="middle">–</text>
+
+          <g class="c-lab" text-anchor="middle">
+            <text x="27" y="166">26 JUL</text>
+            <text x="81" y="166">27 JUL</text>
+            <text x="135" y="166">15 AUG</text>
+            <text x="189" y="166">16 AUG</text>
+            <text x="243" y="166">18 AUG</text>
+            <text x="297" y="166">19 AUG</text>
+            <text x="351" y="166">20 AUG</text>
+          </g>
+        </g>
+      </svg>
+      <figcaption>Decisions front-load each cluster: five closed on the day the product was re-scoped into
+      two layers, seven on the day the execution design was closed.</figcaption>
+    </figure>
+  </div>
+
+  <h3>Decisions that shaped the architecture</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>ID</th><th>Decision</th><th>Consequence in code</th></tr></thead>
+      <tbody>
+        <tr><td class="id">D9</td><td>Watch the named projects only, never auto-discover</td><td>A literal array in <code>projects.config.ts</code></td></tr>
+        <tr><td class="id">D11</td><td>The dashboard stores no task, status or plan of its own</td><td>No task table at the portfolio layer; acknowledgements record that you looked, not what is true</td></tr>
+        <tr><td class="id">D14</td><td>Uncommitted work needs a threshold before it is a finding</td><td>Without one, no project is ever green and <span class="mono">in-sync</span> never renders</td></tr>
+        <tr><td class="id">D15</td><td>Corrections are deterministic edits, never generated prose</td><td>A one-integer splice, reviewable at a glance</td></tr>
+        <tr><td class="id">D17</td><td>The gate's second button acknowledges; it does not reject</td><td>No stored opinion about a fact</td></tr>
+        <tr><td class="id">D18</td><td>Two layers, execution opt-in per project</td><td><code>agentos.yml</code> on disk is the opt-in signal</td></tr>
+        <tr><td class="id">D19</td><td>Invariants narrowed to the portfolio layer, not deleted</td><td>The layer boundary must be real in code</td></tr>
+        <tr><td class="id">D20</td><td>Local-first runner, behind an interface</td><td>The one mockable seam in the slice</td></tr>
+        <tr><td class="id">D23</td><td>Mode switch + persistent ribbon + conditional drift band</td><td><code>lib/shell/model.ts</code>; the ribbon carries glyph and name only</td></tr>
+        <tr><td class="id">D24</td><td>Work is dispatched, never picked up</td><td>One funnel, no poller; <code>createSession</code> import-fenced</td></tr>
+        <tr><td class="id">D25</td><td>A done-item carries the <em>kind</em> of evidence that closed it</td><td>Split into command / judged / human — a session produced the work, but a model reading a log produced the judgement</td></tr>
+        <tr><td class="id">D28</td><td>SQLite via Node's built-in <code>node:sqlite</code></td><td>A declared engine floor of Node 22.13; no native dependency</td></tr>
+        <tr><td class="id">D29</td><td>MCP tool names use underscores, not dots</td><td>Renamed rather than trusting a sanitization step nobody verified exists</td></tr>
+        <tr><td class="id">D30</td><td>A project is initialized by an explicit button, never a watcher</td><td>A filesystem watcher was rejected on sight and the rejection recorded</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s13">
+  <span class="sec-num">§13</span>
+  <h2>Known gaps and open gates</h2>
+  <p class="sec-intro">What is built is not the same as what has been proven, and the project keeps the two
+  apart on purpose.</p>
+
+  <h3>Owner gates — built, tested against fixtures, never exercised for real</h3>
+  <div class="deflist">
+    <div><span class="term">no drift corrected</span><span class="desc">Stage 2's acceptance criterion is <strong>one real drift corrected through the dashboard</strong>. The fixture checks pass; no proposal has ever been approved. Merging the code did not clear this.</span></div>
+    <div><span class="term">no real session</span><span class="desc">The one check that spawns a real session against the real SDK has never been run. It costs money and needs the network, which is why it sits outside the default run.</span></div>
+    <div><span class="term">no hand-run cycle</span><span class="desc">Stage 3b's own criterion is that a human runs the full cycle by hand. It starts with adding an <code>agentos.yml</code> to a target repository — a write into another repo, and therefore owner-only. <code>docs/HUMAN-TEST.md</code> Part 7 has the exact file.</span></div>
+    <div><span class="term">the ribbon, looked at</span><span class="desc">The one acceptance criterion that cannot be automated — whether six project names actually fit — is currently recorded as a <em>computed estimate, not an observation</em>, and labelled as such.</span></div>
+  </div>
+
+  <h3>Known defects and limits</h3>
+  <ul>
+    <li><strong>Stage 1's second criterion fails, and the code is right.</strong> It asserts that a
+    particular project is green <em>by name</em>; that project stopped committing, so the stalled check
+    correctly fires and the assertion fails. The test hardcoded a time-dependent fact about a live
+    repository. Fixing it amends a product acceptance criterion, so it is logged with two readings and a
+    recommendation rather than edited silently.</li>
+    <li><strong>Restarting the dev server kills every running session</strong> — and the system reports
+    that rather than hiding it. Surviving a restart needs a supervisor process, which is the cloud
+    runner's problem.</li>
+    <li><strong>The worktree is not a sandbox.</strong> A local process can read outside its working
+    directory. It is stated here, in the feature map, and in the module's own header comment, so no caller
+    can imply otherwise by accident.</li>
+    <li><strong>Stage 1's suite is not hermetic</strong> — it needs a live <code>gh</code> — and two other
+    suites assert its exact pass count. One reports a skip on a degraded upstream rather than a false
+    regression; the other has the same exposure and is logged.</li>
+  </ul>
+
+  <h3>Deliberately not supported</h3>
+  <p>Auto-discovery of projects · auto-refresh · a "fix all" button · any background write path ·
+  committing, staging, branching or pushing in a watched repo · model-generated corrections · an in-app
+  undo (git already has one) · a reject button · proximity-matched claim extraction · sprints, burndowns
+  or velocity · cloud sync, telemetry, accounts.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section id="s14">
+  <span class="sec-num">§14</span>
+  <h2>Reference</h2>
+
+  <h3>Commands</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Command</th><th>Does</th></tr></thead>
+      <tbody>
+        <tr><td class="id">pnpm dev</td><td>The Board at <code>localhost:3000</code> (falls back to <code>:3001</code>)</td></tr>
+        <tr><td class="id">pnpm verify</td><td>Every acceptance suite. Runs all of them, prints a summary, exits non-zero if any failed</td></tr>
+        <tr><td class="id">pnpm verify:stage1</td><td>Reconciliation. Runs against the <strong>real</strong> watched repos, read-only</td></tr>
+        <tr><td class="id">pnpm verify:stage2</td><td>Fix proposals. Generated fixture repos in a temp dir — never a watched project</td></tr>
+        <tr><td class="id">pnpm verify:stage3</td><td>The execution layer</td></tr>
+        <tr><td class="id">pnpm verify:stage3a</td><td>The shell. Pure-function fixtures, plus the earlier suites as a regression oracle</td></tr>
+        <tr><td class="id">pnpm verify:stage3b</td><td>Onboarding, agents, tasks, and the full cycle</td></tr>
+        <tr><td class="id">pnpm stage3:real-session</td><td><strong>Spends money.</strong> One real session against the real SDK</td></tr>
+        <tr><td class="id">pnpm type-check</td><td><code>tsc --noEmit</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>If <code>pnpm build</code> fails on a missing <code>pages-manifest.json</code>, the cause is a stale
+  cache: <code>chmod -R u+w .next &amp;&amp; rm -rf .next</code>.</p>
+
+  <h3>Where knowledge lives</h3>
+  <div class="deflist">
+    <div><span class="term">CLAUDE.md</span><span class="desc">The router — where everything is, how work is done, what is never violated</span></div>
+    <div><span class="term">docs/HANDOFF.md</span><span class="desc">Where things stand. <strong>The only place volatile facts live</strong> — branch heads, PR states, suite counts. Everything else links here rather than restating</span></div>
+    <div><span class="term">docs/DECISIONS.md</span><span class="desc">D1–D30, with reasoning. Do not re-litigate</span></div>
+    <div><span class="term">docs/LEARNINGS.md</span><span class="desc">Dated lessons — what must not be re-bought</span></div>
+    <div><span class="term">docs/FEATURES.md</span><span class="desc">What the system does <em>today</em>, including a Known gaps section</span></div>
+    <div><span class="term">docs/HUMAN-TEST.md</span><span class="desc">The same thing in plain language, with things to try by hand</span></div>
+    <div><span class="term">docs/specs/*.spec.md</span><span class="desc">Decision-closed and ready to build, one per stage</span></div>
+    <div><span class="term">docs/BACKLOG.md</span><span class="desc">Deferred work with unblock conditions — never left as prose in a handoff</span></div>
+  </div>
+
+  <h3>Working rules that show up in the code</h3>
+  <ul>
+    <li><strong>verify-before-claim</strong> — never state something is true without running the check
+    that would falsify it. This is the whole premise.</li>
+    <li><strong>external-API-fields-are-guilty-until-verified</strong> — capture a real payload first.
+    Applying this to the installed SDK found three errors in a document section that claimed to be
+    verified: it had been checked against documentation rather than against the type definitions.</li>
+    <li><strong>no-op runs report as no-op</strong> — "nothing needed changing" is a valid, honest
+    result.</li>
+    <li><strong>The agent never merges.</strong> Its output is a pull request; that is where its authority
+    ends. Merging, tagging and any write into another repository are owner-only.</li>
+  </ul>
+</section>
+
+<footer>
+  <p>Compiled from the repository at <code>~/Documents/sl/agentic-os</code> on 2026-08-20 by reading the
+  source, the decision record and git history. Every number here is structural — lines of code, table
+  counts, commit dates — and none of it is a suite result. For those, run <code>pnpm verify</code> and
+  read <code>docs/HANDOFF.md</code>'s <em>Verified state</em> block, which is the one place they are
+  allowed to live.</p>
+</footer>
+
+</main>
+</div>
