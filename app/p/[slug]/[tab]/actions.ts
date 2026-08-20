@@ -1,16 +1,23 @@
 "use server";
 
+import type { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { revalidatePath } from "next/cache";
 import {
   answerInboxMessage,
+  createProject,
+  createTask,
   getDb,
   getInboxMessage,
   getSession,
   getTask,
+  listProjects,
   parseJsonColumn,
   writeTaskTransition,
 } from "@/lib/agentos/db";
 import { dispatch, resumeSession } from "@/lib/agentos/dispatch";
+import { parseAgentosYml } from "@/lib/agentos/config";
 import { boardOnce } from "@/lib/reconcile/cached";
 import { projectNav } from "@/lib/shell/model";
 import { loadProjectExecutionData } from "@/lib/tasks/data";
@@ -34,6 +41,133 @@ import { loadProjectExecutionData } from "@/lib/tasks/data";
 const HUMAN_ACTOR_ID = "owner";
 
 /**
+ * The one place in this file that reads the board. `verify:stage3a`'s AC-3 asserts at most one
+ * `boardOnce` call site per module ("every surface reads through boardOnce, at most once per
+ * module"); every action below that needs the board resolves through this function instead of
+ * reading the board itself.
+ */
+async function resolveNav(slug: string) {
+  const board = await boardOnce();
+  return projectNav(board, slug);
+}
+
+/** What the Initialize button, and `scripts/verify-stage3b.mts`, both read back. */
+export interface InitializeResult {
+  ok: boolean;
+  /** True only for the idempotent no-op path (AC-3) — `ok` is also true there. */
+  alreadyInitialized: boolean;
+  /** The stated reason: why it refused, or why it was a no-op. Null on a fresh success. */
+  reason: string | null;
+}
+
+/**
+ * The connector's testable core (T1: docs/specs/stage-3b-tickets.md, spec §5.1/D30).
+ *
+ * Resolves the board project **from the slug, server-side** (never a path the browser supplied —
+ * same posture as `resolveOwnedTask` below), reads `agentos.yml` from the Board's own path for
+ * that project, and writes a `Project` row with `primaryRepoPath` set to that same path — never
+ * from the file and never from a form field (spec §3.2: the Board slug and `Project.slug` are two
+ * independently-typed strings with no shared source of truth; the repo path is the one fact both
+ * records derive from the same place).
+ *
+ * Split from `initializeProjectAction` below so it can be called directly, with an injected `db`,
+ * from `scripts/verify-stage3b.mts` — `revalidatePath` throws when called outside a real Next.js
+ * request (`Invariant: static generation store missing`, confirmed empirically), so the bound
+ * action is the only thing here that touches it. `boardOnce` itself is not an injectable seam
+ * (spec §7's seam table lists only `Runner` and the fixture repo); the suite substitutes a
+ * fixture project by splicing `projects.config.ts`'s `PROJECTS`, the same trick
+ * `verify-stage3.mts`'s `withOnlyProject` already established for `dispatch()`'s own drift read.
+ */
+export async function initializeProject(
+  slug: string,
+  deps: { db?: DatabaseSync } = {},
+): Promise<InitializeResult> {
+  const nav = await resolveNav(slug);
+  if (!nav) {
+    return { ok: false, alreadyInitialized: false, reason: `no such project '${slug}'` };
+  }
+
+  const yamlPath = join(nav.project.path, "agentos.yml");
+  let text: string;
+  try {
+    text = readFileSync(yamlPath, "utf8");
+  } catch (err) {
+    // Only a genuinely absent file means "has not opted in". A permission error or an I/O
+    // failure is a different fact, and reporting it as opt-out would be this dashboard asserting
+    // something it did not check — invariant 2, inside the product built to enforce it. Review of
+    // #20 found the original `catch {}` flattened every read failure into the same sentence.
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return {
+        ok: false,
+        alreadyInitialized: false,
+        reason: `no agentos.yml found at ${yamlPath} — this project has not opted in to the execution layer`,
+      };
+    }
+    return {
+      ok: false,
+      alreadyInitialized: false,
+      reason: `agentos.yml at ${yamlPath} could not be read (${code ?? "unknown error"}): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    };
+  }
+
+  const parsed = parseAgentosYml(text);
+  if (!parsed.ok) {
+    return { ok: false, alreadyInitialized: false, reason: `agentos.yml is malformed: ${parsed.error}` };
+  }
+
+  const db = deps.db ?? getDb();
+
+  // Idempotent (AC-3): a second click reports the existing row rather than colliding with
+  // `Project.slug`'s UNIQUE constraint or minting a duplicate for the same repo.
+  const existing = listProjects(db).find((p) => p.primaryRepoPath === nav.project.path);
+  if (existing) {
+    return { ok: true, alreadyInitialized: true, reason: "already initialized" };
+  }
+
+  // `Project.slug` is UNIQUE, and the idempotency check above is keyed on `primaryRepoPath` —
+  // deliberately, since that is the one fact the Board and this row derive from the same place
+  // (§3.2). The two are therefore not the same guard: a *different* repo whose `agentos.yml`
+  // declares a slug already taken passes the check above and then violates the constraint. Left
+  // uncaught that is a 500, which bypasses the whole point of D30's button — that a refusal is
+  // stated on the screen. Review of #20.
+  try {
+    createProject(db, {
+      slug: parsed.slug ?? slug,
+      primaryRepoPath: nav.project.path,
+      yamlPath,
+      maxConcurrentSessions: parsed.maxConcurrentSessions,
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      alreadyInitialized: false,
+      reason: `could not create the project row: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  return { ok: true, alreadyInitialized: false, reason: null };
+}
+
+/**
+ * The bound server action `useActionState` calls from the *not initialized* pane's Initialize
+ * button (spec §5.1/D30 — an explicit click, never automatic). `slug` travels as a hidden form
+ * field, the same convention every other action in this file uses.
+ */
+export async function initializeProjectAction(
+  _prevState: InitializeResult,
+  formData: FormData,
+): Promise<InitializeResult> {
+  const slug = String(formData.get("slug") ?? "");
+  if (!slug) return { ok: false, alreadyInitialized: false, reason: "missing project slug" };
+  const result = await initializeProject(slug);
+  revalidatePath(`/p/${slug}/tasks`);
+  return result;
+}
+
+/**
  * Resolve the execution-layer project **from the slug, server-side**, and confirm the id the form
  * supplied actually belongs to it.
  *
@@ -45,14 +179,94 @@ const HUMAN_ACTOR_ID = "owner";
  * Returns null when the pair does not check out; every caller treats null as "do nothing".
  */
 async function resolveOwnedTask(slug: string, taskId: string) {
-  const board = await boardOnce();
-  const nav = projectNav(board, slug);
+  const nav = await resolveNav(slug);
   if (!nav) return null;
   const data = loadProjectExecutionData(nav.project.path);
   if (!data) return null;
   const task = getTask(getDb(), taskId);
   if (!task || task.projectId !== data.project.id) return null;
   return { task, project: data.project };
+}
+
+/**
+ * The create-task form's testable core (T3, docs/specs/stage-3b-tickets.md). Injectable `db` for
+ * `scripts/verify-stage3b.mts`, the same split `initializeProject` and `createAgentForSlug`
+ * already established.
+ *
+ * Resolves the execution-layer project **from the slug, server-side** — never a path or id the
+ * browser supplied — and confirms a submitted assignee id actually belongs to this project before
+ * it ever reaches `createTask`. Without that check a crafted form post could bind a task to an
+ * agent in a *different* project (`resolveOwnedTask`'s own comment above explains why this
+ * posture exists in this file; T2's `updateAgentForSlug` needed the identical guard and review
+ * found it missing — AC-8b there, the same shape here).
+ *
+ * `""` on the `assigneeAgentId` field means **deliberately human-only** (spec §7.1 of the Stage 3
+ * spec), never "unassigned" — resolved to `null` and passed straight to `createTask`, which does
+ * not default it from `Project.defaultAgentId` and must not start.
+ */
+export interface CreateTaskResult {
+  ok: boolean;
+  reason: string | null;
+  taskId: string | null;
+}
+
+const EMPTY_TASK_RESULT: CreateTaskResult = { ok: false, reason: null, taskId: null };
+
+async function resolveExecutionProject(slug: string, db: DatabaseSync) {
+  const nav = await resolveNav(slug);
+  if (!nav) return null;
+  return loadProjectExecutionData(nav.project.path, db);
+}
+
+export async function createTaskForSlug(
+  slug: string,
+  formData: FormData,
+  deps: { db?: DatabaseSync } = {},
+): Promise<CreateTaskResult> {
+  const db = deps.db ?? getDb();
+  const data = await resolveExecutionProject(slug, db);
+  if (!data) {
+    return { ...EMPTY_TASK_RESULT, reason: `no such project '${slug}', or it has not been initialized` };
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { ...EMPTY_TASK_RESULT, reason: "title is required" };
+  const description = String(formData.get("description") ?? "").trim();
+  const approvalGate = formData.get("approvalGate") === "on";
+
+  // "" is the select's own "human-only" option value — resolved to null, never to a guess.
+  const rawAssignee = String(formData.get("assigneeAgentId") ?? "");
+  let assigneeAgentId: string | null = null;
+  if (rawAssignee !== "") {
+    if (!data.agentsById.has(rawAssignee)) {
+      return {
+        ...EMPTY_TASK_RESULT,
+        reason: `agent ${rawAssignee} does not belong to project '${slug}'`,
+      };
+    }
+    assigneeAgentId = rawAssignee;
+  }
+
+  const task = createTask(db, {
+    projectId: data.project.id,
+    name,
+    description,
+    approvalGate,
+    assigneeAgentId,
+  });
+
+  return { ok: true, reason: null, taskId: task.id };
+}
+
+export async function createTaskAction(
+  _prevState: CreateTaskResult,
+  formData: FormData,
+): Promise<CreateTaskResult> {
+  const slug = String(formData.get("slug") ?? "");
+  if (!slug) return { ...EMPTY_TASK_RESULT, reason: "missing project slug" };
+  const result = await createTaskForSlug(slug, formData);
+  revalidatePath(`/p/${slug}/tasks`);
+  return result;
 }
 
 export async function runNowAction(formData: FormData): Promise<void> {

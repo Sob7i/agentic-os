@@ -104,8 +104,8 @@ by running the Stage 1 and Stage 2 suites unmodified as a regression oracle.
 **The first surface behind an execution layer that renders real content rather than a
 placeholder.** Reachable at `/p/<slug>/tasks` and `/p/<slug>/inbox` once a project both has an
 `agentos.yml` on disk (D18, checked by the shell) *and* a matching `Project` row in
-`data/agentos.sqlite` (checked by this surface, one level deeper — see *Known gaps* below: no
-watched project has the second one yet). A single session's own page lives at
+`data/agentos.sqlite` (checked by this surface, one level deeper). **Since Stage 3b T1 the second one is
+reachable** — the *not initialized* pane carries an Initialize button; see the section below. A single session's own page lives at
 `/p/<slug>/sessions/<id>`, linked from a task card's evidence line or an Inbox item; there is no
 session *list* in this slice.
 
@@ -144,6 +144,103 @@ opened only if it already exists — with no execution layer initialized there a
 sweep is a guaranteed no-op, and running the Board on a machine that has never opted in leaves no
 `data/` directory behind. D19 asks for the layer boundary to be real in code, and the portfolio
 starting up should not conjure the execution layer's database as a side effect.
+
+### Initializing a project (Stage 3b T1 — spec §1.1, D30)
+
+**The connector.** Until this landed, an `agentos.yml` on disk got a project its five tabs and
+nothing else: no tool turned it into a `Project` row, so every execution surface rendered *not
+initialized* and the only way to create one was a seed script. The pane that explains the problem
+now carries the button that fixes it — **an explicit click, never a filesystem watcher** (D30;
+option (c) was rejected on sight because a process that creates records without being asked is the
+exact shape D24 refused for dispatch).
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Initializes a project that has an `agentos.yml` | One `Project` row; the Tasks page stops saying *not initialized* and shows an empty four-column board | `pnpm verify:stage3b` → AC-1 | 3b T1 |
+| Reads the file's own settings | `slug` and `maxConcurrentSessions` come from `agentos.yml`; **`primaryRepoPath` never can** — it is taken from the Board's own entry (§3.2) | `pnpm verify:stage3b` → AC-1b | 3b T1 |
+| Refuses a project with no `agentos.yml` | Stated reason next to the button, naming the path it looked at; no row written | `pnpm verify:stage3b` → AC-2 | 3b T1 |
+| Refuses a malformed `agentos.yml` | The yaml parser's own message is carried **unchanged** — never reworded, summarised or truncated — inside a sentence naming the file. AC-2b asserts containment, so a reworded message fails it | `pnpm verify:stage3b` → AC-2b | 3b T1 |
+| Refuses an `agentos.yml` it cannot read | A permission or I/O error is stated as such — **never** as *has not opted in*, which would be a fact nobody checked | `pnpm verify:stage3b` → AC-2d | 3b T1 |
+| Refuses a slug another project already holds | Stated on the screen; `Project.slug` is `UNIQUE` and idempotency is keyed on the repo path, so these are two different guards | `pnpm verify:stage3b` → AC-2c | 3b T1 |
+| Initializing twice is a no-op, not a duplicate | Second click reports *already initialized*; still exactly one row | `pnpm verify:stage3b` → AC-3 | 3b T1 |
+| Opening a page still does not create the store | `dbIfExists()` on the page path, `getDb()` only inside the action — a click asks for the database, a page view does not | Load a tab on an uninitialized project; no `data/` appears | 3b T1 |
+
+**The `agentos.yml` format is this project's own, defined here rather than captured.** Spec §3.3
+asked that a real file be captured before parsing, on the `external-API-fields-are-guilty-until-verified`
+rule — but **no watched repo has one**, so there was nothing to capture and the format is ours to
+state. It is deliberately two optional keys, `slug` and `maxConcurrentSessions`, each with a
+default; an empty file is a valid bare opt-in, since D18 already made the file's *presence* the
+signal. The guilty-until-verified posture still applies to every field: each is validated, and a
+bad value refuses rather than being coerced.
+
+### Agents, behind configuration (Stage 3b T2 — spec §1.2, §5.2–§5.4)
+
+**The first configuration surface**, at `/p/<slug>/config`, reached from a link in the project rail
+**outside the five tabs**. D23 fixed the rail at five and said the cap is load-bearing; a sixth tab
+would have been a decision against it, so `EXECUTION_TABS` is untouched.
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Creates an agent | Name, monogram, model, role prompt, tool grants, `canCommit`, `maxTurns`, `maxBudgetUsd` — every field read back unchanged, `canCommit` as a boolean and not `1` | `pnpm verify:stage3b` → AC-4 | 3b T2 |
+| Refuses tool grants that would widen egress | `WebFetch`/`WebSearch` are stripped from `allowedToolsJson`, forced into `disallowedToolsJson`, **and the UI says which were denied** — never silently accepted | `pnpm verify:stage3b` → AC-5 | 3b T2 |
+| The egress floor has exactly one definition | `lib/agentos/egress.ts`, imported by both enforcement points — write time and spawn | `pnpm verify:stage3b` → AC-5b | 3b T2 |
+| Tool grants are a fixed list, not free text | An unrecognized name is dropped rather than stored; there is no field to type one into | `pnpm verify:stage3b` → AC-5 | 3b T2 |
+| Refuses to edit an agent with a live session | Stated reason **naming the session**; the row is unchanged. Live means `running` or `waiting-inbox` — the same pair `dispatch` uses | `pnpm verify:stage3b` → AC-8 | 3b T2 |
+| One project cannot edit another's agent | A crafted post naming a foreign agent id is refused; that agent's row is untouched | `pnpm verify:stage3b` → AC-8b | 3b T2 |
+
+**The floor is enforced twice, from one list, and neither point is redundant.** A row written before
+a floor existed still has to be stripped at spawn; a floor that ran only at spawn would leave the
+stored row lying about what the agent may reach. What *was* redundant — two copies of the denied
+list — is gone, and AC-5b keeps it gone. The spec's reason for testing write time at all:
+*an invariant enforced only by seed data is enforced by nobody.*
+
+**An agent is not versioned, and does not need to be** (§5.3). A session composes its SDK options
+from the `Agent` row at spawn and records nothing about what that row said, so editing underneath a
+live one would make the session's own record unreadable — you could not answer *"what was this
+agent allowed to do when it ran?"*. Editing **between** runs is fine.
+
+### Creating a task (Stage 3b T3 — spec §1.3, §4)
+
+The form sits above the board on the Tasks tab: title, description, assignee, approval gate. The
+assignee select offers each of the project's agents **plus an explicit human-only option**, and the
+choice is bound **at creation** — `dispatch` never defaults it (§7.1).
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Creates a task with an agent | The card appears in `todo` carrying that agent's monogram, and `dispatch` on it starts a session | `pnpm verify:stage3b` → AC-6 | 3b T3 |
+| One project cannot assign another's agent | A crafted post naming a foreign agent id is refused; no task is written | `pnpm verify:stage3b` → AC-6b | 3b T3 |
+| Creates a human-only task | `assigneeAgentId` is null, and dispatch refuses **by precondition `agent`** specifically — naming it, not merely returning `started: false` | `pnpm verify:stage3b` → AC-7 | 3b T3 |
+| A human-only card has no Run now control | **Absent, not disabled** — the card cannot imply a machine could have done the work and declined | `pnpm verify:stage3b` → AC-7b | 3b T3 |
+
+**A null assignee is deliberately human, never unassigned.** That distinction is the whole reason
+AC-7 exists: it is why the refusal names a precondition rather than just failing, and why the card
+shows nothing rather than something greyed out. `createTask` does not default from
+`Project.defaultAgentId`, and dispatch's precondition 4 refuses rather than choosing.
+
+### The full cycle proven, once, end to end (Stage 3b T4 — spec §4 AC-9)
+
+**Everything T1–T3 built now runs together, against one task, in one check.** Create an agent,
+create a task, `dispatch` it, let the scripted fake ask a question, answer it, watch the fake move
+the card to `review`, then approve it as the human — every one of those five transitions is asserted
+**positively** (the session really did enter `waiting-inbox`, the question really was asked, the
+answer really was consumed by the resumed run) rather than only by the ending, and every transition's
+`TaskEvent` is checked for the **right actor**: a session id where a session moved it, `"owner"`
+where the human did.
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| The full cycle, asserted at every stage | `todo→doing` (session) → `waiting-inbox` (real question, real `InboxMessage`) → resumed with the human's answer (proven by the resume options the second call received) → `doing→review` (session) → `review→done` (owner) | `pnpm verify:stage3b` → AC-9 | 3b T4 |
+| The card's evidence resolves to a real session, before a human's own action supersedes it | At `review`, `cardModel`/`evidenceLineFor` (`lib/tasks/model.ts`) reports the `executed` kind with a session id that `getSession` actually resolves | `pnpm verify:stage3b` → AC-9 | 3b T4 |
+
+**A human approving a gated card changes what the card's own evidence line says.** Once the human's
+`review → done` transition is the most recent `TaskEvent`, `evidenceLineFor` switches the card to
+`hand-moved` — the session that did the work is no longer named on the card, only on the Sessions
+tab. This was true of the model before this ticket (spec §8.3); AC-9 is the first check to run a
+gated task through the whole cycle and observe it, rather than assume it from the two states in
+isolation.
+
+**No production code changed for this ticket.** T4 is the suite (`AC-9`) and the docs; AC-9 found no
+gap in T1–T3's own code to report.
 
 ### The Overview
 
@@ -243,3 +340,9 @@ Stated in full in `CLAUDE.md` §Invariants.
 - **AC-5 degrades both collectors, not just `gh`.** The test strips `PATH`, which disables `git`
   too. It proves failures surface with readable reasons and no silent zeros, but does not isolate
   a `gh`-only outage. A narrower fixture belongs with Stage 2 → `docs/BACKLOG.md`.
+- **No watched project has an `agentos.yml`, so the Initialize button has never been clicked on a
+  real repo.** All six in `projects.config.ts` were checked on 2026-08-19 and none has the file —
+  which also means `projectNav` gives every one of them zero tabs, so the pane the button lives on
+  is currently reachable only for a fixture. AC-1…AC-3 and AC-1b/AC-2b prove the connector against
+  fixture repos; **the first real initialization is an owner gate**, because creating that file
+  means writing into another repo. D27 already chose `fractal-code` as the target.

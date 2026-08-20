@@ -19,19 +19,28 @@ from a twelve-day-stale document and trip none of its own safety rails — they 
 never its premise. The portfolio layer is the check that catches exactly that, and it already
 works. Full rationale: `docs/PRD.md` §12.1.
 
-**Status: Stages 1 and 2 are built** — the reconciliation Board runs and gated fix proposals write
-on an explicit click. Stage 2's acceptance criterion (**one real drift corrected**) is still unmet:
-no proposal has ever been approved, and that is an owner gate. **Stage 1's AC-2 is a known blocking
-item** — it hardcodes itqan as the green project, itqan stopped committing, and DC7 correctly
-reports it stalled; the check is right and the fixture rotted, and the fix needs a decision
-(`docs/BACKLOG.md`). *For whether the suite is currently green, read `docs/HANDOFF.md` §Verified
-state — this file does not carry suite results.* **Re-scoped 2026-08-15** to two layers (D18–D22) — `docs/PRD.md` §12.
-**Round-3 design closed 2026-08-18** — D23 (the shell), D24 (work is dispatched, never picked up),
-D25 (a DoD item carries the kind of evidence that closed it) and D26 (the app shell splits out of
-Stage 3 as **Stage 3a**). **Stage 3a is built** — the shell runs, with the portfolio ribbon, the
-conditional drift band, and a complete watched-only project view. Next build step: **Stage 3**, the
-execution MVP, gated on two owner decisions in its spec's §5.11 and §5.12; Stages 4 and 5 are
-specced behind that. Behaviour today: `docs/FEATURES.md`. **Counts, PR states and branch heads are
+**Status: Stages 1, 2, 3, 3a and 3b are built.** The reconciliation Board runs; gated fix proposals
+write on an explicit click; the execution layer dispatches work, pauses on a question, resumes, and
+takes a human approval; the app shell carries the portfolio ribbon and the conditional drift band;
+and **Stage 3b closed the loop** — an explicit *Initialize* button turns an `agentos.yml` into a
+`Project` row (D30), agents and tasks are created through the UI, and one acceptance check drives
+the whole cycle end to end. **Two acceptance criteria remain unmet and both are owner gates, not
+build work:** Stage 2's (**one real drift corrected** — no proposal has ever been approved) and
+Stage 3b's real-world half (**no human has run the cycle by hand**, because no watched repo has an
+`agentos.yml` and creating one is a write into another repo — `docs/HUMAN-TEST.md` Part 7 has the
+steps). **Stage 1's AC-2 is a known blocking item** — it hardcodes itqan as the green project,
+itqan stopped committing, and DC7 correctly reports it stalled; the check is right and the fixture
+rotted, and the fix needs a decision (`docs/BACKLOG.md`). *For whether the suite is currently green,
+read `docs/HANDOFF.md` §Verified state — this file does not carry suite results.*
+
+**Re-scoped 2026-08-15** to two layers (D18–D22) — `docs/PRD.md` §12. **Round-3 design closed
+2026-08-18** — D23 (the shell), D24 (work is dispatched, never picked up), D25 (a DoD item carries
+the kind of evidence that closed it) and D26 (the app shell splits out of Stage 3 as **Stage 3a**).
+**Next build step: Stage 4** (templates and chains), then Stage 5 (goals) — both specced. Stage 4
+sequences parts that have now all run at least once, which is exactly why 3b was inserted before it.
+Behaviour today: `docs/FEATURES.md`; in plain language, `docs/HUMAN-TEST.md`.
+
+**Counts, PR states and branch heads are
 deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state* block, once.
 
 ---

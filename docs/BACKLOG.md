@@ -19,15 +19,6 @@ and things explicitly punted with a reason.
   **Unblock condition:** the first project with enough real tasks and sessions to measure — at which
   point measure first, then batch the three per-session loads.
 
-- **Nothing connects an `agentos.yml` on disk to a `Project` row in `data/agentos.sqlite`**
-  *(added 2026-08-19)*. The shell (D18) checks the file and shows the tabs; T7's Tasks and Inbox
-  pages check one level deeper and render an honest *"not initialized"* pane rather than inventing
-  rows or crashing. But **no ticket through T7 builds the connector**, so no real project can
-  dispatch yet — Stage 3 is complete and still unreachable on a watched repo. **Unblock condition:**
-  none technical; it needs a decision about *what* creates the row (a manual `init` command, a
-  yaml-watcher, or the first dispatch) and that decision belongs with whoever picks up the first
-  real run — see also `docs/DECISIONS.md` D27, which chose `fractal-code` as the target repo.
-
 - **`verify-stage3a.mts`'s AC-1 can go red because GitHub is down** *(added 2026-08-19)*. It spawns
   `verify:stage1` and **hard-asserts its exact pass/fail totals**. Stage 1 is not hermetic — its
   AC-1 depends on a live `gh` call through DC1 — so an offline or rate-limited moment drops a pass
@@ -326,11 +317,36 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   map against merged PRs touching app code. Unblocked by: any watched project actually having a
   `FEATURES.md`; today **none do** except this one.
 
+- **`verify:stage3a` AC-3 counts `boardOnce(` in raw source text, comments included** — found
+  2026-08-19 while building Stage 3b T1. The check is
+  `(src.match(/\bboardOnce\(/g) ?? []).length` ([`scripts/verify-stage3a.mts:128`](../scripts/verify-stage3a.mts#L128)),
+  so a **doc comment** that names the function counts as a call site. T1 hit this from both sides
+  at once: it genuinely added a second call, and its own explanatory comments tripped the check as
+  well — and the passing fix was partly *rewording prose*. A check whose green can be bought by
+  editing a comment is not asserting what it claims to. The constraint itself (D23 — one collector
+  run per request, so the ribbon and the Board cannot disagree) is right and worth keeping; the
+  measurement is what is wrong. Strip comments and string literals before counting, or parse.
+  **Unblocked by:** nothing — it is a contained change to one suite, deliberately not made inside a
+  ticket forbidden from touching that file.
+
 ## Done / superseded
 
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than
      deleting them. -->
 
+- **`CLAUDE.md`'s top status paragraph was stale** — reported by T4, which correctly could not fix
+  it (`CLAUDE.md` was outside its file scope), and **resolved 2026-08-19 by lead review**, which was
+  not. It had claimed *"Next build step: Stage 3"* with Stage 3, 3a and 3b all built, and cited two
+  owner gates cleared on 2026-08-18 as D27. Rewritten against `docs/HANDOFF.md`'s own "Where things
+  stand", with the two genuinely-unmet acceptance criteria named as the owner gates they are.
+
+- **Nothing connects an `agentos.yml` on disk to a `Project` row in `data/agentos.sqlite`** —
+  resolved 2026-08-19 by Stage 3b T1–T4. T1 built the connector (an explicit *Initialize* button,
+  D30); T2/T3 built agent and task creation behind it; T4's **AC-9** proves the whole cycle —
+  dispatch → pause → resume → review → approve — runs end to end against fixtures. Still open:
+  **no human has run it on a real project** (`docs/HUMAN-TEST.md` Part 7, added by T4) — that
+  remains an owner gate, not a code gap, and is tracked in `docs/HANDOFF.md`'s *Next up* rather
+  than here.
 - **`runBootSweep` has no call site** — resolved 2026-08-19 by T7. `instrumentation.ts` calls it
   once per server process, passing `dispatch.ts`'s own `PROCESS_BOOT_ID`. Verified against a real
   boot rather than a fixture: with a stale `running` session seeded, starting the server logs

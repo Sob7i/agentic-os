@@ -187,6 +187,24 @@ export function gateModelFor(task: TaskRow): GateModel | null {
   };
 }
 
+/**
+ * Whether a card offers **Run now** — pure, so a check can assert it without a renderer.
+ *
+ * Two conditions, and the second is the one that carries meaning: the card is in `todo`, **and**
+ * it has an agent. A null `agent` is a deliberately human-only task (§7.1) — *never* an
+ * unassigned one — so the control is **absent**, not disabled. A disabled button would say the
+ * machine could have done this and declined; there is no machine assigned to decline.
+ *
+ * This lived as a ternary inside `components/tasks/Board.tsx` when T3 shipped, and the ticket
+ * then recorded the behaviour as untestable because no acceptance script imports a component.
+ * That was true and beside the point: **a decision that can be wrong does not belong in a dumb
+ * component** (CLAUDE.md §Conventions). Moved here in review, 2026-08-19, where AC-7b asserts all
+ * four cases.
+ */
+export function showsRunControl(card: { agent: AgentBadge | null }, columnKey: TaskRow["status"]): boolean {
+  return columnKey === "todo" && card.agent !== null;
+}
+
 // ---------------------------------------------------------------------------
 // §8.2 — card anatomy, and §8.5 — the column model
 // ---------------------------------------------------------------------------

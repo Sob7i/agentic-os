@@ -17,7 +17,7 @@ it is not restated. The two rules that were most often the ones broken in Stage 
 
 - **Write the named acceptance checks first, and prove each structural check by making it fail.**
   Five separate Stage 3 tickets shipped a check that was green for the wrong reason and none was
-  self-caught (`docs/LEARNINGS.md`, 2026-08-19). A check you have never seen red is not evidence.
+  self-caught (`docs/LEARNINGS.md`, 2026-08-18). A check you have never seen red is not evidence.
 - **Do not commit to a shared branch, do not merge, do not open a PR, do not push.**
 
 ## Standing constraints (all tickets)
@@ -147,8 +147,14 @@ list** (§5.4) — no free-text field. Editing is refused while the agent has a 
 bound at creation, never at dispatch).
 **Depends on:** T2 (an agent must exist to assign). **Branch off T2.**
 
-**May touch:** `components/tasks/`, `app/p/[slug]/[tab]/actions.ts`, `lib/tasks/model.ts` (only if
-the assignee options need a pure helper), `scripts/verify-stage3b.mts`.
+**May touch:** `components/tasks/`, `app/p/[slug]/[tab]/actions.ts`, **`app/p/[slug]/[tab]/page.tsx`**,
+`lib/tasks/model.ts`, `scripts/verify-stage3b.mts`.
+
+*Corrected 2026-08-19, during T3's own review: the list omitted `page.tsx`, which is the only mount
+point a new form on the Tasks tab can have — T1 was given it for the identical reason. The agent
+made the one-line change and reported the gap rather than either stopping or staying silent, which
+is the right handling of a file list that is wrong. `lib/tasks/model.ts`'s "only if" qualifier is
+also gone: it turned out to be where the Run-now decision belongs, not an optional convenience.*
 **Must not touch:** `lib/agentos/dispatch.ts`. AC-7 is satisfied by dispatch's **existing**
 precondition 4; if it appears to need a change there, that is a finding — report it.
 
