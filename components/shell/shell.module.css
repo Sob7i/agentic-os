@@ -78,20 +78,79 @@
 .body { display: flex; min-height: calc(100vh - 40px); }
 
 .rail {
-  width: 172px;
+  width: var(--rail-w);
   flex: none;
   border-right: 1px solid var(--line);
   padding: 16px 12px;
   background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.railName { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-.railRepo { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 0 0 16px; word-break: break-all; }
-.railTabs { display: flex; flex-direction: column; gap: 2px; list-style: none; padding: 0; margin: 0; }
-.railTab a { display: block; padding: 5px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; font-size: 13px; }
-.railTab a:hover { background: var(--surface-2); color: var(--text); }
-.railTab a[data-current="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
-.railNote { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 14px 0 0; }
-.setup { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+
+/* Frame B'2: back row, identity, divider, work rows, divider, SETUP, rows, spacer, footer. */
+.railBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+}
+.railBack:hover { color: var(--text); }
+
+.railIdentity { display: flex; flex-direction: column; gap: 2px; }
+.railName { font-size: 17px; font-weight: 600; margin: 0; word-break: break-word; }
+.railDrift { font-family: var(--mono); font-size: 11px; margin: 0; color: var(--muted); }
+.railDrift[data-s="drift"] { color: var(--drift); }
+.railDrift[data-s="attention"] { color: var(--attention); }
+.railDrift[data-s="in-sync"] { color: var(--sync); }
+
+.railRule { width: 100%; height: 1px; border: 0; background: var(--line); margin: 4px 0; }
+
+.railSectionLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin: 0;
+}
+
+.railRows { display: flex; flex-direction: column; gap: 2px; list-style: none; padding: 0; margin: 0; }
+.railRow a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+}
+.railRow a:hover { background: var(--surface-2); color: var(--text); }
+.railRow a[data-current="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.railRowLabel { flex: 1; min-width: 0; }
+
+/* The Inbox count — the only counter in the product (spec §8.5). Plain mono, no pill. */
+.railCount {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.railSpacer { flex: 1 1 auto; min-height: 12px; }
+.railFooter { font-size: 10px; line-height: 1.4; color: var(--muted); margin: 0; }
+.railNote { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 0; }
 
 /* The pane gets no max-width: the Kanban's real demand is measured one slice
    later, and baking a guess in now would make D23's fallback expensive (§5.4). */

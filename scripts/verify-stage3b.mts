@@ -67,7 +67,6 @@ import { createAgentForSlug, updateAgentForSlug } from "../app/p/[slug]/config/a
 import { parseAgentosYml } from "../lib/agentos/config";
 import { EGRESS_DENIED_TOOLS } from "../lib/agentos/egress";
 import { showsRunControl, evidenceLineFor } from "../lib/tasks/model";
-import { showsRunControl } from "../lib/tasks/model";
 import { buildAgentInput, resolveToolGrants } from "../lib/agentos/agent-form";
 import { loadProjectExecutionData } from "../lib/tasks/data";
 import { dispatch, resumeSession } from "../lib/agentos/dispatch";

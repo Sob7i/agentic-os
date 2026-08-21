@@ -117,7 +117,7 @@ export async function createAgentAction(
   const slug = String(formData.get("slug") ?? "");
   if (!slug) return { ...EMPTY_RESULT, reason: "missing project slug" };
   const result = await createAgentForSlug(slug, formData);
-  revalidatePath(`/p/${slug}/config`);
+  revalidatePath(`/p/${slug}/config/agents`);
   return result;
 }
 
@@ -169,6 +169,6 @@ export async function updateAgentAction(
   const agentId = String(formData.get("agentId") ?? "");
   if (!slug || !agentId) return { ...EMPTY_RESULT, reason: "missing project slug or agent id" };
   const result = await updateAgentForSlug(slug, agentId, formData);
-  revalidatePath(`/p/${slug}/config`);
+  revalidatePath(`/p/${slug}/config/agents`);
   return result;
 }

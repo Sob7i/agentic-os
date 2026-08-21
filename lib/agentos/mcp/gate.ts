@@ -18,8 +18,29 @@ import { getTask } from "../db";
 import type { SessionCtx } from "./context";
 import { AGENTOS_SERVER, INBOX_ASK, TASK_UPDATE_STATUS, qualify } from "./names";
 
-/** Shared with the handler layer (`agentos-server.ts`) so both layers state the same reason. */
-export function gateRefusalReason(taskId: string): string {
+/**
+ * Shared with the handler layer (`agentos-server.ts`) so both layers state the same reason.
+ *
+ * **Two audiences, one source (D36).** The default is the session rendering and is frozen —
+ * `scripts/verify-stage3c.mts` AC-19 compares it byte-for-byte, because the MCP contract must not
+ * drift while the human copy is edited. The `"human"` rendering exists because the session text is
+ * actively wrong for a person: they are not a session, `inbox_ask` is not a tool they can call, and
+ * `approveDoneAction` has no gate check for humans at all — so the honest sentence is not "you may
+ * not do this" but "this gesture is not the approval; the button is."
+ *
+ * Two renderings of one function rather than two strings that must agree — the latter is the shape
+ * `docs/LEARNINGS.md` records as "a second source of truth wearing a justification".
+ */
+export function gateRefusalReason(
+  taskId: string,
+  audience: "session" | "human" = "session",
+): string {
+  if (audience === "human") {
+    return (
+      `This task needs your approval, and dragging it is not that. ` +
+      `Use "Approve & mark done" on the card — it records you as the approver.`
+    );
+  }
   return (
     `task ${taskId} has approvalGate=true; a session may not move it to 'done'. ` +
     `Leave it in 'review' (or another non-done status) for a human to close, or use ${INBOX_ASK} ` +

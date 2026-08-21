@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { humanAge } from "@/lib/collectors/exec";
 import { boardOnce } from "@/lib/reconcile/cached";
+import { openInboxCount } from "@/lib/tasks/data";
 import { driftBandFor, projectNav, ribbonModel } from "@/lib/shell/model";
 import { GLYPH, WORD } from "@/lib/severity";
 import { Ribbon } from "@/components/shell/Ribbon";
@@ -38,7 +39,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
       {band && <DriftBand check={band} />}
 
       <div className={s.body}>
-        <ProjectRail nav={nav} currentTab={null} />
+        <ProjectRail nav={nav} currentTab={null}
+          inboxOpenCount={openInboxCount(nav.project.path)}
+        />
         <main className={s.pane}>
           <h1 className={s.h1}>{project.name}</h1>
           <p className={s.sub}>
