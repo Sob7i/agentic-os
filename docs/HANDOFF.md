@@ -40,12 +40,12 @@
 | `develop` head | `8643ef7` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #16, #17 (2026-08-19), #18 (2026-08-19) | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **77 of 78** — measured 2026-08-19 on the T4 branch, after the #19–#24 review fixes | `pnpm verify` |
-| — the one failure | Stage 1 **AC-2** | see "Where things stand" for why it is not a bug |
-| `pnpm verify:stage1` | 7 of 8 | `pnpm verify:stage1` |
+| `pnpm verify` | **2 suites red, for a new reason** — measured 2026-08-21. Not a regression: see the row below | `pnpm verify` |
+| — what is red, and why | Stage 1 **AC-2 now passes**, so `verify:stage3` **AC-11** and `verify:stage3a` **AC-1** fail — both pin Stage 1's expected result at `7P/1F`. **Two oracles went red because a known failure was fixed.** Cause: itqan's last commit was 2026-07-19 until *we* pushed to it on 2026-08-20, which un-stalled DC7. See `docs/LEARNINGS.md` (2026-08-21) and `docs/BACKLOG.md` | `pnpm verify:stage1` |
+| `pnpm verify:stage1` | **8 of 8** (was 7 of 8) — AC-2 green while itqan is active | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
-| `pnpm verify:stage3` | 33 of 33 — AC-1…AC-19 plus T7-1…T7-4; AC-12 opt-in (skipped by default) | `pnpm verify:stage3` |
-| `pnpm verify:stage3a` | 8 of 8 | `pnpm verify:stage3a` |
+| `pnpm verify:stage3` | **32 of 33** — AC-11 red on the pinned `7P/1F` baseline, everything else green | `pnpm verify:stage3` |
+| `pnpm verify:stage3a` | **7 of 8** — AC-1 red on the same pinned baseline | `pnpm verify:stage3a` |
 | `pnpm verify:stage3b` | 18 of 18 — T1's five + AC-2c/AC-2d, T2's five + AC-4b, T3's four, T4's **AC-9** (the four added in PR review) | `pnpm verify:stage3b` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
@@ -255,24 +255,14 @@
   rather than inventing rows. That connector needs a decision about what creates the row, and it is
   the next thing standing between this build and a first real run (`docs/BACKLOG.md`, and D27 which
   already chose `fractal-code` as the target repo).
-- **Next to build: Stage 3b** ([`stage-3b-onboarding.spec.md`](specs/stage-3b-onboarding.spec.md),
-  written 2026-08-19). Stage 3 is complete and **cannot be used** — nothing turns an `agentos.yml`
-  into a `Project` row, so the only way to create an agent or a task is a seed script. 3b is the
-  smallest thing that closes the loop: initialize a project, create an agent, create a task. It is
-  sequenced **before Stage 4** because Stage 4's own spec says it introduces no new machinery — it
-  sequences parts that have already run, and right now none of them have run once. **Its one open
-  decision is closed** — §5.1 became **D30** on 2026-08-19: an explicit *Initialize* button on the
-  pane that already says *not initialized*. A filesystem watcher was rejected on sight and the
-  rejection recorded, because it is the kind of convenience that comes back. **T1 is built** — see below. **The spec is `☑` and
-  buildable, and the four T-tickets are written**
-  ([`stage-3b-tickets.md`](specs/stage-3b-tickets.md), 2026-08-19): T1 the connector, T2 agent
-  create/edit behind *configuration*, T3 task create, T4 the full cycle plus the walkthrough. They
-  **stack** — each branches off the one before, because all four append to the same hub docs and to
-  `scripts/verify-stage3b.mts`. Three facts measured on `8643ef7` shape them and are recorded in
-  the tickets' own preamble: **no watched repo has an `agentos.yml`** (so this stage defines the
-  format rather than capturing one, and the *not initialized* pane is unreachable today because a
-  project without the file gets zero tabs), **there is no `configuration` surface yet**, and
-  **`yaml` is not a dependency**.
+- **Stage 3b — built 2026-08-19** ([`stage-3b-onboarding.spec.md`](specs/stage-3b-onboarding.spec.md),
+  written 2026-08-19). *This entry said "Next to build" until 2026-08-21, while the same file
+  already recorded all four of its tickets as landed — a narrative bullet going stale by not being
+  updated as the work shipped, which would have routed the next session at an already-finished
+  stage.* What it closed: Stage 3 was complete and **unusable**, because nothing turned an
+  `agentos.yml` into a `Project` row. 3b is the smallest thing that closes the loop — initialize a
+  project, create an agent, create a task. Its real-world acceptance half remains unmet and is an
+  owner gate, not build work (see *Next up*).
 - **Stage 3b T1 — the connector — is built** (`feat/stage-3b-t1-connector`, 2026-08-19). An
   explicit *Initialize* button on the *not initialized* pane turns an `agentos.yml` into a
   `Project` row: `primaryRepoPath` from the Board's own entry, never from the file or a form field;
@@ -392,11 +382,25 @@
    — the one check in the whole build that spawns a real session against the real Agent SDK. Costs
    money and needs the network, which is exactly why it stays outside `pnpm verify`; it has never
    been run.
-4. **Look at the ribbon once** (AC-10). It is the one acceptance criterion that cannot be
+4. **Look at the ribbon once** (AC-10). *Superseded in place by Stage 3c's M-1 (item 5), which
+   takes this same measurement after the rail grows 172px → 200px — so if Stage 3c is going ahead,
+   take it there and record it once rather than measuring a layout that is about to change.* It is
+   the one acceptance criterion that cannot be
    automated, and it is currently recorded in `docs/FEATURES.md` as a **computed estimate, not an
    observation** — ~890px of 1280px. `pnpm dev` → any `/p/<name>`. If it is cramped, D23 named the
    fallback in advance and §5.4 kept the pane unconstrained so the swap stays a layout change.
-5. **Specs for Stages 4 and 5 are written** —
+5. **Stage 3c is specced and is now the next slice** —
+   [`stage-3c-board-and-rail.spec.md`](specs/stage-3c-board-and-rail.spec.md) (`☐`), with its
+   four stacked tickets in [`stage-3c-tickets.md`](specs/stage-3c-tickets.md). It came out of the
+   owner's first real use of the app on 2026-08-20: drag-and-drop on the Kanban, a drawer for the
+   two long forms, the four setup surfaces as rail rows, and the rail rebuilt to frame `B′2`.
+   **Two things gate it and both are yours:** the five decisions it raises (D32–D36, all argued
+   in its §5), and **`agentos.yml` reaching `develop`** — until the D31 opt-in is merged there, a
+   branch cut from `develop` has no opted-in project, so every by-hand check and measurement in the
+   spec is unrunnable (§6.0). Check it with `git show develop:agentos.yml`, not against a PR number.
+   It is sequenced **before** Stage 4 because Stage 4 needs a `Templates` destination that does
+   not exist, and D32 creates one.
+6. **Specs for Stages 4 and 5 are written** —
    [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) is **`☑`
    buildable** (no owner gate; it is sequenced behind Stage 3b, which is now built), and
    [`stage-5-goals.spec.md`](specs/stage-5-goals.spec.md) is **`☐`**, gated on one owner call in
