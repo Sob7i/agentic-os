@@ -12,8 +12,15 @@ Three measured facts, carried here so a ticket brief does not have to re-derive 
    line 20 imports `node:sqlite`. Verified 2026-08-21 by reading the three files. Spec §3.4.
 2. **`LEGAL_TRANSITIONS` exempts `human` entirely** (`lib/agentos/db.ts:497`). There is no layer
    beneath the server action that would refuse an illegal human move. Spec §3.2.
-3. **`origin/develop` did not contain `agentos.yml` when this was written** (`4ddb7ed`). Spec §6.0
-   — an owner merge gates the whole stage.
+3. **`develop` did not contain `agentos.yml` when this was written.** Spec §6.0 — an owner merge
+   gates the whole stage. **Check it structurally, every time:** `git show develop:agentos.yml`
+   either prints the file or exits non-zero. Do not check a PR number, and do not pin a sha here —
+   branch heads live in `docs/HANDOFF.md` §Verified state and nowhere else.
+4. **`resolveOwnedTask` does not honour an injected database.** `app/p/[slug]/[tab]/actions.ts:181-189`
+   calls `loadProjectExecutionData(...)` with no override and then `getTask(getDb(), ...)`. So
+   passing `{ db }` to a new action that reuses it reaches the **real** store, not the fixture —
+   AC-13 and AC-16 would silently exercise `data/agentos.sqlite`. Threading the db through the
+   helper and its loader is T3's work, and it is a prerequisite for its own checks being meaningful.
 
 ## Standing constraints — every ticket
 
@@ -40,12 +47,21 @@ Three measured facts, carried here so a ticket brief does not have to re-derive 
 
 ## T1 — decisions, the rail, and the setup routes
 
-**Branch:** `feat/stage-3c-t1-rail` off `develop` **after PR #26 merges** (spec §6.0).
+**Branch:** `feat/stage-3c-t1-rail` off `develop`, **only once `git show develop:agentos.yml`
+succeeds** (spec §6.0).
 **Closes:** AC-1..AC-8, AC-17, AC-19. Creates the suite.
 
 **Do first, in its own commit:** write **D32–D36** into `docs/DECISIONS.md`. T2, T3 and T4 are only
 permitted by D34, D33/D36 and D32 respectively; a later ticket discovering an unwritten decision is
 the gate failing.
+
+**Done criteria** — all three, not two of three: `pnpm verify:stage3c` green; `pnpm verify` no new
+red **compared per-suite**; and the duplicate `showsRunControl` import at
+`scripts/verify-stage3b.mts:70` **deleted**. The deletion is mandatory. It is *not* currently
+breaking anything — measured 2026-08-21, that suite passes 18 of 18 with the duplicate present,
+because `tsx` tolerates a repeated binding — so do not report it as a fix to a red suite. It goes
+because dead code surviving on a bundler's tolerance is a trap for whoever next changes the
+toolchain.
 
 **Owns:**
 - `docs/DECISIONS.md`
@@ -74,7 +90,9 @@ nothing else in that file's data path.
 
 **Traps:**
 - **Fix the two `revalidatePath` strings in the same commit as the route move**, or a created agent
-  stops appearing until a manual reload — and AC-16 is what stops that shipping green.
+  stops appearing until a manual reload — and **AC-21** is what stops that shipping green. *(These
+  tickets cited AC-16 until 2026-08-21; AC-16 is the cross-project ownership check, so the trap had
+  no check at all. Caught in review of #27.)*
 - **`0` is a fact; `null` is "not counted".** Rendering `0` for an uninitialized project asserts
   "no open questions" about a store never opened. Invariant 2, in the rail.
 - **Use one `SELECT COUNT(*)`, not `loadProjectExecutionData`** — that is the N+1 loader already in
@@ -102,9 +120,26 @@ nothing else in that file's data path.
 that is a finding — report it, do not make it.**
 
 **Build.** One `Drawer`: a `<dialog>` opened with `showModal()`, closed with `close()`, styled as a
-right-hand sheet with `::backdrop`. It takes `children` and a `DrawerOutcome` and does nothing
-else. **Drop frame `B′2`'s second header button, `configuration`** — the SETUP rows are the entry
-point now, and two entry points to one place is the duplication D22 refused.
+right-hand sheet with `::backdrop`. **Drop frame `B′2`'s second header button, `configuration`** —
+the SETUP rows are the entry point now, and two entry points to one place is the duplication D22
+refused.
+
+**The contract, because "takes `children` and a `DrawerOutcome`" is not implementable and the first
+draft of this ticket said exactly that** (caught in review of #27). `useActionState` lives *inside*
+`TaskForm`/`AgentForm`, so a `Drawer` receiving an opaque `children` node cannot observe the state
+that decides whether it closes. Resolve it before writing code, and prefer the first:
+
+- **`Drawer` is presentational and controlled.** Props: `open: boolean`, `onClose: () => void`,
+  `title`, `children`. It owns no form state and makes no close decision.
+- **Each form owns its own state and calls `drawerOutcome`**, then invokes `onClose()` when the
+  verdict says `close: true`. The forms keep their `useActionState` wiring verbatim — that is the
+  hand-off contract from T1 and the thing AC-10 checks.
+- **The trigger's `open` state lives in a small client wrapper per surface** (`+ Task` on the tasks
+  tab; the agents list on `/config/agents`), seeded server-side from `initialDrawerFor` for the
+  `?agent=<id>` edit case.
+
+This keeps the wrong-able part — *when does it close* — in `lib/shell/drawer.ts` where AC-9 can
+reach it, and leaves `Drawer.tsx` dumb, per CLAUDE.md §Conventions.
 
 **Traps:**
 - **`ok: true` is not sufficient to close.** `createAgentForSlug` returns
@@ -126,9 +161,16 @@ point now, and two entry points to one place is the duplication D22 refused.
 
 **Branch:** `feat/stage-3c-t3-drag` off **T2**. **Closes:** AC-12..AC-16. **Measures:** M-2.
 
-**Owns:** `lib/tasks/dnd.ts` (**new leaf file — not `model.ts`; inherited fact 1**),
+**Owns:** `lib/tasks/dnd.ts` (**new leaf file — the drop rule; inherited fact 1**),
+`lib/tasks/model.ts` (**adds `humanRefusalReason` to `GateModel` per D36 — the first draft of this
+ticket omitted this file and then required the human wording, which was not buildable**),
 `components/tasks/DragBoard.tsx`, `DroppableColumn.tsx`, `DraggableCard.tsx` (new, all
 `"use client"`).
+
+**Do first, before the drag work:** thread an optional `db` through `resolveOwnedTask` and
+`loadProjectExecutionData` (inherited fact 4). Until that lands, `moveTaskForSlug(..., { db })`
+reads the real store and AC-13/AC-16 are testing the wrong database — a hostile check that never
+touches the crafted fixture is worse than no check, because it reports green.
 
 **May touch:** `components/tasks/Board.tsx` (**stays a server component**),
 `components/tasks/tasks.module.css`, `app/p/[slug]/[tab]/actions.ts` (adds `moveTaskForSlug` +
@@ -145,9 +187,14 @@ model code enters the client graph. `onDragEnd` runs `dropVerdict` client-side t
 then calls `moveTaskAction`, which runs the same rule again and is never trusted to have been run.
 
 **Traps:**
-- **The refusal string is passed as data**, produced server-side from the existing `gateModelFor`.
-  Never imported into the client, never retyped. That is how *one reason, one source* survives
-  contact with the bundler.
+- **The refusal string is passed as data** — produced server-side, never imported into the client,
+  never retyped. That is how *one reason, one source* survives contact with the bundler.
+- **Pass the `human` rendering, not `gateModelFor`'s default.** `gateModelFor` calls
+  `gateRefusalReason(task.id)` with the default `"session"` audience, whose text says *"a session
+  may not move it to 'done'"* and points at `inbox_ask`. Handing that to `dropVerdict` shows a
+  sentence about sessions, and a tool they cannot call, to the person who just dragged the card —
+  the exact defect D36 exists to fix. AC-12 asserts the human wording; AC-19 keeps the session
+  wording frozen for MCP.
 - **The move action must not call `dispatch()`.** Assert behaviourally (AC-15) — an import check is
   worthless because `actions.ts:19` imports `dispatch` legitimately for `runNowAction`.
 - **`PointerSensor` with `activationConstraint: { distance: 4 }`**, or a whole-card drag handle eats
@@ -164,7 +211,8 @@ then calls `moveTaskAction`, which runs the same rule again and is never trusted
 
 ## T4 — docs, and the measurements
 
-**Branch:** `feat/stage-3c-t4-docs` off **T3**. **Closes:** AC-18, AC-20. **Takes:** M-1, M-2, M-3.
+**Branch:** `feat/stage-3c-t4-docs` off **T3**. **Closes:** AC-18, AC-20, AC-21.
+**Takes:** M-1 (the ribbon — Stage 3a's AC-10), M-1b (the board), M-2, M-3.
 
 **May touch:** the suite, `docs/FEATURES.md`, `docs/HUMAN-TEST.md` (Part 3 gains drag and the
 drawer as by-hand steps), `docs/HANDOFF.md`, `docs/LEARNINGS.md`, `docs/BACKLOG.md` (the
@@ -174,11 +222,17 @@ drawer as by-hand steps), `docs/HANDOFF.md`, `docs/LEARNINGS.md`, `docs/BACKLOG.
 **Must not touch:** any `lib/` or `app/` file. **If a check needs a production change, that is the
 finding.**
 
-**The measurements are the point of this ticket.** Record M-1 in `docs/FEATURES.md` **with its date
-and the viewport it was taken at** — Stage 3a's AC-10 is sitting in that file as a computed
+**The measurements are the point of this ticket.** Record each in `docs/FEATURES.md` **with its
+date and the viewport it was taken at** — Stage 3a's AC-10 is sitting in that file as a computed
 estimate presented as a fact, and this ticket exists so that does not happen twice.
 
-**Then answer the question M-1 unblocks.** `docs/BACKLOG.md`'s *"The portfolio sidebar should list
+**M-1 is the ribbon, and it is the one that closes AC-10.** Write down all three of its parts as
+observed: the six project names as rendered (untruncated or not), the freshness line, the back
+control. *"Looked fine"* is how it stayed unobserved for three days. **M-1b is the board** and is a
+different measurement that this stage adds because the rail grows — do not let one stand in for the
+other, which is what the first draft of the spec did.
+
+**Then answer the question M-1b unblocks.** `docs/BACKLOG.md`'s *"The portfolio sidebar should list
 the projects"* has as its unblock condition *"the Tasks board having been used with enough real
 cards to judge the width question D23 actually traded against."* M-1 is that evidence. Either close
 the entry or restate its condition — **do not leave it saying it is waiting for something that has

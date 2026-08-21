@@ -1,8 +1,8 @@
 # Spec — Stage 3c: the board and the rail, second pass
 
 status: ☐ design closed — **five decisions gate the build (D32–D36), all raised in §5 and all
-owner-clearable in one sitting.** One further prerequisite is an owner action, not a decision: PR
-#26 must merge before any ticket is cut (§6.0).
+owner-clearable in one sitting.** One further prerequisite is an owner action, not a decision:
+`agentos.yml` must be on `develop` before any ticket is cut (§6.0).
 
 > **Stage 3b closed the loop; this stage makes it usable.** The owner ran the app for the first
 > time against a real opted-in project on 2026-08-20 and produced five pieces of frontend
@@ -46,9 +46,10 @@ owner-clearable in one sitting.** One further prerequisite is an owner action, n
    label and rows, and a footer line.
 5. **`pnpm verify:stage3c`** — fixture-based, model never called, discovered by
    [`scripts/verify-all.mts`](../../scripts/verify-all.mts) from its `package.json` key.
-6. **Stage 3a's AC-10 measurement, finally taken** (§4, M-1). It has sat in `docs/FEATURES.md`
-   since 2026-08-18 as a *computed estimate*, never an observation, and this stage changes the
-   number it estimated.
+6. **Stage 3a's AC-10 measurement, finally taken** (§4, M-1) — the **ribbon** carrying six names,
+   the freshness line and the back control without truncation. It has sat in `docs/FEATURES.md`
+   since 2026-08-18 as a *computed estimate*, never an observation. The board's own width is a
+   second measurement (M-1b), which this stage adds because the rail grows 172px → 200px.
 
 **Out** — each has a home:
 
@@ -83,15 +84,15 @@ The rows that land in `docs/FEATURES.md` when this ships.
 | Never dispatches from a drop | `todo → doing` by drag starts no session — `Run now` remains the only path (D24) | **AC-15** |
 | Refuses a cross-project drag | One project cannot move another's card | **AC-16** |
 | Keeps the board operable by keyboard | A card can be lifted, moved and dropped without a pointer | M-2 (measured) |
-| Opens Add task / Add agent in a drawer | Right-hand sheet, focus trapped, `Esc` closes, background inert | M-3 (measured) |
+| Opens Add task / Add agent in a drawer | Right-hand sheet, focus trapped, background inert; `Esc` closes **unless a submit is pending** | M-3 (measured) |
 | Keeps a refusal on screen | A failed create leaves the drawer open with its reason | AC-9 |
 | Keeps the egress-floor note on screen | A *successful* agent create that denied `WebFetch`/`WebSearch` leaves the drawer open | **AC-9** |
 | Offers four setup destinations | `Agents · Templates · Environments · Repos` as rail rows with their own URLs | AC-2, AC-7 |
 | Says what will build an unbuilt setup surface | Each placeholder names its stage, or states it is unspecced | AC-7 |
 | Refuses an unknown setup section | `/p/<slug>/config/nope` → 404, not an empty shell | AC-7 |
-| Offers no setup surfaces without an execution layer | `/p/<watched-only>/config/agents` → 404 (**a change**, §3.3) | AC-7 |
-| Shows the project's severity in the rail | Glyph and word from the shared vocabulary — no delta, no sentence | AC-5 |
-| Says so when it could not check | Degraded collectors → the rail states the age is unavailable and shows no number | AC-5 |
+| Offers no setup surfaces without an execution layer | `/p/<watched-only>/config` → 404. **That is the row that carries the change** — it renders today. `/config/agents` also 404s, but it 404s *before* this stage too, so it proves nothing on its own | AC-7 |
+| Shows the project's severity in the rail | Glyph and word from the shared vocabulary — no delta, no sentence, at **every** severity | AC-5 |
+| Says so when it could not check | Degraded collectors → severity is `unverifiable`, so the line reads `◌ unverifiable` — the same two tokens, not a special sentence | AC-5 |
 | Carries the Inbox count in the rail | Right-aligned, monospace — the only counter in the product | AC-2, AC-3 |
 | Distinguishes "none" from "not counted" | An uninitialized project shows no count, never `0` | **AC-3** |
 | Agrees with the Inbox page about the count | The rail's number and the page's number come from one rule | **AC-4** |
@@ -176,43 +177,65 @@ leaves the suite green.**
 
 | # | Class | Asserts | Probe |
 |---|---|---|---|
-| **AC-1** | **[G]** | No `"use client"` file transitively **value**-imports a `node:` builtin or `lib/agentos/db`. Type-only imports excluded — which is why [`AgentForm.tsx:5`](../../components/config/AgentForm.tsx) is fine | Import `showsRunControl` into the drag wrapper; the walk reaches `node:sqlite` and goes red **before** `pnpm dev` does |
+| **AC-1** | **[G]** | No `"use client"` file transitively **value**-imports a `node:` builtin or `lib/agentos/db`. Type-only edges are not followed | Import `showsRunControl` into the drag wrapper; the walk reaches `node:sqlite` and goes red **before** `pnpm dev` does |
 | **AC-2** | [F] | `projectRailModel` on an opted-in fixture: 5 work rows, 4 setup rows, label `SETUP`, 9 unique keys. On a watched-only fixture both arrays are empty | Remove the SETUP group → `setup.length === 0` |
 | **AC-3** | [F] | The Inbox row is the **only** row with a non-null count; with `inboxOpenCount: null` every count is null | Drop the count → filter yields `[]`. **Second sin:** default it to `0` → the null case yields a count |
 | **AC-4** | [F] | The rail's count and the Inbox page's count are one number: `openInboxCount(...) === inboxModel({...}).openCount` on a fixture of 2 open + 1 answered | Re-derive the rail count with its own query → 3 ≠ 2 |
-| **AC-5** | [F] | `driftLineFor(p).glyph === GLYPH[p.severity]` for all four severities; degraded git → text matches `/unavailable\|unknown/` and **contains no digit** | Hardcode a day count → the degraded fixture's digit assertion |
+| **AC-5** | [F] | For all four severities, `driftLineFor(p)` is exactly `GLYPH[p.severity]` + `WORD[p.severity]` and **contains no digit** — including the degraded case, which is `unverifiable` like any other severity and gets no special sentence (D35) | Hardcode a day count → the digit assertion, at every severity. **Second sin:** give the degraded case its own wording → it stops equalling `WORD.unverifiable` |
 | **AC-6** | **[G]** | `EXECUTION_TABS` is still five, and no `SETUP_ROWS` key appears in `nav.tabs` | Push `agents` into the tabs → red here **and** in `verify:stage3a` AC-6 |
 | **AC-7** | [F] | `setupSectionFor`: `agents` → live; the other three → placeholder with a non-empty `builtBy`; `skills` and `../../etc/passwd` → `null`; watched-only nav → `null` for all four | Return a default row → the unknown-section case |
 | **AC-8** | [F] | `SETUP_ROWS` is the single definition of the four keys, and the route validation reads it | Add a second literal list → two sources |
 | **AC-9** | [F] | `drawerOutcome` over four inputs: pending → open; `{ok:false}` → open; **`{ok:true, reason:"…egress floor…"}` → open**; `{ok:true, reason:null}` → close | Simplify to `return {close: state.ok}` → the third case. That case is not hypothetical — it is `egressFloorNote`'s value on a *successful* create (`config/actions.ts:105-110`), which Stage 3b AC-5 requires on screen |
 | **AC-10** | **[G]** | Both forms still contain `useActionState(`, still render `state.reason`; the drawer calls `drawerOutcome(` and does **not** test `state.ok` itself | Close from `state.ok` in the component → the negative match |
 | **AC-11** | [F] | `initialDrawerFor`: known id → edit; **unknown id → closed**; absent → closed | Return edit unconditionally → an empty edit sheet claims an agent exists |
-| **AC-12** | [F] | For a gated `review` card, `dropTargets` refuses **exactly one** column and it is `done`, with the gate's own reason; `todo`/`doing` accept; an **ungated** review card accepts everything | Remove the gate branch → the ungated positive control still passes while the gated case flips, so this cannot pass by refusing everything |
-| **AC-13** | **[F, hostile]** | Call `moveTaskForSlug(slug, id, "done", {db})` on a gated `review` task — the request a browser never sends. Refused; status still `review`; event count unchanged | Remove the server-side check → the task moves. §3.2: nothing underneath would have caught it |
+| **AC-12** | [F] | For a gated `review` card, `dropTargets` refuses **exactly one** column and it is `done`; `todo`/`doing` accept; an **ungated** review card accepts everything. The refusal is the **human** rendering (D36) — it names the Approve button and does **not** mention `inbox_ask` | Remove the gate branch → the ungated positive control still passes while the gated case flips, so this cannot pass by refusing everything. **Second sin:** pass `gateModelFor`'s default `refusalReason` → the `inbox_ask` assertion trips |
+| **AC-13** | **[F, hostile]** | Two crafted calls a browser never sends. **(a)** `moveTaskForSlug(slug, id, "done", {db})` on a gated `review` task → refused, status still `review`, event count unchanged. **(b)** an **arbitrary destination** (`"archived"`, `""`) → refused as `unknown-column` **before any write**, not surfaced as a crash | (a) Remove the server-side gate check → the task moves; §3.2, nothing underneath catches it. (b) Trust the `TaskStatus` type at a server boundary → the value reaches `writeTaskTransition`, trips SQLite's status `CHECK`, and the action throws instead of refusing. **A TypeScript signature is not a runtime allowlist** |
 | **AC-14** | [F] | After a legal `todo → doing`: exactly one new `TaskEvent`, `actorType: "human"`, `actorId: "owner"`, reason from `handMoveReason`; then `evidenceLineFor` **via `cardModel`** yields `hand-moved` and `registerFor` yields `claim` | Write status without the event → none. **Second:** write `actorType:"session"` → the evidence line takes the session branch |
-| **AC-15** | [F] | After that same move, `listSessionsByProject(db, projectId).length === 0` (D24) | Wire `dispatch` into the drop → one session row. An import check would be worthless: `actions.ts:19` imports `dispatch` legitimately for `runNowAction` |
+| **AC-15** | [F] | The move core takes an **injectable dispatch seam** and the check asserts it was **never invoked** — not merely that no session exists (D24) | Counting sessions is **not sufficient and would have shipped**: a wrong implementation that moves `todo → doing` and *then* calls `dispatch` is refused by dispatch itself, because it only accepts `todo` (`lib/agentos/dispatch.ts:185-186`). Zero sessions, green check, guard deleted. The invocation has to be observable. An import check is also worthless — `actions.ts:19` imports `dispatch` legitimately for `runNowAction` |
 | **AC-16** | **[F, hostile]** | Two fixture projects; post the attacker's slug with the victim's `taskId` → refused, victim unchanged, zero events. **Reuse `resolveOwnedTask`**, do not write a fourth ownership check | Drop the ownership guard → the move succeeds |
 | **AC-17** | **[G]** | Exactly eight `CREATE TABLE`s, and the name set matches §3.1 | Back a placeholder with a ninth table → red, forcing the decision into `docs/DECISIONS.md` |
 | **AC-18** | **[G]** | No `*.module.css` under `components/` contains a hex literal (true today — zero matches) | Put `#fff` in the drawer's stylesheet. Enforces "tokens come from `globals.css`" without copying the palette into the suite, which would make the suite a second source of truth about it |
 | **AC-19** | [F] | The `"session"` rendering of `gateRefusalReason` is **byte-identical** to today's string (D36) | Edit it → red, so the MCP contract cannot drift while the human copy is written |
+| **AC-21** | **[G]** | Every literal `revalidatePath()` in `app/` names a route that exists **and is not redirect-only**. Parse each template literal, wildcard its `${…}`, match against the tree derived from `app/**/page.tsx` | Leave `config/actions.ts:120`/`:172` pointing at `/p/${slug}/config` after agents move to `/config/agents` — the path resolves, but only to a redirect, so a created agent does not appear until a manual reload. **This is the one trap in the stage that ships green without a check** |
 | **AC-20** | **[G]** | Regression oracle: `verify:stage3` and `verify:stage3a` totals match their pre-slice values, reporting **SKIP, never FAIL, on a degraded upstream** | `verify:stage3a` AC-1 can go red because GitHub is down — already a `docs/BACKLOG.md` entry. Importing that flakiness would teach us to ignore this suite too |
+
+**The worked example, because getting it wrong is how AC-1 gets implemented as a rubber stamp.**
+[`AgentForm.tsx:5`](../../components/config/AgentForm.tsx) is `import { TOOL_GRANT_OPTIONS } from
+"@/lib/agentos/agent-form"` — a **value** import, not a type-only one, and it is safe anyway.
+The reason is one level down: [`agent-form.ts:11`](../../lib/agentos/agent-form.ts) imports
+`CreateAgentInput` from `./db` **as a type**, so the walk stops there and never reaches
+`node:sqlite`. **The rule is about the value graph, not about the first edge.** An implementation
+that exempts value imports, or that stops at depth one, passes this file for the wrong reason and
+would wave through the drag wrapper.
 
 ### Measurements — taken by hand, recorded either way
 
-- **M-1 — the ribbon and the board at 1280px.** This is **Stage 3a's AC-10**, which has never been
-  observed. Computed from the stylesheets: board minimum `4 × 220 + 3 × 14` = **922px**; available
-  at 1280px is `1280 − 200 (rail) − 1 (border) − 48 (padding)` = **1031px** — 109px of slack, 247px
-  per column, overflowing below a **1171px** viewport. **That is arithmetic, not an observation,
-  and recording it as one is precisely the error being corrected.** Look at it with real cards,
-  including the longest real agent name (`@implementation-plan-executioner`). **Fallback, named in
-  advance:** drop the column floor 220px → 200px, which buys 80px and is one line — before anyone
-  reaches for a layout rewrite.
+- **M-1 — the ribbon at 1280px. This is Stage 3a's AC-10 and it is about the ribbon, not the
+  board.** AC-10's own words: *"the ribbon must carry glyph + name for all six, the freshness line,
+  and the back control **without truncating a project name**."* **Record all three observations
+  explicitly** — the six names as rendered, the freshness line, the back control — because a
+  measurement recorded as "looked fine" is how AC-10 has stayed unobserved since 2026-08-18.
+  Nothing about board width answers this. *(The first draft of this spec described only the board
+  and still claimed to close AC-10, which would have let T4 mark it done while it stayed an
+  estimate. Caught in review of #27.)*
+- **M-1b — the board at 1280px**, a **separate** measurement this stage adds because the rail
+  grows. Computed from the stylesheets: board minimum `4 × 220 + 3 × 14` = **922px**; available is
+  `1280 − 200 (rail) − 48 (padding)` = **1032px** — 110px of slack, 248px per column, overflowing
+  below a **1170px** viewport. The rail's `border-right: 1px` is **not** subtracted separately:
+  `app/globals.css:49-51` sets `* { box-sizing: border-box }`, so a `width: 200px` rail already
+  contains it. *(Counted twice in the first draft — corrected in review of #27, before it could be
+  recorded as evidence.)* **That is arithmetic, not an observation, and recording it as one is the
+  error being corrected.** Look at it with real cards, including the longest real agent name
+  (`@implementation-plan-executioner`). **Fallback, named in advance:** drop the column floor
+  220px → 200px, which buys 80px and is one line — before anyone reaches for a layout rewrite.
 - **M-2 — keyboard drag.** Lift, move and drop a card without a pointer. If this does not work the
   dependency has not earned itself, and hand-rolled pointer events would have been the honest
   choice.
-- **M-3 — the drawer is modal.** Focus trapped, `Esc` closes, background inert, `::backdrop`
-  paints. **Not asserted in the suite** — these are the browser's promise, not ours
-  (`docs/LEARNINGS.md` 2026-08-18, *assert what you own*).
+- **M-3 — the drawer is modal.** Focus trapped, background inert, `::backdrop` paints, and `Esc`
+  closes **only when no submit is pending** — while pending it must be refused, or a refusal
+  arriving 300ms later has nowhere to land (§7.2). Check both states, not just the idle one.
+  **Not asserted in the suite** — these are the browser's promise, not ours (`docs/LEARNINGS.md`
+  2026-08-18, *assert what you own*).
 
 ---
 
@@ -303,9 +326,22 @@ sentence is not *"you may not do this"* but **"this gesture is not the approval 
 and it records you as the approver."**
 
 **Decision:** `gateRefusalReason(taskId, audience: "session" | "human" = "session")`. One function,
-two renderings, so §8.4's *one reason, one source* stays literally true. Four call sites, all
-taking the default. **AC-19 pins the `"session"` string byte-for-byte** so the MCP contract cannot
-drift while the human copy is written. Rejected: shipping the existing string verbatim — simpler,
+two renderings, so §8.4's *one reason, one source* stays literally true. **AC-19 pins the
+`"session"` string byte-for-byte** so the MCP contract cannot drift while the human copy is written.
+
+**A default is not a decision, and this one has to be requested explicitly.** `gateModelFor`
+(`lib/tasks/model.ts:186`) calls `gateRefusalReason(task.id)` — the default — and `GateModel`
+exposes a single `refusalReason`. If T3 sources the drag refusal from that model unchanged, **the
+person dragging the card gets the MCP sentence about `inbox_ask`**, which is the exact defect this
+decision exists to fix. So:
+
+- `GateModel` carries **both** renderings — the `session` string stays where the card and the MCP
+  layer already read it, and a `humanRefusalReason` is added beside it.
+- `dropVerdict` is given the **human** one, and **AC-12 asserts the drag refusal is the human
+  rendering** — mentions the Approve button, does not mention `inbox_ask` — while AC-19 keeps the
+  session rendering frozen.
+- **`lib/tasks/model.ts` is therefore in T3's owned files**, which the first draft of the tickets
+  omitted. Caught in review of #27. Rejected: shipping the existing string verbatim — simpler,
 and it puts a sentence about sessions in front of a person, in the product whose premise is that a
 displayed claim must be true.
 
@@ -315,11 +351,16 @@ displayed claim must be true.
 
 ### 6.0 — The prerequisite, and it is an owner action
 
-**PR #26 must merge before any ticket is cut.** `origin/develop` is at `4ddb7ed`, which does not
-contain the `agentos.yml` D31 added — it is still in the open PR. A branch cut from `develop` today
-has **no opted-in project at all**: `projectNav` gives a project without the file zero tabs, so
-`/p/agentic-os/tasks` 404s, and every by-hand check and measurement in §4 is unrunnable. Merging is
-owner-only. **Merge #26, then cut `feat/stage-3c-t1-*` from the new head.**
+**`agentos.yml` must be on `develop` before any ticket is cut.** The D31 opt-in was still sitting
+in an unmerged PR when this spec was written. A branch cut from a `develop` without that file has
+**no opted-in project at all**: `projectNav` gives a project without it zero tabs, so
+`/p/agentic-os/tasks` 404s, and every by-hand check and measurement in §4 is unrunnable.
+
+**The check is structural, not a PR number** — `git show develop:agentos.yml` either prints the file
+or exits non-zero, and it keeps answering correctly long after any particular PR has merged.
+Merging is owner-only. *(This section named a specific PR and pinned a `develop` sha until
+2026-08-21; both would be stale the moment the gate cleared, and `CLAUDE.md` keeps branch heads in
+`docs/HANDOFF.md` §Verified state alone. Corrected in review of #27.)*
 
 ### 6.1 — Order
 
@@ -341,8 +382,14 @@ every such conflict resolves to a union. **T2 branches off T1, T3 off T2, T4 off
 Both verified 2026-08-21, both in files T1 is already opening:
 
 - [`scripts/verify-stage3b.mts:69-70`](../../scripts/verify-stage3b.mts) imports `showsRunControl`
-  **twice** — a leftover from the union merge `docs/LEARNINGS.md` records for 2026-08-19. It
-  survives because `pnpm type-check` never sees `.mts`. Delete line 70.
+  **twice** — a leftover from the union merge `docs/LEARNINGS.md` records for 2026-08-19. Delete
+  line 70; it is a **mandatory** item in T1's done criteria, not an optional tidy.
+  **It is not, however, breaking anything today, and the spec should not claim it is:** measured
+  2026-08-21, `pnpm verify:stage3b` passes 18 of 18 with the duplicate present, because `tsx`
+  tolerates a repeated binding and `pnpm type-check` never sees `.mts`. It is removed because dead
+  code that only survives on a bundler's tolerance is a trap for whoever changes the toolchain —
+  not because a suite is red. *(Review of #27 rated this critical on the grounds that the suite
+  could not parse; it parses. The fix stands, the reason does not.)*
 - `app/globals.css:9` points at a validator that does not exist here (§5.3).
 
 ### 6.4 — The `revalidatePath` trap
@@ -350,8 +397,10 @@ Both verified 2026-08-21, both in files T1 is already opening:
 [`app/p/[slug]/config/actions.ts:120`](../../app/p/[slug]/config/actions.ts) and `:172` revalidate
 `` `/p/${slug}/config` ``. Once agents render at `/config/agents`, both point at a route that only
 redirects — **a created agent will not appear until a manual reload**, and the ticket ships green.
-**AC-16 makes this structural** rather than a thing someone has to remember, which is the only
-reason it is worth a check rather than a sentence.
+**AC-21 makes this structural** rather than a thing someone has to remember, which is the only
+reason it is worth a check rather than a sentence. *(This section cited AC-16 until 2026-08-21;
+AC-16 is the cross-project ownership check, so the trap it claimed was covered had no check at all.
+Caught in review of #27.)*
 
 ---
 

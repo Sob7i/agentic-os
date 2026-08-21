@@ -132,6 +132,15 @@ and things explicitly punted with a reason.
   keep the name and refresh the fixture whenever it rots, accepting the maintenance. Unblocked by:
   the owner picking (a) or (b). **(a) is the recommendation** — it tests the behaviour the PRD
   actually cares about (§3.1: *a green row is worth as much as a red one*) instead of the weather.
+  **Updated 2026-08-21 — the entry above is now out of date in an instructive way, and the fix got
+  bigger.** AC-2 **passes again**: we pushed a rules change to itqan on 2026-08-20, which un-stalled
+  DC7. But `verify:stage3` **AC-11** and `verify:stage3a` **AC-1** both pin Stage 1's expected
+  result as the literal `7P/1F`, so **they now fail because a known failure was repaired** — two
+  suites red for the opposite of a regression, and neither of them changed. So the fix has a second
+  half: **an oracle must assert *no new failures*, or compare against a deliberately-updated
+  baseline, never a hardcoded pass/fail count.** Do not simply re-pin them to `8P/0F` — that
+  re-arms the identical trap for the next time itqan goes quiet, which the dates say is roughly a
+  month. Unblocked by: the same owner call as (a)/(b), which now also settles the oracles.
 
 ### From the execution-layer re-scope (2026-08-15, D18–D22)
 

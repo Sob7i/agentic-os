@@ -454,3 +454,20 @@ belongs in `docs/DECISIONS.md` instead.
 - (2026-07-27) The first three commits landed directly on `main` before the branch model was
   decided (D13). `develop` was branched from that point so history stayed consistent — but the
   decision should have been closed *before* the first commit, not after the third.
+
+- (2026-08-21) **Two regression oracles went red because a known failure got fixed — and we caused
+  the fix from another repo.** Stage 1's AC-2 asserts *"itqan is green"*; itqan's last commit was
+  2026-07-19, so DC7 correctly reported it stalled and AC-2 had been failing for weeks. On
+  2026-08-20 we pushed a rules change **to itqan**, which un-stalled it, so AC-2 started passing and
+  Stage 1 went `7P/1F → 8P/0F`. Both `verify:stage3` **AC-11** and `verify:stage3a` **AC-1** pin
+  Stage 1's expected result as the literal `7P/1F`, so **both failed on the improvement.**
+  Three things are worth separating here. **An oracle that pins an expected *failure* count treats
+  every change to that count as a regression, including a repair** — it should assert *no new
+  failures*, or compare against a baseline that is updated deliberately, not a literal. **A test
+  that depends on another repo's commit recency depends on the weather**, and it now rots in both
+  directions: the fixture went stale by neglect and then un-stale by unrelated work, and the second
+  is harder to notice because the suite that breaks is not the suite that changed. And **the blast
+  radius crossed a repo boundary** — nothing in this repo's history explains the failure, which is
+  the specific reason it is written down rather than fixed silently. `docs/BACKLOG.md` carries the
+  fix; it needs the same owner decision AC-2 already needed, which is why this is a lesson and not
+  a patch.
