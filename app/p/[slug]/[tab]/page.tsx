@@ -20,6 +20,7 @@ import {
   answerInboxAction,
   initializeProjectAction,
   createTaskAction,
+  moveTaskAction,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -97,7 +98,13 @@ function TabBody({ tab, slug, projectPath }: { tab: string; slug: string; projec
       return (
         <>
           <TaskDrawer slug={slug} agents={[...data.agentsById.values()]} action={createTaskAction} />
-          <Board columns={columns} slug={slug} runNowAction={runNowAction} approveDoneAction={approveDoneAction} />
+          <Board
+            columns={columns}
+            slug={slug}
+            runNowAction={runNowAction}
+            approveDoneAction={approveDoneAction}
+            moveAction={moveTaskAction}
+          />
         </>
       );
     }

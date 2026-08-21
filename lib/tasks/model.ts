@@ -1,5 +1,6 @@
 import type { AgentRow, SessionRow, TaskEventRow, TaskRow } from "@/lib/agentos/types";
 import { gateRefusalReason } from "@/lib/agentos/mcp/gate";
+import { COLUMN_ORDER } from "./columns";
 
 /**
  * The Tasks board's logic, as pure functions over rows read from `data/agentos.sqlite`.
@@ -173,6 +174,16 @@ export interface GateModel {
    * gated task quotes this field rather than composing its own text.
    */
   refusalReason: string;
+  /**
+   * The **human** rendering of the same refusal (D36), for the drag path.
+   *
+   * `refusalReason` above is written for a session — *"a session may not move it to 'done'"*, and
+   * it points at `inbox_ask`. A person who just dragged the card is not a session and cannot call
+   * that tool; worse, `approveDoneAction` has no gate check for humans at all, so "you may not do
+   * this" is not even true of them. Both come from **one function with an audience argument**, not
+   * two strings that must be kept in agreement.
+   */
+  humanRefusalReason: string;
   /** Only when a chain exists (Stage 4) — always absent in this slice; no chain schema exists yet. */
   chainConsequence?: string;
 }
@@ -184,6 +195,7 @@ export function gateModelFor(task: TaskRow): GateModel | null {
     label: "human gate",
     subtitle: "agent reached review · only you can mark done",
     refusalReason: gateRefusalReason(task.id),
+    humanRefusalReason: gateRefusalReason(task.id, "human"),
   };
 }
 
@@ -254,7 +266,9 @@ function agentBadge(agent: AgentRow | undefined): AgentBadge | null {
   return { monogram: agent.monogram, name: agent.name };
 }
 
-export const COLUMN_ORDER: TaskRow["status"][] = ["todo", "doing", "review", "done"];
+// Defined in `./columns` (a leaf `lib/tasks/dnd.ts` can reach without pulling in this module's
+// `node:sqlite` chain) and re-exported here so every existing import site is unchanged.
+export { COLUMN_ORDER } from "./columns";
 
 export interface ColumnModel {
   key: TaskRow["status"];
