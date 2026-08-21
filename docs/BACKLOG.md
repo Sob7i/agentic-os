@@ -26,6 +26,20 @@ and things explicitly punted with a reason.
   Part 7 having been run by hand at least once — the walkthrough is what tells us whether the
   hand-written file is actually the friction, or whether the friction is somewhere else entirely.
 
+- **`Environments` and `Repos` are nav rows with nothing behind them** *(added 2026-08-21, D32)*.
+  Stage 3c put four rows in the rail's SETUP group. `Agents` is live and `Templates` is a
+  placeholder naming Stage 4, which is specced. **These two name work nobody has specced at all** —
+  they exist because the owner asked for the four together, and because the shape of the product is
+  worth making visible. Each renders one honest sentence saying it is unspecced, and AC-17 pins the
+  table count at eight so neither can quietly acquire a schema. **What they will hold:** the
+  per-agent grant manifest sketched as frame `A1` in
+  [`design/wireframes2.pen`](../design/wireframes2.pen) — repo, path, network and MCP grants, all
+  default-deny. **Why that is not a frontend follow-up:** it is invariant 1's egress boundary
+  becoming configurable, so it needs its own decisions before any surface exists. **Unblock
+  condition:** D20's local-session model gaining a real enforcement point — this file already
+  records that a local process can reach the network regardless of what a manifest says, so a UI
+  for those grants would render a promise the runtime cannot keep.
+
 - **The portfolio sidebar should list the projects** *(added 2026-08-20, owner request)*. Inside a
   project the rail is the five work tabs; on the portfolio home
   ([`PortfolioRail.tsx`](../components/shell/PortfolioRail.tsx)) it is `Board · Overview` and **no
@@ -42,6 +56,15 @@ and things explicitly punted with a reason.
   evidence rather than one against evidence and one against a prediction. Note that a nav item
   listing projects on the *home* rail is a much smaller change than Concept C, and may be all that
   is wanted — the ribbon already solves this inside a project.
+  **Checked 2026-08-21, and the condition is still not met.** Stage 3c was expected to produce the
+  missing evidence. It produced the *arithmetic* — 1032px available against a 922px board minimum
+  at 1280px, 110px of slack — but **M-1b was never actually observed**, and the rail grew
+  172px → 200px in the same stage, so the number this entry waits on both changed and remains
+  unlooked-at. Recording that estimate here as the evidence is exactly what `docs/FEATURES.md` did
+  to Stage 3a's AC-10, and what Stage 3c exists to stop repeating. **The condition is unchanged and
+  needs two observations, not one — this entry trades reachability against width and has neither:**
+  M-1 is the reachability half (the ribbon) and M-1b is the width half (the board). Both are listed
+  in `docs/FEATURES.md` § *The measurements this stage owes*. Take both, then decide.
 
 - **`lib/tasks/data.ts` loads the Tasks board with N+1 queries** *(added 2026-08-19)*. Events are
   fetched per task, and tool calls, commit shas and inbox messages per session. Correct, and fine
@@ -141,6 +164,17 @@ and things explicitly punted with a reason.
   baseline, never a hardcoded pass/fail count.** Do not simply re-pin them to `8P/0F` — that
   re-arms the identical trap for the next time itqan goes quiet, which the dates say is roughly a
   month. Unblocked by: the same owner call as (a)/(b), which now also settles the oracles.
+  **Third half, observed live 2026-08-21 during the review round on #28–#31: a count is not an
+  identity, and both oracles can pass for the wrong reason.** GitHub's GraphQL quota ran out
+  mid-session. Stage 1's DC1 needs it, so `AC-1` went red with the documented offline symptom
+  (*"nadim severity is attention, expected drift"*) while `AC-2` went green — Stage 1 returned
+  `7P/1F` again, **with a different check failing**. Both oracles test `passes===7 && fails===1 &&
+  /AC-2/.test(out)`, and `/AC-2/` matches AC-2's *PASS* line just as happily as a FAIL one, so both
+  reported the upstream as unchanged. `verify:stage3`'s own `OFFLINE_SYMPTOM` branch — written for
+  exactly this outage — is **unreachable**, because `preSliceResult` is evaluated first and was
+  true. Two suites flipped from red to green inside one hour with no code change, for a reason that
+  had nothing to do with either of them. Whichever reading the owner picks, **the comparison has to
+  name which checks failed, not how many.**
 
 ### From the execution-layer re-scope (2026-08-15, D18–D22)
 

@@ -36,9 +36,11 @@ read `docs/HANDOFF.md` §Verified state — this file does not carry suite resul
 **Re-scoped 2026-08-15** to two layers (D18–D22) — `docs/PRD.md` §12. **Round-3 design closed
 2026-08-18** — D23 (the shell), D24 (work is dispatched, never picked up), D25 (a DoD item carries
 the kind of evidence that closed it) and D26 (the app shell splits out of Stage 3 as **Stage 3a**).
-**Next build step: Stage 3c** (the board and the rail, second pass — drag, the drawer, the SETUP
-rail group), then Stage 4 (templates and chains) and Stage 5 (goals) — all three specced. Stage 3c
-is sequenced first because Stage 4 needs a `Templates` destination that does not exist yet. Stage 4
+**Stage 3c is built** (drag, the drawer, the SETUP rail group, the rail to frame `B′2` — D32–D36).
+**Next build step: Stage 4** (templates and chains), which now has a `Templates` destination to fill
+in rather than invent, then Stage 5 (goals). **Stage 3c owes four by-hand observations that nobody
+has taken** — `docs/FEATURES.md` § *The measurements this stage owes*; they are owner work, not
+build work. Stage 4
 sequences parts that have now all run at least once, which is exactly why 3b was inserted before it.
 Behaviour today: `docs/FEATURES.md`; in plain language, `docs/HUMAN-TEST.md`.
 
@@ -93,7 +95,7 @@ deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state*
 | `docs/specs/stage-3a-shell.spec.md` | Queue | The app shell — **built 2026-08-18** |
 | `docs/specs/stage-3b-onboarding.spec.md` | Queue | The connector that makes Stage 3 reachable, plus agent and task creation — **built 2026-08-19 (D30)** |
 | `docs/specs/stage-3b-tickets.md` | Queue | Stage 3b's four build tickets — sequencing, file ownership, hand-off contracts. **They stack; T2 branches off T1, not `develop`** |
-| `docs/specs/stage-3c-board-and-rail.spec.md` | Queue | Drag-and-drop, the drawer, the SETUP rail group, and the rail rebuilt to frame `B′2`. Its own `status:` line carries whether it is buildable; what gates it is in `docs/HANDOFF.md` |
+| `docs/specs/stage-3c-board-and-rail.spec.md` | Queue | Drag-and-drop, the drawer, the SETUP rail group, and the rail rebuilt to frame `B′2` — **built 2026-08-21**. Its own `status:` line is the contract |
 | `docs/specs/stage-3c-tickets.md` | Queue | Stage 3c's four build tickets. **They stack; T2 off T1, T3 off T2, T4 off T3 — never off `develop`** |
 | `docs/specs/AgentOS-spec.md` | Reference | Reconstructed source spec for the execution layer — **a reconstruction, not a contract** |
 | `design/wireframes.pen` | Design | Round-1/2 wireframes (Pencil; plain JSON, readable directly) |
@@ -150,6 +152,7 @@ cache arrives with Stage 7 (derived and disposable). *Corrected 2026-08-18: this
 | `pnpm verify:stage3` | Stage 3 (the execution layer) only. Fixture-based; **AC-12 calls a real model and is opt-in**, skipped unless `AGENTOS_REAL_SESSION=1`. |
 | `pnpm verify:stage3a` | Stage 3a (the shell) only. Pure-function fixtures, plus the Stage 1/2 suites re-run as a regression oracle. |
 | `pnpm verify:stage3b` | Stage 3b (initialize, agents, tasks) only. Fixture repos in a temp dir; the model is never called. |
+| `pnpm verify:stage3c` | Stage 3c (the board and the rail) only. Fixture-based. **AC-20 spawns `verify:stage3` and `verify:stage3a` as a regression oracle, so this suite takes ~90s.** It clears `AGENTOS_REAL_SESSION` in the children, so running it never calls a model even on a machine where the opt-in is set. |
 | `pnpm type-check` | `tsc --noEmit`. |
 | `pnpm build` | Production build. |
 
@@ -160,6 +163,13 @@ If `pnpm build` fails on a missing `pages-manifest.json`, the cause is a stale c
 
 - **TypeScript**, Next.js App Router. Collectors are server-side under `lib/collectors/`;
   the write path is `lib/fix/`; the shell's logic is pure functions in `lib/shell/`.
+- **The work/setup split is a URL prefix, not a tab cap (D32).** Work is `/p/<slug>/<tab>` and
+  `EXECUTION_TABS` stays five; setup is `/p/<slug>/config/<section>`, defined once in
+  `SETUP_ROWS`. Concept C's "horizontal tabs physically cap at five" never applied to B′'s
+  vertical rail — the divider and the prefix are what hold the line now.
+- **Nothing client-reachable may value-import `lib/agentos/db` or a `node:` builtin.**
+  `lib/tasks/model.ts` does, transitively, via `mcp/gate.ts`; that is why the drag rule lives in
+  the leaf `lib/tasks/dnd.ts`. `verify:stage3c` AC-1 walks the graph and asserts it.
 - **Every surface reads the Board through `boardOnce`** (`lib/reconcile/cached.ts`), never
   `buildBoard` directly — one collector run per request, so the ribbon and the Board cannot
   disagree (D23). `verify:stage3a` AC-3 asserts it structurally.

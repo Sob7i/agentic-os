@@ -471,3 +471,89 @@ belongs in `docs/DECISIONS.md` instead.
   the specific reason it is written down rather than fixed silently. `docs/BACKLOG.md` carries the
   fix; it needs the same owner decision AC-2 already needed, which is why this is a lesson and not
   a patch.
+
+- (2026-08-21) **A single NUL byte made an acceptance suite unreviewable, and nothing complained.**
+  `scripts/verify-stage3c.mts` was written with a `0x00` inside a sentinel constant. Behaviour was
+  unaffected — the constant is only ever compared to itself, and the suite passed 11/11 — but git
+  classifies a file containing a NUL as **binary**, so its diff renders as `Bin 22469 -> 26797
+  bytes`. **PR #28 therefore shipped its acceptance suite invisibly**: the one file a reviewer most
+  needs to read was the one file they could not. `type-check`, `build` and the suite itself were
+  all green throughout, because none of them is a check about *reviewability*. Found by a
+  sub-agent working in the file, not by any tooling. **The lesson is not "avoid NUL bytes" — it is
+  that a diff rendering as `Bin` for a text file is a defect, not a curiosity**, and the moment to
+  notice is while reading your own PR.
+
+- (2026-08-21) **Three checks in one ticket passed and could not have failed — each for a different
+  reason, and only the deletion probe found them.** T3 shipped six checks green; committing each
+  sin turned three of them red only after they were fixed:
+  *(a) **the wrong guard was being exercised.*** AC-16 seeded the two projects in **separate**
+  databases, so the attacker's repo path found no `Project` row and the refusal came from the data
+  lookup — the `task.projectId !== data.project.id` comparison this guard was meant to exercise was
+  never reached, and deleting that line left it green. Fixed by putting both projects in one store.
+  *(b) **the pure function was right and the wiring was not checked.*** AC-12 asserted
+  `dropTargets` against a hand-built gate object, so the board feeding it the *session* refusal
+  string instead of the human one passed cleanly. This is the T7-2 failure again (2026-08-19) in a
+  new costume, and the fix is the same: assert the call site too.
+  *(c) **the guard ran after the thing it guards against had already killed the process.*** AC-15's
+  structural scan sat below its behavioural half, and a wrong implementation that really dispatches
+  spawns a runner and takes the run down before the scan is reached — so it reported only when the
+  code was already correct. Fixed by scanning first. **Ordering is part of whether a check works.**
+  *(d) **the probe only exercised the form the probe was written in.*** Added 2026-08-21 after the
+  review of #28 found it: AC-1's import walker followed `import … from "x"` and nothing else, so a
+  client component could reach the store through a bare `import "x"` or an `export … from "x"` with
+  the guard reporting PASS — and `app/layout.tsx` and `lib/tasks/model.ts` each contain one of those
+  forms today, so this was not a hypothetical grammar. The deletion probe that shipped with AC-1 was
+  real and it passed, because it was written as a named import. **A deletion probe proves the guard
+  catches the sin you thought of.** When a check parses a *language* rather than a value, enumerate
+  the forms of the thing before probing one of them.
+
+- (2026-08-21) **A detector was written for a signal neither of the things it watches has ever
+  printed.** AC-20 spawns `verify:stage3` and `verify:stage3a` and was supposed to report SKIP when
+  one of them was degraded by a GitHub outage. It looked for `gh: `, `ENOTFOUND` and `rate limit` in
+  the child's output — text **neither child emits**. `verify-stage3.mts` catches the offline case
+  itself and prints `SKIP AC-11`; `verify-stage3a.mts` cannot distinguish it at all and prints an
+  aggregate `FAIL AC-1`. So the one case the branch existed for was the one case it could not
+  detect, and a real outage would have been reported as "upstream unchanged". Found in review of
+  #31, never by running it — the branch is only reached when GitHub is down.
+  **`external-API-fields-are-guilty-until-verified` applies to our own subprocesses.** The standing
+  rule was written about GitHub's API and another project's document format; a sibling script's
+  stdout is the same kind of contract and deserves the same treatment — *read the line the producer
+  actually prints* before matching on it. Two smaller faults travelled with it and are the same
+  shape: the skip was emitted through `pass()`, so a degraded upstream read as `PASS AC-20`; and a
+  child that crashed before printing anything yielded no FAIL ids, which the "no unexpected
+  failures" branch reported as green. **When a check consumes another program's output, that
+  program's silence must be a failure, not an absence of failures.**
+
+- (2026-08-21) **A failure message that quotes another program's output makes that output
+  indistinguishable from your own.** `verify-stage3.mts`'s AC-11 spawns `pnpm verify:stage1` and,
+  when the result is not the expected `7P/1F`, pastes `out1.slice(0, 300)` into its own failure
+  message — raw, newlines intact. Stage 1's lines are formatted exactly like Stage 3's, so from that
+  moment on **`verify:stage3`'s output contained `  PASS  AC-1 …` lines that belong to Stage 1.**
+  - **It had already corrupted a recorded fact.** `docs/HANDOFF.md` carried *"recorded `33 of 33`
+    before 2026-08-21 and the suite now reports 35 checks — the delta was measured, not
+    explained"* for days. There was no delta. AC-11 went red, started quoting, and two or three of
+    Stage 1's passes got counted as Stage 3's — *two or three*, varying run to run, because the
+    300-character cut lands mid-line at a different place depending on the timestamp Stage 1 prints.
+    A number that changes between identical runs should have been the tell.
+  - **The miscount was the harmless half.** Stage 1's `FAIL` lines are in that excerpt too. Stage
+    3c's AC-20 parses `verify:stage3`'s output for unexpected `FAIL` ids — so the next time Stage 1
+    goes red, `FAIL AC-2` would have been read as *Stage 3* failing AC-2 and reported as a new
+    regression this stage introduced. A false red, generated by an oracle, in the case the oracle
+    exists for.
+  - **The rule:** when a check embeds another process's output in its own, **flatten it** —
+    `JSON.stringify` it, prefix every line, anything that makes it one unparseable blob. Your
+    stdout is an interface; a quoted excerpt is a forged entry in it. Found while rewriting AC-20,
+    not by any check — nothing in this repo asserts that a suite's output means what it appears to.
+  The general rule, now three times learned: **a check passing is not evidence that it can fail.
+  The probe is the evidence, and it must be run per check, not per ticket.**
+
+- (2026-08-21) **`git checkout -- <file>` destroyed uncommitted work while reverting a test sin.**
+  Proving a guard means mutating a file, running the suite, and putting it back. Reverting with
+  `git checkout --` puts it back to **HEAD**, not to what was there a second ago — and the Stage 3c
+  T1 changes were not yet committed, so `SETUP_ROWS`, `projectRailModel`, `countOpenInboxByProject`
+  and a `revalidatePath` fix were silently deleted across three files. Nothing errored; the suite
+  simply started crashing with an export that no longer existed. **Second instance of this class**
+  (the first destroyed 50 `docs/BACKLOG.md` entries and survived a commit, a push and a merge), so
+  it is a rule rather than a note: **commit before proving guards, and revert from a copy — `cp`
+  the file aside, mutate, `cp` it back. Never `git checkout --` on a tree with work in it.**
+

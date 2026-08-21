@@ -1677,7 +1677,15 @@ class CommittingRunner implements Runner {
   } else if (!preSliceResult) {
     fail(
       "AC-11",
-      `expected Stage 1's pre-slice result (7P/1F, AC-2 named) — got ${passes1}P/${fails1}F. First 300 chars: ${out1.slice(0, 300)}`,
+      // **The excerpt is flattened to one line, and that is not cosmetic** (found 2026-08-21 while
+      // rewriting Stage 3c's AC-20). Pasted raw, Stage 1's output arrives here with its own
+      // `  PASS  AC-1 …` lines intact — so anything that counts check lines in *this* suite's
+      // output counts Stage 1's too. That is the whole of the never-explained "verify:stage3 grew
+      // from 33 checks to 35" in docs/HANDOFF.md: the suite did not grow, AC-11 went red and
+      // started quoting three of Stage 1's passes into its own failure message. Worse than the
+      // miscount: if Stage 1 ever fails, a `FAIL AC-2` line lands inside this excerpt and any
+      // consumer attributes Stage 1's failure to Stage 3.
+      `expected Stage 1's pre-slice result (7P/1F, AC-2 named) — got ${passes1}P/${fails1}F. First 300 chars: ${JSON.stringify(out1.slice(0, 300))}`,
     );
   } else {
     pass(

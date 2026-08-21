@@ -53,7 +53,7 @@ Nothing here is gated on an owner decision; it is gated on Stage 3 existing.
 
 | Behaviour | Expected outcome | Verify |
 |---|---|---|
-| Lists the templates a project has | `compound-engineer-workflow` appears, seeded | Load `/p/<slug>/configuration/templates` |
+| Lists the templates a project has | `compound-engineer-workflow` appears, seeded | Load `/p/<slug>/config/templates` |
 | Instantiates a template as a chain | **Nine cards** appear in `todo`, in order, each naming its agent | **AC-1** |
 | Binds template variables | Every `{{var}}` in every step prompt is replaced before any card is written | AC-2 |
 | Refuses an unbound variable | Instantiate fails, names the variable and the step; **no cards are created** | **AC-2** |
@@ -227,9 +227,23 @@ Closed. If a new one surfaces mid-build, **stop** and close it in `docs/DECISION
 7. **What happens after a failed step?** Halt with an attributed reason (AC-8). No retry, no skip.
    Retry is a human re-running the step, which is Stage 4's out-of-scope list until someone wants
    it twice.
-8. **Where do templates live in the UI?** Behind `configuration` (D23's rail), not in the five work
-   tabs. A template is setup; instantiating one is work, and that control lives on the Tasks board
-   beside `+ Task`.
+8. **Where do templates live in the UI?** Setup, not the five work tabs. A template is setup;
+   instantiating one is work, and that control lives on the Tasks board beside `+ Task`.
+   **Reallocated 2026-08-21 by D32, and the route is now built:** setup is no longer a single
+   `configuration` link but four rail rows with their own URLs, so templates render at
+   **`/p/<slug>/config/templates`** — a route that already exists and currently says *"Stage 4 —
+   templates and chains"*. Stage 4 replaces that placeholder rather than inventing a home. The
+   original wording said *"behind `configuration` (D23's rail)"*; D23's rail no longer has a
+   `configuration` link to sit behind, and the reasoning is unchanged — the work/setup split is now
+   a section divider plus a URL prefix instead of a five-tab cap.
+   **`SETUP_ROWS` in `lib/shell/model.ts` is the single definition of the four sections**; flipping
+   `templates` from `placeholder` to `live` there is the whole of the nav change, and Stage 3c's
+   AC-7 will then require it to carry `builtBy: null` — *a live row names no future builder.*
+   **Verified 2026-08-21, because the first version of this paragraph was wrong about it:** AC-7
+   originally looped over the literal list `templates/environments/repos` and demanded each be a
+   placeholder, so this flip would have turned `verify:stage3c` red for Stage 4 landing exactly as
+   specified. It now derives each row's expectation from that row's own `state`, so the flip passes
+   with no edit to that suite. Raised in review of #31; fixed in #28.
 
 ## §6 — Build notes
 
@@ -239,7 +253,8 @@ Closed. If a new one surfaces mid-build, **stop** and close it in `docs/DECISION
    AC-5 and AC-8 with it; they are the three that catch a partial write, a leaked gate, and a
    runaway chain respectively.
 3. **`scripts/verify-stage4.mts`** — AC-1…AC-11 before any UI.
-4. **UI last**: the template list under `configuration`, the instantiate form, the chain position
+4. **UI last**: the template list at `/p/<slug>/config/templates` (§5.8 — **not** `configuration`,
+   which D32 removed), the instantiate form, the chain position
    and blocked chips on cards (Stage 3 §8.2 already specifies both), and the gate label (AC-6).
 
 **Reuse rather than re-derive:** `dispatch` and every precondition, the `Runner` fake, the fixture
