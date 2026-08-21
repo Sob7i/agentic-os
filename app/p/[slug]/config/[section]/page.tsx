@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * A setup section (D32). `Agents · Templates · Environments · Repos` each have their own URL under
- * `/p/<slug>/config/`, which is what keeps the work/setup split real now that B''s vertical rail
+ * `/p/<slug>/config/`, which is what keeps the work/setup split real now that B′'s vertical rail
  * has no five-tab cap to enforce it: work is `/p/<slug>/<tab>`, setup is `/p/<slug>/config/<...>`,
  * and `EXECUTION_TABS` is untouched.
  *
@@ -44,7 +44,12 @@ export default async function ConfigSectionPage({
 
   const band = driftBandFor(board, slug);
   // Never `getDb()` on a page path — opening a page must not create the store.
-  const data = loadProjectExecutionData(nav.project.path);
+  //
+  // Only load for a section that renders rows. `loadProjectExecutionData` fetches every task,
+  // session, event, tool call and commit sha for the project (the N+1 loader already in
+  // docs/BACKLOG.md), and a placeholder renders one sentence — paying for it there is a read the
+  // page provably cannot use. Review of #28.
+  const data = row.state === "live" ? loadProjectExecutionData(nav.project.path) : null;
 
   return (
     <>

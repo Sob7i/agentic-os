@@ -12,7 +12,7 @@ import s from "./shell.module.css";
  * `scripts/verify-stage3c.mts` asserts it without rendering a route.
  *
  * D32: five work rows and a SETUP group, not five tabs and a footer link. The work/setup split is
- * a divider plus a URL prefix (`/p/<slug>/config/<section>`), because B''s rail is vertical and the
+ * a divider plus a URL prefix (`/p/<slug>/config/<section>`), because B′'s rail is vertical and the
  * five-tab cap Concept C relied on was never a real constraint here.
  */
 export function ProjectRail({
@@ -76,7 +76,7 @@ export function ProjectRail({
 function RailRow({ row }: { row: NavRow }) {
   return (
     <li className={s.railRow}>
-      <Link href={row.href} data-current={row.current} data-state={row.state}>
+      <Link href={row.href} data-current={row.current}>
         <span className={s.railRowLabel}>{row.label}</span>
         {/* `null` renders nothing at all. A zero here would be a claim about a store nobody
             opened — the same rule the card evidence lines follow for unknown costs (AC-3). */}
