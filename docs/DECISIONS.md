@@ -775,3 +775,180 @@ it is small, and a gitignored opt-in would make "does this project have an execu
 on which checkout you are standing in — which is exactly the class of drift this product exists to
 detect. The four worktrees created during Stage 3b would each have answered differently.
 
+
+---
+
+## D32 — The project rail carries a SETUP group; `configuration` stops being a single link (2026-08-21)
+
+**Supersedes the rail half of D23. Reallocates `docs/specs/stage-4-templates-chains.spec.md` §5.8.**
+
+**Decision:** `Agents · Templates · Environments · Repos` become four nav rows in a `SETUP` group in
+the project rail, each with its own route under `/p/<slug>/config/<section>`, replacing the single
+`Configuration` footer link.
+
+**Why the cap it removes was never actually holding.** D23 fixed the rail at five work tabs *plus
+`configuration` for everything else*, and [`ProjectRail.tsx`](../components/shell/ProjectRail.tsx)
+records that cap in a comment as load-bearing. But the argument it inherited belongs to **Concept
+C**, whose rationale note argues: *"horizontal tabs physically cap at five, which ENFORCES the
+work/setup split instead of encouraging it — Agents, Templates, Environments and Repos cannot creep
+into the navigation because there is nowhere to put them."*
+
+**We shipped B′, whose rail is vertical.** There is no physical cap on a vertical list, so the
+enforcement mechanism C relied on does not exist here — the split was not being enforced, it was
+being observed by hand, while a comment claimed otherwise. Frame `B′2` knows this: it draws a
+`SETUP` label with the four names beneath it, separated from the work rows by a divider. **The
+split is a section boundary in B′, not a length limit**, and this decision makes that explicit
+rather than leaving the code asserting a constraint that was not real.
+
+**What keeps the split honest without the cap.** Two things, and the second is the durable one:
+
+- A divider and a section label, as frame `B′2` draws them — work above, setup below.
+- **The URL.** Work is `/p/<slug>/<tab>`; setup is `/p/<slug>/config/<section>`. `EXECUTION_TABS`
+  stays exactly five and `[tab]`'s validation is untouched, so **Stage 3a's AC-6 keeps passing
+  unmodified** and a setup surface cannot become a work tab by accident. The register survives in
+  the address bar even where the visual boundary would not.
+
+**What we accept.** Three of the four rows are placeholders when this ships — `Templates` names
+Stage 4, `Environments` and `Repos` state that they are unspecced. That is the cost of making the
+shape of the product visible before all of it exists, and it is the convention this repo already
+uses for `/overview`. AC-7 makes *"names what will build it"* a requirement rather than a courtesy,
+and AC-17 pins the table count at eight so a placeholder cannot quietly acquire a schema nobody
+decided on.
+
+**Rejected: extending `[tab]` to nine keys.** It would either break Stage 3a's AC-6 for a reason
+that is not a regression, or force `[tab]` to validate against two lists — at which point the cap
+stops being structural and the URL stops saying which half of the product you are in.
+
+---
+
+## D33 — A drop is a hand-move, and a gate refuses one (2026-08-21)
+
+**Closes `docs/specs/stage-3-execution-mvp.spec.md` §8.4's open question**, in the direction that
+spec already leaned.
+
+**The thing that makes this a product decision rather than a technical one:**
+[`lib/agentos/db.ts`](../lib/agentos/db.ts)'s `assertLegalTransition` **returns early for `human`**
+— `LEGAL_TRANSITIONS` constrains `session` and `system` and nothing else. Every arrow on the board
+is already legal for a person at the data layer. **There is no lower layer to defer to.**
+
+**Decision, three parts:**
+
+1. **A drop writes `actorType: "human"` and renders as hand-moved.** The `hand-moved` variant of
+   `EvidenceLine` already exists and already renders as quoted italic naming a person — *"moved by
+   hand · no session produced this"*. So a dragged card is distinguishable from an executed one
+   **before either is read**, which is the property `docs/FEATURES.md` records as shipped. Drag adds
+   a gesture, not a register.
+2. **A gated `review` card refuses the drop to `done`.** The gate exists to force an explicit act,
+   and a drag is precisely the low-friction gesture it guards against. The refusal is the API's own
+   string — see D36 for whose words it uses.
+3. **Dragging into `doing` does not dispatch.** `Run now` stays the only path into `dispatch()`
+   (D24: *"nothing runs unless something explicitly asks for it by task id"*). A card dragged to
+   `doing` means *"I am working on this"* and carries no evidence line, because nothing has happened.
+
+**Consequence for the checks, and it is not incidental.** Because nothing underneath would catch an
+illegal move, **the refusal must live in the server action and must be asserted hostile** — AC-13
+calls the action directly with the request a browser never sends. A UI-only refusal would be
+bypassable and the suite would not notice.
+
+**Rejected: drag closes the gate.** Simplest and most predictable, and it makes an approval gate
+clearable by the cheapest gesture in the interface. **Also rejected: adding a `human` row to
+`LEGAL_TRANSITIONS`** — it would break `approveDoneAction`, whose entire purpose is a human closing
+a gate.
+
+---
+
+## D34 — Headless primitives, not a component library (2026-08-21)
+
+**Reaffirms Stage 3a §5.2** (CSS Modules per component) against adopting shadcn/ui.
+
+**Decision:** `@dnd-kit/core` for drag; the **native `<dialog>` element** with `showModal()` for the
+drawer. One new runtime dependency, no new styling system.
+
+**Measured, not recalled** (`npm view`, 2026-08-21): `@dnd-kit/core@6.3.1` declares
+`peerDependencies: { react: ">=16.8.0" }`, so React 19 satisfies it with no override — but **6.3.1
+predates React 19, so React 19 is accepted by its range, not tested against it.** It pulls three
+transitive packages (`@dnd-kit/accessibility`, `@dnd-kit/utilities`, `tslib`), all pure JS.
+`@dnd-kit/sortable` is **not** taken: there is no per-column ordering to persist, and adding one
+would be a schema change. The newer `@dnd-kit/react` names React 19 explicitly but is at `0.5.0`,
+and a pre-1.0 rewrite is the larger risk of the two. The mitigation is that **keyboard drag is
+measured by hand** (M-2) — it is both the reason the dependency was taken over hand-rolling and the
+first thing that would break under a React version the library never saw.
+
+**Why the drawer takes no dependency at all.** `<dialog>.showModal()` gives a focus trap, `Esc`, an
+inert background and `::backdrop` natively — which is most of what a dialog library is for.
+
+**Why shadcn/ui is rejected.** It requires Tailwind, which would leave this repo carrying **four
+styling idioms at once**: `app/board.css` (539 lines, global), CSS Modules, the `globals.css` token
+layer, and Tailwind utilities. And its visual defaults — zinc neutrals, `rounded-lg` everywhere,
+transitions on everything — contradict rules already committed to here: **no motion** (Stage 3
+spec §8.6), **monospace reserved for verified machine truth**, and a palette that a chroma
+validator rejected twice when it was first chosen by eye. Every component would be restyled on
+arrival: the cost of the library without the benefit.
+
+**Consequence: this stage adds no new colours.** Worth stating because the validator
+`app/globals.css` tells you to re-run **is not in this repo** — it is dataviz's, which
+`docs/DESIGN-BRIEF.md` names correctly and `globals.css` does not. AC-18 keeps the question moot by
+forbidding hex literals in component stylesheets.
+
+---
+
+## D35 — The rail states severity, never a delta (2026-08-21)
+
+**A deliberate divergence from wireframe frame `B′2`, recorded rather than silently dropped.**
+
+Frame `B′2` draws the rail's identity line as `⚠ drift · 12 days`. **There is no structured age to
+render that from.** [`ProjectReport`](../lib/types.ts) has no age field, and the day count exists
+only as prose inside `CheckResult.headline` (*"2 PRs behind · stale 12 days"*).
+
+**Decision:** the rail renders `GLYPH[severity]` + `WORD[severity]` from
+[`lib/severity.ts`](../lib/severity.ts) — the same mapping the ribbon and the Board share — and **no
+delta**.
+
+**Why.** Producing *"12 days"* would mean parsing that sentence or computing a second one. Either is
+a **second derivation of a number the drift band already quotes**, which is invariant 5, and it is
+the precise failure D23's ribbon rationale spent itself avoiding: *"the spine carries no sentence,
+count or delta that could contradict the Board."* The rail is chrome; the sentence lives once.
+
+**Nothing is lost.** When a project has drifted, the drift band sits directly below the ribbon
+carrying the full sentence verbatim, with a link to the Board.
+
+**One consequence worth stating, because it looks like an inconsistency and is not.** The line
+renders at **every** severity, not only `drift` — including `◌ unverifiable` when the collectors
+could not check. It gets no special "age unavailable" wording; `unverifiable` is a severity like any
+other and `WORD` already has it. A line that appeared only on drift would make its own absence a
+claim, which is the same argument [`Ribbon.tsx`](../components/shell/Ribbon.tsx) already carries.
+
+---
+
+## D36 — The gate's refusal is one source with two audiences (2026-08-21)
+
+**Surfaced by D33 and closed before it could be built.** D33 says a refused drop shows the API's own
+refusal string. Read the string
+([`lib/agentos/mcp/gate.ts`](../lib/agentos/mcp/gate.ts)'s `gateRefusalReason`):
+
+> *"task `<id>` has approvalGate=true; **a session may not move it to 'done'**. Leave it in 'review'
+> … or use `inbox_ask` if you need a decision before continuing."*
+
+**That is correct for the MCP layer and wrong for the person who just dragged the card.** They are
+not a session, `inbox_ask` is not a tool they can call, and the sentence never mentions the Approve
+button. It is also factually off for the human case: `approveDoneAction` has **no gate check at
+all**, and says so in a comment — *"the gate exists to stop a session, never a human; a human
+clicking this button is the approval itself."* So the true statement to a dragger is not *"you may
+not do this"* but **"this gesture is not the approval — the button is, and it records you as the
+approver."**
+
+**Decision:** `gateRefusalReason(taskId, audience: "session" | "human" = "session")` — one function,
+one place, two renderings. §8.4's *"one reason, one source"* stays **literally** true rather than
+nominally; the alternative was two strings that must agree, which is the shape
+`docs/LEARNINGS.md` already records as *"a second source of truth wearing a justification"*.
+
+**A default is not a decision, and this one has to be requested.** `gateModelFor` calls
+`gateRefusalReason(task.id)` — the default — and `GateModel` exposes one `refusalReason`. Handing
+that to the drag path unchanged reproduces the exact defect this decision exists to fix. So
+`GateModel` carries **both** renderings: the `session` string stays where the card and the MCP layer
+already read it, and a `humanRefusalReason` sits beside it for the drag refusal. **AC-19 pins the
+`session` rendering byte-for-byte** so the MCP contract cannot drift while the human copy is
+written, and AC-12 asserts the drag refusal is the human one.
+
+**Rejected: ship the existing string verbatim.** Simpler, and it puts a sentence about sessions in
+front of a person — in the product whose entire premise is that a displayed claim must be true.
