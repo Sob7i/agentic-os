@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { boardOnce } from "@/lib/reconcile/cached";
 import { projectNav, ribbonModel, driftBandFor, setupSectionFor } from "@/lib/shell/model";
+import { initialDrawerFor } from "@/lib/shell/drawer";
 import { Ribbon } from "@/components/shell/Ribbon";
 import { DriftBand } from "@/components/shell/DriftBand";
 import { BackShortcut } from "@/components/shell/BackShortcut";
@@ -9,7 +10,7 @@ import { ProjectRail } from "@/components/shell/ProjectRail";
 import s from "@/components/shell/shell.module.css";
 import c from "@/components/config/config.module.css";
 import { loadProjectExecutionData, openInboxCount } from "@/lib/tasks/data";
-import { AgentForm } from "@/components/config/AgentForm";
+import { AgentsDrawer } from "@/components/config/AgentsDrawer";
 import { createAgentAction, updateAgentAction } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -79,40 +80,38 @@ export default async function ConfigSectionPage({
               <Link href={`/p/${slug}/tasks`}>Tasks</Link> tab first — one button, in one place.
             </p>
           ) : (
-            <>
-              <section className={c.section}>
+            <section className={c.section}>
+              <div className={c.sectionHeader}>
                 <h2 className={c.h2}>Agents</h2>
-                {data.agentsById.size === 0 ? (
-                  <p className={c.empty}>No agents yet — create the first one below.</p>
-                ) : (
-                  <ul className={c.agentList}>
-                    {[...data.agentsById.values()].map((agent) => (
-                      <li key={agent.id} className={c.agentRow}>
-                        <span className={c.agentMonogram}>{agent.monogram}</span>
-                        <span className={c.agentName}>{agent.name}</span>
-                        <span className={c.agentModel}>{agent.model}</span>
-                        <Link
-                          className={c.editLink}
-                          href={`/p/${slug}/config/agents?agent=${agent.id}`}
-                        >
-                          edit
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-
-              <section className={c.section}>
-                <h2 className={c.h2}>{editingId ? "Edit agent" : "New agent"}</h2>
-                <AgentForm
+                <AgentsDrawer
+                  key={editingId ?? "none"}
                   slug={slug}
-                  agent={editingId ? data.agentsById.get(editingId) ?? null : null}
+                  agentsById={data.agentsById}
+                  initial={initialDrawerFor({ agent: editingId }, new Set(data.agentsById.keys()))}
                   createAction={createAgentAction}
                   updateAction={updateAgentAction}
                 />
-              </section>
-            </>
+              </div>
+              {data.agentsById.size === 0 ? (
+                <p className={c.empty}>No agents yet — use + Agent to create the first one.</p>
+              ) : (
+                <ul className={c.agentList}>
+                  {[...data.agentsById.values()].map((agent) => (
+                    <li key={agent.id} className={c.agentRow}>
+                      <span className={c.agentMonogram}>{agent.monogram}</span>
+                      <span className={c.agentName}>{agent.name}</span>
+                      <span className={c.agentModel}>{agent.model}</span>
+                      <Link
+                        className={c.editLink}
+                        href={`/p/${slug}/config/agents?agent=${agent.id}`}
+                      >
+                        edit
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           )}
         </main>
       </div>

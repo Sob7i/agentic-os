@@ -183,7 +183,21 @@
 .initNote { font-size: 12px; color: var(--muted); margin: 0; }
 .initError { font-size: 12px; color: var(--drift); margin: 0; }
 
-/* ── Task create form (T3, spec §1.3/§6 note 3) ──────────────────────────── */
+/* ── The drawer trigger (T2) — replaces the form that used to sit inline above the board ─── */
+.addTaskTrigger {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 6px 13px;
+  border: 1px solid var(--text);
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 6px;
+  cursor: pointer;
+  margin: 0 0 16px;
+}
+.addTaskTrigger:hover { opacity: 0.9; }
+
+/* ── Task create form (T3, spec §1.3/§6 note 3) — now the drawer's content (T2) ──────────── */
 .taskForm {
   display: flex;
   flex-direction: column;

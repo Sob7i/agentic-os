@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import type { AgentRow } from "@/lib/agentos/types";
 import { TOOL_GRANT_OPTIONS } from "@/lib/agentos/agent-form";
 import type { AgentFormResult } from "@/app/p/[slug]/config/actions";
+import { drawerOutcome } from "@/lib/shell/drawer";
 import s from "./config.module.css";
 
 const INITIAL_STATE: AgentFormResult = { ok: false, reason: null, agentId: null, deniedByFloor: [] };
@@ -19,21 +20,45 @@ const INITIAL_STATE: AgentFormResult = { ok: false, reason: null, agentId: null,
  *
  * `useActionState` + the result rendered beside the button is `InitializeButton`'s own pattern
  * (T1) — the established way a refusal reaches the screen in this codebase, not a toast system.
+ *
+ * T2: now rendered inside `components/config/AgentsDrawer.tsx`'s `Drawer`. The `useActionState`
+ * wiring is unchanged (CLAUDE.md hand-off); the effect below hands the result to `drawerOutcome`
+ * (`lib/shell/drawer.ts`), which is also where `createAgentForSlug`'s `ok: true` egress-floor note
+ * is kept on screen instead of the drawer closing on any `ok: true` (AC-9). `onClose`/
+ * `onPendingChange` are optional so this form has no hard dependency on being inside a drawer.
  */
 export function AgentForm({
   slug,
   agent,
   createAction,
   updateAction,
+  onClose,
+  onPendingChange,
 }: {
   slug: string;
   agent: AgentRow | null;
   createAction: (prevState: AgentFormResult, formData: FormData) => Promise<AgentFormResult>;
   updateAction: (prevState: AgentFormResult, formData: FormData) => Promise<AgentFormResult>;
+  /** Called once `drawerOutcome` says the result is a clean success (never on the egress-floor
+   *  note case — that has to stay readable, per Stage 3b AC-5). */
+  onClose?: () => void;
+  /** Mirrors `useActionState`'s own `pending` up to the drawer, which has no other way to see it
+   *  — it is what lets the drawer refuse an Esc mid-submit (spec §7.2). */
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const action = agent ? updateAction : createAction;
   const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
   const allowedNow: string[] = agent ? (JSON.parse(agent.allowedToolsJson) as string[]) : [];
+
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
+
+  useEffect(() => {
+    if (onClose && drawerOutcome(state, pending).close) onClose();
+    // `onClose` is intentionally excluded — see the identical note in TaskForm.tsx.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, pending]);
 
   return (
     <form action={formAction} className={s.form}>

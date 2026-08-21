@@ -16,6 +16,28 @@
 .section { margin: 0 0 28px; }
 .h2 { font-size: 14px; margin: 0 0 12px; }
 
+/* ── The drawer trigger row (T2) — the section heading plus "+ Agent" ────────────────────── */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+.sectionHeader .h2 { margin: 0; }
+
+.addAgentTrigger {
+  flex: none;
+  font-size: 12px;
+  padding: 6px 13px;
+  border: 1px solid var(--text);
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.addAgentTrigger:hover { opacity: 0.9; }
+
 .empty { font-size: 12px; color: var(--muted); }
 
 .agentList {
