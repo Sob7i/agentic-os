@@ -89,8 +89,10 @@ deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state*
 | `docs/DESIGN-BRIEF.md` | Design | Portfolio layer (Board, Overview) — rounds 1–2 |
 | `docs/DESIGN-BRIEF-EXECUTION.md` | Design | Execution layer + app shell — round 3 |
 | `docs/specs/stage-3a-shell.spec.md` | Queue | The app shell — **built 2026-08-18** |
-| `docs/specs/stage-3b-onboarding.spec.md` | Queue | **Next to build** — the connector that makes Stage 3 reachable, plus agent and task creation. **Decision-closed (D30)** |
+| `docs/specs/stage-3b-onboarding.spec.md` | Queue | The connector that makes Stage 3 reachable, plus agent and task creation — **built 2026-08-19 (D30)** |
 | `docs/specs/stage-3b-tickets.md` | Queue | Stage 3b's four build tickets — sequencing, file ownership, hand-off contracts. **They stack; T2 branches off T1, not `develop`** |
+| `docs/specs/stage-3c-board-and-rail.spec.md` | Queue | **Next to build** — drag-and-drop, the drawer, the SETUP rail group, the rail rebuilt to frame `B′2`. **`☐` — five decisions (D32–D36) and one owner merge gate it** |
+| `docs/specs/stage-3c-tickets.md` | Queue | Stage 3c's four build tickets. **They stack; T2 off T1, T3 off T2, T4 off T3 — never off `develop`** |
 | `docs/specs/AgentOS-spec.md` | Reference | Reconstructed source spec for the execution layer — **a reconstruction, not a contract** |
 | `design/wireframes.pen` | Design | Round-1/2 wireframes (Pencil; plain JSON, readable directly) |
 | `design/wireframes2.pen` | Design | **Round-3** wireframes — the shell, Tasks, Goals, Sessions, Inbox, plus six rationale notes. Shell closed as D23 |
@@ -143,7 +145,9 @@ cache arrives with Stage 7 (derived and disposable). *Corrected 2026-08-18: this
 | `pnpm verify` | **Every** acceptance suite, via [`scripts/verify-all.mts`](scripts/verify-all.mts). Runs all of them, prints a summary, and exits non-zero if **any** failed; it does **not** stop at the first red one (`docs/LEARNINGS.md`). A flag, not a sum of exit codes — status is mod 256, so summing can land on 0 and report a false green. Counts: `HANDOFF.md` §Verified state. |
 | `pnpm verify:stage1` | Stage 1 only. Runs against the **real** watched repos, read-only. |
 | `pnpm verify:stage2` | Stage 2 only. Runs against **generated fixture repos in a temp dir** — never a watched project. |
+| `pnpm verify:stage3` | Stage 3 (the execution layer) only. Fixture-based; **AC-12 calls a real model and is opt-in**, skipped unless `AGENTOS_REAL_SESSION=1`. |
 | `pnpm verify:stage3a` | Stage 3a (the shell) only. Pure-function fixtures, plus the Stage 1/2 suites re-run as a regression oracle. |
+| `pnpm verify:stage3b` | Stage 3b (initialize, agents, tasks) only. Fixture repos in a temp dir; the model is never called. |
 | `pnpm type-check` | `tsc --noEmit`. |
 | `pnpm build` | Production build. |
 

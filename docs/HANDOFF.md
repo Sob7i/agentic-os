@@ -392,11 +392,24 @@
    — the one check in the whole build that spawns a real session against the real Agent SDK. Costs
    money and needs the network, which is exactly why it stays outside `pnpm verify`; it has never
    been run.
-4. **Look at the ribbon once** (AC-10). It is the one acceptance criterion that cannot be
+4. **Look at the ribbon once** (AC-10). *Superseded in place by Stage 3c's M-1 (item 5), which
+   takes this same measurement after the rail grows 172px → 200px — so if Stage 3c is going ahead,
+   take it there and record it once rather than measuring a layout that is about to change.* It is
+   the one acceptance criterion that cannot be
    automated, and it is currently recorded in `docs/FEATURES.md` as a **computed estimate, not an
    observation** — ~890px of 1280px. `pnpm dev` → any `/p/<name>`. If it is cramped, D23 named the
    fallback in advance and §5.4 kept the pane unconstrained so the swap stays a layout change.
-5. **Specs for Stages 4 and 5 are written** —
+5. **Stage 3c is specced and is now the next slice** —
+   [`stage-3c-board-and-rail.spec.md`](specs/stage-3c-board-and-rail.spec.md) (`☐`), with its
+   four stacked tickets in [`stage-3c-tickets.md`](specs/stage-3c-tickets.md). It came out of the
+   owner's first real use of the app on 2026-08-20: drag-and-drop on the Kanban, a drawer for the
+   two long forms, the four setup surfaces as rail rows, and the rail rebuilt to frame `B′2`.
+   **Two things gate it and both are yours:** the five decisions it raises (D32–D36, all argued
+   in its §5) and **PR #26 merging** — `develop` does not yet carry `agentos.yml`, so a branch cut
+   from it has no opted-in project and every by-hand check in the spec is unrunnable (§6.0).
+   It is sequenced **before** Stage 4 because Stage 4 needs a `Templates` destination that does
+   not exist, and D32 creates one.
+6. **Specs for Stages 4 and 5 are written** —
    [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) is **`☑`
    buildable** (no owner gate; it is sequenced behind Stage 3b, which is now built), and
    [`stage-5-goals.spec.md`](specs/stage-5-goals.spec.md) is **`☐`**, gated on one owner call in
