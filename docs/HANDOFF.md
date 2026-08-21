@@ -345,6 +345,14 @@
   making `resumeSession` pass `"continue"` instead of the human's answer reddens it with *"the
   resume did not carry the human's answer into the run"*. Both reverted. That is the assertion
   worth having: **AC-9 catches a defect in the code, not merely a defect in a fixture.**
+- **The execution surfaces are reachable for the first time** (2026-08-20, **D31**). Stage 3b
+  merged and the owner found nothing in the UI — correctly, because no watched repo had an
+  `agentos.yml`, so `projectNav` gave all six zero tabs and every execution surface rendered
+  nowhere. `agentos.yml` is now at this repo's root. Verified against a running server, not
+  asserted: `/p/agentic-os/tasks` renders the five tabs, the *Configuration* link and the
+  *Initialize* button; `/p/nadim/tasks` 404s and the project page says why. **Note for anyone
+  pulling this:** `pnpm install` first — `yaml` arrived with T1 and a checkout that skipped it fails
+  at the parser, not at anything obvious.
 - **Then:** the owner gates. **Nobody has run Part 7 by hand yet** — that is Stage 3b's own stated
   acceptance criterion (§4: *"Stage 3b's value is only realised once a human runs the cycle by
   hand"*), unmet the same way Stage 2's drift-correction click still is. AC-12 (one real session,

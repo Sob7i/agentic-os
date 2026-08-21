@@ -340,9 +340,13 @@ Stated in full in `CLAUDE.md` §Invariants.
 - **AC-5 degrades both collectors, not just `gh`.** The test strips `PATH`, which disables `git`
   too. It proves failures surface with readable reasons and no silent zeros, but does not isolate
   a `gh`-only outage. A narrower fixture belongs with Stage 2 → `docs/BACKLOG.md`.
-- **No watched project has an `agentos.yml`, so the Initialize button has never been clicked on a
-  real repo.** All six in `projects.config.ts` were checked on 2026-08-19 and none has the file —
-  which also means `projectNav` gives every one of them zero tabs, so the pane the button lives on
-  is currently reachable only for a fixture. AC-1…AC-3 and AC-1b/AC-2b prove the connector against
-  fixture repos; **the first real initialization is an owner gate**, because creating that file
-  means writing into another repo. D27 already chose `fractal-code` as the target.
+- **One watched project has an `agentos.yml`: this one** *(2026-08-20, **D31**)*. Until then none of
+  the six did, which meant `projectNav` gave every one of them zero tabs and the execution surfaces
+  rendered nowhere at all — Stage 3b was merged and unreachable. agentic-os now carries the file, so
+  the five tabs and the *Initialize* button exist on a real project. **The other five still do not**,
+  and opting one in means writing into another repo, which stays an owner gate. D27's separate
+  question — where the first real *runs* target — is still `fractal-code`, unchanged by this.
+- **No agent has been run on a real repo.** AC-9 proves the whole cycle against fixtures with a
+  scripted stand-in for the model; `pnpm verify:stage3` AC-12 is the only check that spawns a
+  genuine session and it stays opt-in behind `AGENTOS_REAL_SESSION=1`. The walkthrough is
+  `docs/HUMAN-TEST.md` Part 7.

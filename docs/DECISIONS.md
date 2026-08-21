@@ -748,3 +748,30 @@ layer's own first record.
 
 **Consequence:** the button is the only path in Stage 3b, and its refusals are stated in the UI
 verbatim (no `agentos.yml`, malformed yaml, already initialized) — AC-1, AC-2 and AC-3 assert each.
+
+## D31 — this repo opts into its own execution layer, and that is not D27 (2026-08-20)
+
+**Decision:** `agentos.yml` is added at the root of **agentic-os itself**, making the dashboard the
+first project its own execution layer is reachable in. Owner's call, 2026-08-20.
+
+**Why it was needed at all.** `projectNav` gives a project without the file **zero tabs**, so with
+no watched repo carrying one, Tasks, Goals, Inbox, Sessions and Costs rendered *nowhere* — and the
+*Initialize* button D30 chose had no page to sit on. Stage 3b was complete, merged, and entirely
+unreachable through the UI. The owner ran the app, found the surfaces missing, and this is the
+smallest thing that makes them exist.
+
+**What this is not.** It is **not** a change to D27. D27 chose `fractal-code` for the first real
+*runs* — an agent spending real money against a real repo, with `canCommit` seeded `false` — and
+that stands. This makes the surfaces reachable so they can be exercised by hand; it does not decide
+where work gets executed.
+
+**What we accept by choosing it.** The dashboard is now a project that can be dispatched into,
+which is dogfooding and is the point — but it also means a session could edit the code under the
+server rendering its own progress. `maxConcurrentSessions: 1` is set deliberately against that, and
+`canCommit` is a per-agent setting that stays `false` until an owner turns it on.
+
+**Why the file is committed rather than gitignored.** It is configuration that describes this repo,
+it is small, and a gitignored opt-in would make "does this project have an execution layer" depend
+on which checkout you are standing in — which is exactly the class of drift this product exists to
+detect. The four worktrees created during Stage 3b would each have answered differently.
+

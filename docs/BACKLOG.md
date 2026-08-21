@@ -10,6 +10,39 @@ and things explicitly punted with a reason.
 
 ## Open
 
+- **"Add project" from inside the interface — opting a project in without editing a file by hand**
+  *(added 2026-08-20)*. Opting in currently means the owner creating an `agentos.yml` at a repo's
+  root by hand, which is what `docs/HUMAN-TEST.md` Part 7 step 1 asks for and what was just done for
+  this repo. That is the right *first* shape — D30 chose an explicit click over a watcher precisely
+  so nothing creates records unasked, and a hand-written file is the most explicit act available —
+  but it puts the product's first step outside the product, which is the same objection §5.1 raised
+  against option (b), the CLI. **What this would be:** a control on the portfolio Board that writes
+  `agentos.yml` into a watched repo after an explicit confirmation, then initializes it.
+  **What makes it non-trivial, and why it is not a small follow-up:** it is a **write into another
+  repo**, which invariant 4 makes an owner-gated per-change approval — so it needs Stage 2's
+  proposal-and-approve shape (show the exact file, the exact path, approve or cancel), not a button
+  that just writes. It also needs an answer for a repo not in `projects.config.ts` at all, and D9
+  deliberately keeps that list explicit rather than discovered. **Unblock condition:** the cycle in
+  Part 7 having been run by hand at least once — the walkthrough is what tells us whether the
+  hand-written file is actually the friction, or whether the friction is somewhere else entirely.
+
+- **The portfolio sidebar should list the projects** *(added 2026-08-20, owner request)*. Inside a
+  project the rail is the five work tabs; on the portfolio home
+  ([`PortfolioRail.tsx`](../components/shell/PortfolioRail.tsx)) it is `Board · Overview` and **no
+  project list** — projects are entered from the Board's cards in the pane, and once inside, the
+  40px horizontal ribbon carries them. The owner ran the app, looked for a *Projects* nav item with
+  the projects underneath it, and did not find one. **This is a decision, not a gap** — D23 chose
+  Concept B′ (the mode switch) and explicitly rejected Concept C, the persistent 268px spine that
+  keeps every project visible. It is in the backlog rather than closed because **D23's own rationale
+  names the condition for revisiting**: *"B′ is the right answer if the Kanban proves cramped in
+  build."* We decided before building, on a prediction about the Kanban's width. The first real use
+  produced evidence about the *other* half — whether the portfolio stays reachable — and it points
+  the other way. **Unblock condition:** the Tasks board having been used with enough real cards to
+  judge the width question D23 actually traded against, so the two halves are weighed against
+  evidence rather than one against evidence and one against a prediction. Note that a nav item
+  listing projects on the *home* rail is a much smaller change than Concept C, and may be all that
+  is wanted — the ribbon already solves this inside a project.
+
 - **`lib/tasks/data.ts` loads the Tasks board with N+1 queries** *(added 2026-08-19)*. Events are
   fetched per task, and tool calls, commit shas and inbox messages per session. Correct, and fine
   against the fixture-sized databases everything is currently tested on — but it grows linearly with

@@ -263,21 +263,25 @@ project, with a real agent, yet.** These are the exact steps to be the first.
 **What step 5 costs.** Only step 5 below spawns a real session against the real Agent SDK. That is
 the one step that uses the network and costs money. Every step before it is free and entirely local.
 
-**Step 1 — opt a project in. This is the one step only the owner can do.** Everything else in this
-walkthrough is a click in the app; this one writes into another repo, which is a human-only act
-here (`CLAUDE.md`'s per-session write gate) — this doc will not do it for you and has not done it.
-The target is `fractal-code` ([`DECISIONS.md`](DECISIONS.md) D27). Add a file at its root named `agentos.yml`
-containing exactly this:
+**Step 1 — opt a project in. Already done for this repo (2026-08-20, D31).** A project joins the
+execution layer by having an `agentos.yml` at its root, and **agentic-os now has one** — so you can
+start at step 2 against this project without writing anything anywhere.
+
+For any *other* project, this step is yours and only yours: it writes into another repo, which is a
+human-only act here (`CLAUDE.md`'s write gate). Add a file at that repo's root named `agentos.yml`:
 
 ```yaml
-slug: fractal-code
+slug: <the name the Board shows for it>
 maxConcurrentSessions: 1
 ```
 
-Commit it however you normally commit to that repo. Nothing below happens until this file exists.
+Both keys are optional with stated defaults, so even an empty file is a valid opt-in — the file's
+*presence* is the signal (D18). For the first real agent run on a real repo the target is
+`fractal-code` ([`DECISIONS.md`](DECISIONS.md) D27), with `canCommit` left off.
 
-> ✅ **Try it:** `pnpm dev`, open the fractal-code project. Its Tasks tab says *not initialized* —
-> true until step 2, and no other tab is reachable yet (D18's opt-in-by-file-presence rule).
+> ✅ **Try it:** `pnpm dev`, then open the **agentic-os** project from the Board. It has five tabs
+> — `Tasks · Goals · Inbox · Sessions · Costs`. Open any other project and it has none: that is
+> D18's opt-in working, not a broken page.
 
 **Step 2 — initialize.** Next to that sentence is an **Initialize** button. Click it once.
 

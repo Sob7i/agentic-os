@@ -1,0 +1,22 @@
+# Opts this repo into its own execution layer (D18 — the file's *presence* is the signal).
+#
+# Agentic OS watches six projects and this is one of them, so adding this file here is
+# dogfooding: the dashboard becomes the first project its own execution layer can run in.
+# That is deliberate and it is not D27. D27 chose `fractal-code` for the first real *runs*
+# — an agent spending real money against a real repo — and nothing here changes that.
+# This file makes the surfaces reachable so they can be used by hand at all: without it
+# `projectNav` gives this project zero tabs, so Tasks, Goals, Inbox, Sessions and Costs
+# render nowhere and the Initialize button has no page to sit on.
+#
+# Every key below is optional and every one has a stated default (`lib/agentos/config.ts`).
+# An empty file would be a valid bare opt-in. `primaryRepoPath` is deliberately absent and
+# cannot be set here — it comes from the Board's own entry for this project, because that is
+# the one fact both records derive from the same place (Stage 3b spec §3.2).
+
+# Matches the Board's own slug for this project (`slugFor` is the project's name).
+slug: agentic-os
+
+# One session at a time. Conservative on purpose: this is the repo the dashboard itself runs
+# from, so two concurrent sessions would be two agents editing the code under the server that
+# is rendering their progress.
+maxConcurrentSessions: 1
