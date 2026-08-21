@@ -13,7 +13,7 @@ import { inboxModel } from "@/lib/tasks/inbox-model";
 import { Board } from "@/components/tasks/Board";
 import { Inbox } from "@/components/tasks/Inbox";
 import { InitializeButton } from "@/components/tasks/InitializeButton";
-import { TaskForm } from "@/components/tasks/TaskForm";
+import { TaskDrawer } from "@/components/tasks/TaskDrawer";
 import {
   runNowAction,
   approveDoneAction,
@@ -96,7 +96,7 @@ function TabBody({ tab, slug, projectPath }: { tab: string; slug: string; projec
       const columns = columnsFor(cards, data.tasks);
       return (
         <>
-          <TaskForm slug={slug} agents={[...data.agentsById.values()]} action={createTaskAction} />
+          <TaskDrawer slug={slug} agents={[...data.agentsById.values()]} action={createTaskAction} />
           <Board columns={columns} slug={slug} runNowAction={runNowAction} approveDoneAction={approveDoneAction} />
         </>
       );

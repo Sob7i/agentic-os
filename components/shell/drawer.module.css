@@ -1,0 +1,76 @@
+/* T2 — the drawer (D34: native <dialog>, no component library). CSS Modules, per
+   CLAUDE.md's conventions; app/board.css stays untouched. Reads only the tokens in
+   app/globals.css — AC-18 forbids a hex literal anywhere under components/. */
+
+.drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  margin: 0;
+  width: min(420px, 100vw);
+  max-width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0;
+  background: var(--surface);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.16s ease-out;
+}
+
+.drawer[open] {
+  transform: translateX(0);
+}
+
+.drawer::backdrop {
+  background: var(--text);
+  opacity: 0.28;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer {
+    transition: none;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.closeButton {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.closeButton:hover {
+  color: var(--text);
+}
+
+.content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 18px;
+}

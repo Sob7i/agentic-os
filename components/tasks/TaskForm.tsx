@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import type { AgentRow } from "@/lib/agentos/types";
 import type { CreateTaskResult } from "@/app/p/[slug]/[tab]/actions";
+import { drawerOutcome } from "@/lib/shell/drawer";
 import s from "./tasks.module.css";
 
 const INITIAL_STATE: CreateTaskResult = { ok: false, reason: null, taskId: null };
@@ -21,20 +22,53 @@ const HUMAN_ONLY_VALUE = "";
  *
  * `useActionState` + the result rendered beside the button is `InitializeButton`'s and
  * `AgentForm`'s own established pattern — not a toast system.
+ *
+ * T2: now rendered inside `components/tasks/TaskDrawer.tsx`'s `Drawer`. The `useActionState`
+ * wiring is unchanged from T3 (CLAUDE.md hand-off); the only addition is the effect below, which
+ * hands the result to `drawerOutcome` (`lib/shell/drawer.ts`) rather than the drawer deciding to
+ * close from `state.ok` itself (AC-10). `onClose`/`onPendingChange` are optional so this form has
+ * no hard dependency on being inside a drawer.
  */
 export function TaskForm({
   slug,
   agents,
   action,
+  onClose,
+  onPendingChange,
 }: {
   slug: string;
   agents: AgentRow[];
   action: (prevState: CreateTaskResult, formData: FormData) => Promise<CreateTaskResult>;
+  /** Called once `drawerOutcome` says the result is a clean success. */
+  onClose?: () => void;
+  /** Mirrors `useActionState`'s own `pending` up to the drawer, which has no other way to see it
+   *  — it is what lets the drawer refuse an Esc mid-submit (spec §7.2). */
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
 
+  // **Set synchronously on submit, not only from the effect below.** `useActionState` flips
+  // `pending` during the transition, but the effect that mirrors it up to the drawer runs after
+  // paint — and `<dialog>`'s `cancel` event does not wait for paint. That gap is small and it is
+  // exactly the gap this guard exists to close: an `Esc` inside it closes the drawer while the
+  // submit is still in flight, and the refusal that arrives a moment later has nowhere to land
+  // (spec §7.2). Raised in review of #29.
+  //
+  // The `onSubmit` handler is safe against the form's own `required` fields: a form that fails
+  // native validation never fires `submit`, so `pending` is never stranded true.
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
+
+  useEffect(() => {
+    if (onClose && drawerOutcome(state, pending).close) onClose();
+    // `onClose` is intentionally excluded: the wrapper passes a fresh closure each render, and
+    // re-running this effect only cares about the result and pending actually changing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, pending]);
+
   return (
-    <form action={formAction} className={s.taskForm}>
+    <form action={formAction} className={s.taskForm} onSubmit={() => onPendingChange?.(true)}>
       <input type="hidden" name="slug" value={slug} />
 
       <label className={s.field}>

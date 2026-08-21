@@ -27,6 +27,7 @@ import {
   projectRailModel,
   type ProjectNav,
 } from "../lib/shell/model";
+import { drawerOutcome, initialDrawerFor } from "../lib/shell/drawer";
 import { GLYPH, WORD } from "../lib/severity";
 import { gateRefusalReason } from "../lib/agentos/mcp/gate";
 import {
@@ -549,6 +550,87 @@ async function runChecks(): Promise<void> {
           "AC-8",
           `usesResolver=${usesResolver} hardcodesSectionLiteral=${hardcodes} SETUP_ROWS definitions=${defs}`,
         );
+  }
+
+  // ---- AC-9 [F] — drawerOutcome over four inputs, including the egress-floor note ----
+  // T2. The deletion probe named in the spec: simplifying the implementation to
+  // `return { close: state.ok }` passes the pending/refused/clean cases and drops this one — the
+  // egress-floor note is `ok: true` on a *successful* create (config/actions.ts:105-110), and
+  // Stage 3b AC-5 requires it to stay on screen rather than have the drawer close under it.
+  {
+    const bad: string[] = [];
+    const reasonFor = (o: ReturnType<typeof drawerOutcome>) => (o.close ? null : o.keepOpenBecause);
+
+    const pendingCase = drawerOutcome({ ok: true, reason: null }, true);
+    if (reasonFor(pendingCase) !== "pending") bad.push(`pending → ${JSON.stringify(pendingCase)}`);
+
+    const refusedCase = drawerOutcome({ ok: false, reason: "nope" }, false);
+    if (reasonFor(refusedCase) !== "refused") bad.push(`refused → ${JSON.stringify(refusedCase)}`);
+
+    const noteCase = drawerOutcome(
+      { ok: true, reason: "WebFetch and WebSearch were denied by the egress floor" },
+      false,
+    );
+    if (reasonFor(noteCase) !== "note") bad.push(`egress-floor note → ${JSON.stringify(noteCase)}`);
+
+    const cleanCase = drawerOutcome({ ok: true, reason: null }, false);
+    if (!cleanCase.close) bad.push(`clean ok+null → ${JSON.stringify(cleanCase)}`);
+
+    bad.length === 0
+      ? pass(
+          "AC-9",
+          "drawerOutcome over four inputs: pending, a refusal, and a successful create carrying the egress-floor note all keep the drawer open; only ok+reason:null closes it",
+        )
+      : fail("AC-9", bad.join("; "));
+  }
+
+  // ---- AC-10 [G] — the forms still call useActionState and render state.reason; the wrapper ----
+  // ---- decides via drawerOutcome, not state.ok directly --------------------------------------
+  // Not fully renderable — no acceptance script here imports a component, same posture as
+  // verify-stage3b.mts's AC-7b. This is a structural approximation: it reads the two form files
+  // and checks the shape the hand-off from T1 requires (`useActionState(` and `state.reason` still
+  // present) plus the T2 contract (`drawerOutcome(` called; no `state.ok` used to gate a call to
+  // `onClose(` directly, which is the negative match the spec names — "close from state.ok in the
+  // component"). A textual check that the decision is delegated is worth more than no check that
+  // it is.
+  {
+    const files = ["components/tasks/TaskForm.tsx", "components/config/AgentForm.tsx"];
+    const problems: string[] = [];
+    for (const rel of files) {
+      const src = readFileSync(join(ROOT, rel), "utf8");
+      if (!/useActionState\(/.test(src)) problems.push(`${rel}: no longer calls useActionState(`);
+      if (!/state\.reason/.test(src)) problems.push(`${rel}: no longer renders state.reason`);
+      if (!/drawerOutcome\(/.test(src)) problems.push(`${rel}: does not call drawerOutcome(`);
+      if (/state\.ok\b[\s\S]{0,60}?onClose\s*\(/.test(src)) {
+        problems.push(`${rel}: appears to decide closing from state.ok directly, bypassing drawerOutcome`);
+      }
+    }
+    problems.length === 0
+      ? pass(
+          "AC-10",
+          "both forms still call useActionState( and render state.reason; both decide closing via drawerOutcome(, not state.ok directly",
+        )
+      : fail("AC-10", problems.join("; "));
+  }
+
+  // ---- AC-11 [F] — initialDrawerFor: known → edit; unknown → closed; absent → closed ----
+  {
+    const known = new Set(["a1", "a2"]);
+    const bad: string[] = [];
+    const edit = initialDrawerFor({ agent: "a1" }, known);
+    if (!(edit.open && edit.mode === "edit" && edit.agentId === "a1")) {
+      bad.push(`known id → ${JSON.stringify(edit)}`);
+    }
+    const unknown = initialDrawerFor({ agent: "ghost" }, known);
+    if (unknown.open) {
+      bad.push(`unknown id → ${JSON.stringify(unknown)} (an empty edit sheet would claim an agent exists)`);
+    }
+    const absent = initialDrawerFor({}, known);
+    if (absent.open) bad.push(`absent → ${JSON.stringify(absent)}`);
+
+    bad.length === 0
+      ? pass("AC-11", "initialDrawerFor: known id → edit with that id; unknown id → closed; absent → closed")
+      : fail("AC-11", bad.join("; "));
   }
 
   // ---- AC-17 [G] — exactly eight tables ----
