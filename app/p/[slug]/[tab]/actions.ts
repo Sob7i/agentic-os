@@ -4,6 +4,8 @@ import type { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { revalidatePath } from "next/cache";
+import { dropVerdict, handMoveReason } from "@/lib/tasks/dnd";
+import { gateModelFor } from "@/lib/tasks/model";
 import {
   answerInboxMessage,
   createProject,
@@ -178,12 +180,17 @@ export async function initializeProjectAction(
  *
  * Returns null when the pair does not check out; every caller treats null as "do nothing".
  */
-async function resolveOwnedTask(slug: string, taskId: string) {
+async function resolveOwnedTask(slug: string, taskId: string, dbOverride?: DatabaseSync) {
   const nav = await resolveNav(slug);
   if (!nav) return null;
-  const data = loadProjectExecutionData(nav.project.path);
+  // `dbOverride` must reach BOTH reads or the guard is tested against the wrong store. Until T3
+  // this helper called `loadProjectExecutionData` with no override and `getDb()` directly, so a
+  // suite passing `{ db }` to an action that reuses it would have exercised the real
+  // `data/agentos.sqlite` instead of its crafted fixture — a hostile check that never touches the
+  // hostile data reports green and proves nothing (review of #27).
+  const data = loadProjectExecutionData(nav.project.path, dbOverride);
   if (!data) return null;
-  const task = getTask(getDb(), taskId);
+  const task = getTask(dbOverride ?? getDb(), taskId);
   if (!task || task.projectId !== data.project.id) return null;
   return { task, project: data.project };
 }
@@ -265,6 +272,70 @@ export async function createTaskAction(
   const slug = String(formData.get("slug") ?? "");
   if (!slug) return { ...EMPTY_TASK_RESULT, reason: "missing project slug" };
   const result = await createTaskForSlug(slug, formData);
+  revalidatePath(`/p/${slug}/tasks`);
+  return result;
+}
+
+/**
+ * The drag path's testable core (T3, D33). Injectable `db`, the split every action in this file
+ * already uses.
+ *
+ * **The refusal has to happen here.** §3.2: `assertLegalTransition` returns early for `human`, so
+ * `LEGAL_TRANSITIONS` constrains sessions and the system and nothing else — there is no layer
+ * beneath this one that would reject an illegal human move. A UI-only check would be bypassable by
+ * any crafted post, which is what AC-13 sends.
+ *
+ * Three refusals, in order, and none of them writes: an unowned task (`resolveOwnedTask`, the same
+ * guard `runNowAction` and `approveDoneAction` use — never a fourth copy), then `dropVerdict`,
+ * which covers an unknown destination, a same-column no-op, and a gated card.
+ *
+ * **It does not dispatch.** `Run now` remains the only path into `dispatch()` (D24) — a card
+ * dragged to `doing` means "I am working on this", and carries no evidence line because nothing
+ * has happened. AC-15 asserts the invocation, not the absence of a session row: dispatch itself
+ * only accepts `todo`, so a wrong implementation that moves the task *then* dispatches would be
+ * refused by dispatch and leave zero sessions behind, passing a row-count check while the guard
+ * was gone.
+ */
+export interface MoveTaskResult {
+  ok: boolean;
+  reason: string | null;
+}
+
+export async function moveTaskForSlug(
+  slug: string,
+  taskId: string,
+  to: string,
+  deps: { db?: DatabaseSync } = {},
+): Promise<MoveTaskResult> {
+  const owned = await resolveOwnedTask(slug, taskId, deps.db);
+  if (!owned) return { ok: false, reason: `task ${taskId} is not in project '${slug}'` };
+
+  const gate = gateModelFor(owned.task);
+  const verdict = dropVerdict(
+    {
+      taskId: owned.task.id,
+      from: owned.task.status,
+      gate: gate ? { humanRefusalReason: gate.humanRefusalReason } : null,
+    },
+    to,
+  );
+  if (!verdict.ok) return { ok: false, reason: verdict.reason };
+
+  writeTaskTransition(deps.db ?? getDb(), {
+    taskId: owned.task.id,
+    toStatus: verdict.to,
+    actorType: "human",
+    actorId: HUMAN_ACTOR_ID,
+    reason: handMoveReason(verdict.from, verdict.to),
+  });
+  return { ok: true, reason: null };
+}
+
+export async function moveTaskAction(formData: FormData): Promise<MoveTaskResult> {
+  const slug = String(formData.get("slug") ?? "");
+  const taskId = String(formData.get("taskId") ?? "");
+  const to = String(formData.get("to") ?? "");
+  const result = await moveTaskForSlug(slug, taskId, to);
   revalidatePath(`/p/${slug}/tasks`);
   return result;
 }

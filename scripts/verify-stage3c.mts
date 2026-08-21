@@ -15,7 +15,8 @@
  *
  * T1 lands AC-1..AC-8, AC-17, AC-19 and AC-21. T2, T3 and T4 append their own.
  */
-import { mkdtempSync, rmSync, readFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, statSync, existsSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join, dirname, resolve, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -30,6 +31,9 @@ import {
 import { drawerOutcome, initialDrawerFor } from "../lib/shell/drawer";
 import { GLYPH, WORD } from "../lib/severity";
 import { gateRefusalReason } from "../lib/agentos/mcp/gate";
+import { dropVerdict, dropTargets, handMoveReason } from "../lib/tasks/dnd";
+import { gateModelFor, cardModel, registerFor, evidenceLineFor } from "../lib/tasks/model";
+import { moveTaskForSlug } from "../app/p/[slug]/[tab]/actions";
 import {
   openDb,
   createProject,
@@ -37,12 +41,28 @@ import {
   createTask,
   createSession,
   createInboxMessage,
+  getTask,
+  listTaskEvents,
+  listSessionsByProject,
+  writeTaskTransition,
 } from "../lib/agentos/db";
 import { openInboxCount } from "../lib/tasks/data";
 import { inboxModel } from "../lib/tasks/inbox-model";
 import type { BoardReport, ProjectReport, Severity } from "../lib/types";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * `PROJECTS` is reached through `createRequire`, never a top-level import — the two-registry
+ * problem `verify-stage3b.mts` documents: this file is native ESM, but `projects.config.ts` loads
+ * through tsx's CommonJS path everywhere else, including the chain `resolveNav` reads. A top-level
+ * import would splice a second, independent array nothing else ever sees.
+ */
+const projectsConfigRequire = createRequire(import.meta.url);
+interface ProjectConfigLike { name: string; path: string; stalledAfterDays: number; dirtyThreshold: number }
+function getProjects(): ProjectConfigLike[] {
+  return (projectsConfigRequire("../projects.config") as { PROJECTS: ProjectConfigLike[] }).PROJECTS;
+}
 
 let failures = 0;
 const pass = (id: string, msg: string) => console.log(`  PASS  ${id} — ${msg}`);
@@ -93,6 +113,57 @@ function tmpDir(tag: string): string {
   const d = mkdtempSync(join(tmpdir(), `agentic-os-stage3c-${tag}-`));
   TEMPS.push(d);
   return d;
+}
+
+
+/**
+ * A project seeded in its own in-memory store, spliced into `PROJECTS` so `resolveNav` — and
+ * therefore `moveTaskForSlug` — can resolve its slug. The `Project.primaryRepoPath` must equal the
+ * config `path`, because that is the one fact the two sides share (`lib/tasks/data.ts`).
+ */
+function seedProject(tag: string, sharedDb?: ReturnType<typeof openDb>) {
+  const dir = tmpDir(tag);
+  const db = sharedDb ?? openDb(join(dir, "t.sqlite"));
+  const project = createProject(db, {
+    slug: tag,
+    primaryRepoPath: dir,
+    yamlPath: join(dir, "agentos.yml"),
+  });
+  writeFileSync(join(dir, "agentos.yml"), "");
+  const agent = createAgent(db, {
+    projectId: project.id,
+    name: `${tag}-agent`,
+    monogram: "AA",
+    model: "m",
+    rolePrompt: "r",
+    allowedTools: [],
+    disallowedTools: [],
+    canCommit: false,
+    maxTurns: 5,
+    maxBudgetUsd: 1,
+  });
+  const PROJECTS = getProjects();
+  PROJECTS.push({ name: tag, path: dir, stalledAfterDays: 365, dirtyThreshold: 50 });
+  return { dir, db, project, agent, slug: tag };
+}
+
+
+/**
+ * Runs a call that is expected to **refuse**, turning a throw into a reportable outcome instead of
+ * killing the run.
+ *
+ * The file-level try/catch already stops a throw from vanishing, but it attributes every throw to
+ * `suite` and abandons the remaining checks. That matters here because the whole point of AC-13 is
+ * that an unvalidated destination reaches SQLite and *throws* rather than being refused — so the
+ * failure this suite must describe most precisely was the one it reported least precisely, and a
+ * sin committed in one check was hiding every check after it.
+ */
+async function attempt<T>(fn: () => Promise<T>): Promise<{ threw: false; value: T } | { threw: true; error: string }> {
+  try {
+    return { threw: false, value: await fn() };
+  } catch (err) {
+    return { threw: true, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 // ── Import-graph walker (AC-1) ──────────────────────────────────────────────
@@ -697,6 +768,156 @@ async function runChecks(): Promise<void> {
     else if (bad.length > 0) fail("AC-21", bad.join("; "));
     else pass("AC-21", `every revalidatePath in app/ resolves to a rendering route (${tree.length} routes known)`);
   }
+
+  // ---- AC-12 [F] — a gated review card refuses exactly one column, in human words ----
+  {
+    const gated = { taskId: "T1", from: "review" as const, gate: { humanRefusalReason: gateRefusalReason("T1", "human") } };
+    const ungated = { taskId: "T2", from: "review" as const, gate: null };
+    const g = dropTargets(gated);
+    const u = dropTargets(ungated);
+    const refusedG = g.filter((x) => !x.accepts && x.key !== "review").map((x) => x.key);
+    const refusedU = u.filter((x) => !x.accepts && x.key !== "review").map((x) => x.key);
+    const doneReason = g.find((x) => x.key === "done")?.reason ?? "";
+    const problems: string[] = [];
+    if (JSON.stringify(refusedG) !== JSON.stringify(["done"])) problems.push(`gated refused ${JSON.stringify(refusedG)}, expected ["done"]`);
+    if (refusedU.length !== 0) problems.push(`ungated refused ${JSON.stringify(refusedU)} — the positive control failed, so AC-12 could pass by refusing everything`);
+    if (doneReason !== gateRefusalReason("T1", "human")) problems.push("done's reason is not gateRefusalReason(id, 'human')");
+    if (/inbox_ask/.test(doneReason)) problems.push("the drag refusal mentions inbox_ask — that is the session rendering (D36)");
+    if (!/Approve/i.test(doneReason)) problems.push("the drag refusal does not name the Approve control");
+    problems.length === 0
+      ? pass("AC-12", "gated review refuses only 'done', in the human rendering; ungated accepts every column")
+      : fail("AC-12", problems.join("; "));
+  }
+
+  // ---- AC-13 [F, hostile] — the server refuses what the browser never sends ----
+  {
+    const f = seedProject("hostile");
+    const gatedTask = createTask(f.db, { projectId: f.project.id, name: "gated", description: "", assigneeAgentId: f.agent.id, approvalGate: true });
+    writeTaskTransition(f.db, { taskId: gatedTask.id, toStatus: "doing", actorType: "session", actorId: null, reason: null });
+    writeTaskTransition(f.db, { taskId: gatedTask.id, toStatus: "review", actorType: "session", actorId: null, reason: null });
+    const before = listTaskEvents(f.db, gatedTask.id).length;
+
+    const gate = await attempt(() => moveTaskForSlug(f.slug, gatedTask.id, "done", { db: f.db }));
+    const bogus = await attempt(() => moveTaskForSlug(f.slug, gatedTask.id, "archived", { db: f.db }));
+
+    const after = listTaskEvents(f.db, gatedTask.id).length;
+    const status = getTask(f.db, gatedTask.id)?.status;
+    const problems: string[] = [];
+    if (gate.threw) problems.push(`the gated drop THREW instead of refusing: ${gate.error}`);
+    else if (gate.value.ok) problems.push("the gated drop to 'done' was ACCEPTED server-side");
+    if (bogus.threw) problems.push(`an arbitrary destination THREW instead of refusing (${bogus.error}) — a TypeScript signature is not a runtime allowlist`);
+    else if (bogus.value.ok) problems.push("an arbitrary destination was ACCEPTED");
+    if (status !== "review") problems.push(`status moved to '${status}'`);
+    if (after !== before) problems.push(`${after - before} TaskEvent(s) written by a refused move`);
+    problems.length === 0
+      ? pass("AC-13", "gated 'done' and an arbitrary destination both refused server-side; status and event count unchanged")
+      : fail("AC-13", problems.join("; "));
+    f.db.close();
+  }
+
+  // ---- AC-14 [F] — a legal drop is recorded as hand-moved, through the real model ----
+  {
+    const f = seedProject("handmove");
+    const task = createTask(f.db, { projectId: f.project.id, name: "t", description: "", assigneeAgentId: f.agent.id, approvalGate: false });
+    const before = listTaskEvents(f.db, task.id).length;
+    const attempted = await attempt(() => moveTaskForSlug(f.slug, task.id, "doing", { db: f.db }));
+    const res = attempted.threw ? { ok: false, reason: `threw: ${attempted.error}` } : attempted.value;
+    const events = listTaskEvents(f.db, task.id);
+    const ev = events[events.length - 1];
+    const moved = getTask(f.db, task.id);
+    const card = cardModel({
+      task: moved!,
+      events,
+      agentsById: new Map([[f.agent.id, f.agent]]),
+      sessionsById: new Map(),
+      toolCallCountBySession: new Map(),
+      commitShasBySession: new Map(),
+    });
+    const problems: string[] = [];
+    if (!res.ok) problems.push(`the legal move was refused: ${res.reason}`);
+    if (events.length !== before + 1) problems.push(`${events.length - before} events written, expected 1`);
+    if (ev?.actorType !== "human") problems.push(`actorType '${ev?.actorType}', expected 'human'`);
+    if (ev?.actorId !== "owner") problems.push(`actorId '${ev?.actorId}'`);
+    if (ev?.reason !== handMoveReason("todo", "doing")) problems.push(`reason '${ev?.reason}' is not handMoveReason's`);
+    if (card.evidence.kind !== "hand-moved") problems.push(`evidence kind '${card.evidence.kind}', expected 'hand-moved'`);
+    if (card.register !== "claim") problems.push(`register '${card.register}', expected 'claim'`);
+    problems.length === 0
+      ? pass("AC-14", "one human TaskEvent with handMoveReason; cardModel renders it hand-moved, in the claim register")
+      : fail("AC-14", problems.join("; "));
+    f.db.close();
+  }
+
+  // ---- AC-15 [F] — a drop never dispatches (D24) ----
+  {
+    // **The source scan runs first, before anything calls the action.** Ordering is load-bearing
+    // here: a wrong implementation that actually dispatches does real work — spawning a runner —
+    // and can take the whole process down before a later assertion is reached. A guard that only
+    // reports when the code is already correct is not a guard, and this one was exactly that until
+    // the two halves were swapped.
+    const src = readFileSync(join(ROOT, "app/p/[slug]/[tab]/actions.ts"), "utf8");
+    const from = src.indexOf("export async function moveTaskForSlug");
+    const to = src.indexOf("\nexport async function", from + 1);
+    const body = src.slice(from, to === -1 ? undefined : to);
+    const callsDispatch = from === -1 ? true : /\bdispatch\s*\(/.test(body);
+    if (from === -1) {
+      fail("AC-15", "could not find moveTaskForSlug to scan — the check is broken, not the code");
+    } else if (callsDispatch) {
+      fail("AC-15", "moveTaskForSlug's body calls dispatch( — D24: Run now is the only path into a session");
+    } else {
+      // The behavioural half corroborates, and is deliberately NOT the whole check: `dispatch`
+      // only accepts a task in `todo` (lib/agentos/dispatch.ts), so an implementation that moves
+      // todo → doing and *then* dispatches is refused by dispatch itself, leaves zero sessions
+      // behind, and would satisfy a row-count assertion with the guard entirely removed.
+      const f = seedProject("nodispatch");
+      const task = createTask(f.db, { projectId: f.project.id, name: "t", description: "", assigneeAgentId: f.agent.id, approvalGate: false });
+      await attempt(() => moveTaskForSlug(f.slug, task.id, "doing", { db: f.db }));
+      const sessions = listSessionsByProject(f.db, f.project.id).length;
+      sessions === 0
+        ? pass("AC-15", "moveTaskForSlug's body never calls dispatch(, and a drop produced 0 sessions")
+        : fail("AC-15", `${sessions} session row(s) after a drop`);
+      f.db.close();
+    }
+  }
+
+  // ---- AC-16 [F, hostile] — one project cannot drag another's card ----
+  {
+    // Both projects live in ONE store on purpose. With two separate databases the attacker's repo
+    // path simply finds no Project row, so the refusal comes from the data lookup and the
+    // `task.projectId !== data.project.id` comparison is never reached — the check would pass with
+    // the ownership guard deleted. Proven: it did, until this was restructured.
+    const shared = openDb(join(tmpDir("shared"), "t.sqlite"));
+    const victim = seedProject("victim", shared);
+    const attacker = seedProject("attacker", shared);
+    const task = createTask(shared, { projectId: victim.project.id, name: "v", description: "", assigneeAgentId: victim.agent.id, approvalGate: false });
+    const before = listTaskEvents(shared, task.id).length;
+    const attempted = await attempt(() => moveTaskForSlug(attacker.slug, task.id, "doing", { db: shared }));
+    const res = attempted.threw ? { ok: false, reason: `threw: ${attempted.error}` } : attempted.value;
+    const after = listTaskEvents(shared, task.id).length;
+    const status = getTask(shared, task.id)?.status;
+    const problems: string[] = [];
+    if (res.ok) problems.push("the cross-project move was ACCEPTED");
+    if (!res.reason || !res.reason.includes(task.id)) problems.push("the refusal does not name the task id");
+    if (status !== "todo") problems.push(`victim status moved to '${status}'`);
+    if (after !== before) problems.push(`${after - before} event(s) written on the victim`);
+    problems.length === 0
+      ? pass("AC-16", "a task id from another project in the SAME store is refused, names the id, and writes nothing")
+      : fail("AC-16", problems.join("; "));
+    shared.close();
+  }
+
+  // ---- AC-12b [G] — the board hands the drag path the HUMAN rendering ----
+  {
+    // AC-12 asserts `dropTargets` on a hand-built gate, so it cannot see how the board wires it.
+    // A correct pure function that the UI feeds the wrong string is the T7-2 failure exactly
+    // (`docs/LEARNINGS.md`, 2026-08-19), and it stayed green here until this check existed.
+    const src = readFileSync(join(ROOT, "components/tasks/Board.tsx"), "utf8");
+    const passesHuman = /humanRefusalReason:\s*card\.gate\.humanRefusalReason/.test(src);
+    const passesSession = /humanRefusalReason:\s*card\.gate\.refusalReason/.test(src);
+    passesHuman && !passesSession
+      ? pass("AC-12b", "Board passes gate.humanRefusalReason into the drop candidate, not the session string (D36)")
+      : fail("AC-12b", `passesHuman=${passesHuman} passesSession=${passesSession}`);
+  }
+
 }
 
 // ── Run ─────────────────────────────────────────────────────────────────────

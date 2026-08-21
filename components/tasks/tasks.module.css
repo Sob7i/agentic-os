@@ -330,3 +330,28 @@
   cursor: pointer;
 }
 .answeredNote { font-size: 12px; color: var(--muted); margin: 0; font-style: italic; }
+
+/* ── Drag and drop (T3, D33) ─────────────────────────────────────────────── */
+
+/* A grid child defaults to `min-width: auto`, which turns the longest agent name into
+   page-wide horizontal overflow rather than a truncation. Set explicitly here because
+   the drag wrappers add nesting between the grid and the card. */
+.dropZone { min-width: 0; height: 100%; border-radius: var(--radius); }
+.dropZone[data-over] { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+
+.draggable { min-width: 0; }
+/* No motion on the drop (spec §8.6) — dnd-kit's default drop animation is off, and a dragged
+   card is marked by reduced opacity alone, the same restraint the running rail uses. */
+.draggable[data-dragging] { opacity: 0.55; }
+.draggable:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; border-radius: var(--radius); }
+
+.dropRefusal {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--attention);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--attention-soft);
+}
