@@ -97,7 +97,7 @@ function tmpDir(tag: string): string {
 // ── Import-graph walker (AC-1) ──────────────────────────────────────────────
 
 /**
- * Follows **value** imports only. `import type { … }` and a clause whose every specifier is
+ * Follows **value** edges only. `import type { … }` and a clause whose every specifier is
  * `type X` are not followed, because both are erased before the bundler sees them.
  *
  * The rule is about the value graph, not the first edge: `components/config/AgentForm.tsx` makes a
@@ -105,25 +105,59 @@ function tmpDir(tag: string): string {
  * imports from `./db` **as a type**, so the walk stops there. An implementation that exempted value
  * imports, or that stopped at depth one, would pass that file for the wrong reason and wave through
  * exactly what this guard exists to catch.
+ *
+ * **Three forms, because the bundler follows three** (raised in review of #28; the first version
+ * matched only the middle one, and the other two are not hypothetical — `app/layout.tsx:2` is a
+ * bare `import "./globals.css"` and `lib/tasks/model.ts:271` re-exports `./columns`):
+ *
+ *   - `import … from "x"` — the ordinary edge.
+ *   - `import "x"` — a **side-effect** import. It binds no name, which is exactly why a regex
+ *     built around the `from` keyword cannot see it, and exactly why it is worth seeing: a module
+ *     imported purely for its side effects is still executed, and everything it imports with it.
+ *   - `export … from "x"` — a re-export. It reads like an export and behaves like an import: the
+ *     re-exporting module loads the target. A client component that re-exported a server-only
+ *     module would have pulled `node:sqlite` into the browser with AC-1 green.
+ *
+ * Type-only specifiers are filtered identically in the import and re-export forms, so
+ * `export type { TaskRow } from "./types"` stays unfollowed.
  */
 function valueImportsOf(file: string): string[] {
   const src = readFileSync(file, "utf8");
   const out: string[] = [];
-  const re = /import\s+(type\s+)?([\s\S]*?)\s*from\s*["']([^"']+)["']/g;
+
+  /** True when every specifier in a `{ … }` clause is `type X` — i.e. the whole edge is erased. */
+  const allTypeSpecifiers = (clause: string): boolean => {
+    const c = clause.trim();
+    if (!c.startsWith("{") || !c.endsWith("}")) return false;
+    const specs = c
+      .slice(1, -1)
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    return specs.length > 0 && specs.every((sp) => sp.startsWith("type "));
+  };
+
+  const named = /import\s+(type\s+)?([\s\S]*?)\s*from\s*["']([^"']+)["']/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) {
+  while ((m = named.exec(src))) {
     if (m[1]) continue;
-    const clause = (m[2] ?? "").trim();
-    if (clause.startsWith("{") && clause.endsWith("}")) {
-      const specs = clause
-        .slice(1, -1)
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
-      if (specs.length > 0 && specs.every((sp) => sp.startsWith("type "))) continue;
-    }
+    if (allTypeSpecifiers(m[2] ?? "")) continue;
     out.push(m[3]);
   }
+
+  // A bare side-effect import. Anchored to a statement boundary so the `import` inside
+  // `await import("x")` or a longer identifier is not mistaken for one.
+  const bare = /(^|[\n;])\s*import\s*["']([^"']+)["']/g;
+  while ((m = bare.exec(src))) out.push(m[2]);
+
+  // A re-export. `export * from "x"` and `export { a } from "x"` both load the target.
+  const reexport = /export\s+(type\s+)?(\*(?:\s+as\s+\w+)?|\{[\s\S]*?\})\s*from\s*["']([^"']+)["']/g;
+  while ((m = reexport.exec(src))) {
+    if (m[1]) continue;
+    if (allTypeSpecifiers(m[2] ?? "")) continue;
+    out.push(m[3]);
+  }
+
   return out;
 }
 
@@ -446,28 +480,58 @@ async function runChecks(): Promise<void> {
     const nav = navFor({ executionLayer: true });
     const watched = navFor({ executionLayer: false });
     const problems: string[] = [];
-    const agents = setupSectionFor(nav, "agents");
-    if (!agents || agents.state !== "live" || agents.builtBy !== null) {
-      problems.push("agents is not a live section with no builtBy");
+
+    // The roster is D32's contract and is pinned: exactly these four keys, in this order. Adding a
+    // fifth setup destination is a decision, and this is where it has to be taken rather than
+    // noticed.
+    const ROSTER = ["agents", "templates", "environments", "repos"];
+    const actual = SETUP_ROWS.map((r) => r.key);
+    if (actual.join(",") !== ROSTER.join(",")) {
+      problems.push(`setup roster is ${actual.join(",")}, expected ${ROSTER.join(",")}`);
     }
-    for (const key of ["templates", "environments", "repos"]) {
-      const row = setupSectionFor(nav, key);
-      if (!row) problems.push(`${key} does not resolve`);
-      else if (row.state !== "placeholder") problems.push(`${key} is not a placeholder`);
-      else if (!row.builtBy || row.builtBy.trim().length === 0) {
-        problems.push(`${key} does not say what will build it`);
+
+    // **Each row's honesty is derived from its own state, never from a hardcoded list of which
+    // rows are placeholders today.** The first version listed `templates/environments/repos`
+    // literally, which made this check a pinned baseline: Stage 4 flips `templates` to `live` by
+    // design (its spec §5.8 says so), and the suite would have gone red for the feature landing.
+    // That is the same rot that has two upstream oracles red right now for repairing a known
+    // failure — so the invariant asserted here is the one that does not expire: **a live row
+    // claims no future stage, and a placeholder names the thing that will build it.**
+    for (const row of SETUP_ROWS) {
+      const resolved = setupSectionFor(nav, row.key);
+      if (!resolved) {
+        problems.push(`${row.key} does not resolve`);
+        continue;
+      }
+      if (resolved.state === "live") {
+        if (resolved.builtBy !== null) problems.push(`${row.key} is live but still names a builder`);
+      } else if (resolved.state === "placeholder") {
+        if (!resolved.builtBy || resolved.builtBy.trim().length === 0) {
+          problems.push(`${row.key} does not say what will build it`);
+        }
+      } else {
+        problems.push(`${row.key} has an unknown state`);
       }
     }
+
+    // `agents` is the one row whose state is asserted outright: it is live, it is the only setup
+    // surface Stage 3b actually built, and a regression to `placeholder` would be a silently
+    // unreachable feature rather than an honest one.
+    const agents = setupSectionFor(nav, "agents");
+    if (!agents || agents.state !== "live") problems.push("agents is not a live section");
+
     for (const bad of ["skills", "nope", "../../etc/passwd", ""]) {
       if (setupSectionFor(nav, bad) !== null) problems.push(`unknown section "${bad}" resolved`);
     }
-    for (const key of ["agents", "templates", "environments", "repos"]) {
+    for (const key of ROSTER) {
       if (setupSectionFor(watched, key) !== null) problems.push(`watched-only resolved "${key}"`);
     }
+
+    const live = SETUP_ROWS.filter((r) => r.state === "live").length;
     problems.length === 0
       ? pass(
           "AC-7",
-          "agents live; three placeholders each name their stage; unknown sections and watched-only → null",
+          `four setup rows in D32's order; ${live} live with no builder named, ${SETUP_ROWS.length - live} placeholders each naming one; unknown sections and watched-only → null`,
         )
       : fail("AC-7", problems.join("; "));
   }
