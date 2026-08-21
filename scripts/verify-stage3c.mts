@@ -67,6 +67,16 @@ function getProjects(): ProjectConfigLike[] {
 
 let failures = 0;
 const pass = (id: string, msg: string) => console.log(`  PASS  ${id} — ${msg}`);
+/**
+ * A check that could not be run, as distinct from one that ran and was satisfied.
+ *
+ * It exists because AC-20 printed its skip through `pass()`, which emitted the line
+ * `PASS AC-20 — SKIP …` — a degraded upstream reading as a passing check in the acceptance output,
+ * which is the "green for the wrong reason" failure this suite's own header warns about (review of
+ * #31). `verify-all.mts` reads exit codes only, so a SKIP line costs nothing there; the format
+ * matches `verify-stage3.mts`'s AC-11 and AC-12, which have printed real SKIP lines since Stage 3.
+ */
+const skip = (id: string, msg: string) => console.log(`  SKIP  ${id} — ${msg}`);
 const fail = (id: string, msg: string) => {
   console.log(`  FAIL  ${id} — ${msg}`);
   failures++;
@@ -976,45 +986,122 @@ async function runChecks(): Promise<void> {
       : fail("AC-18", offenders.join("; "));
   }
 
-  // ---- AC-20 [G] — the regression oracle, which SKIPS rather than fails on a degraded upstream ----
+  // ---- AC-20 [G] — the regression oracle, per child, which SKIPS a degraded one ----
   {
     // `verify:stage3a`'s own AC-1 shells out to GitHub and can go red because GitHub is down —
     // already a docs/BACKLOG.md entry. Importing that flakiness here would teach us to ignore this
     // suite too, so a degraded upstream is reported as a SKIP with its reason, never a FAIL.
+    //
+    // **Four things the first version of this got wrong, all found in review of #31, and every one
+    // of them made the oracle quieter rather than louder — which is the direction that matters for
+    // a check whose whole job is to notice.**
+    //
+    //   (a) It printed its skip through `pass()`, so a degraded upstream read as `PASS AC-20`.
+    //   (b) It discarded the child's exit status and never checked that the child had *said*
+    //       anything. A suite that crashed before printing a check emitted no FAIL ids, so the
+    //       "no unexpected failures" branch was reached and reported the upstream as unchanged —
+    //       a vacuous pass on the one input that most deserved a red.
+    //   (c) Its degraded marker matched `gh:`/`ENOTFOUND` text that **neither child ever prints**.
+    //       `verify:stage3` catches the offline case itself and reports `SKIP AC-11`; `verify:stage3a`
+    //       cannot distinguish it at all and reports an aggregate `FAIL AC-1`. So the real
+    //       GitHub-down case fell through and was reported as unchanged.
+    //   (d) One `||` skipped the whole check, so an outage in either child hid a genuine
+    //       regression in the other. Each child is now classified on its own.
+    //
+    // **What is deliberately NOT asserted: the children's exact pass totals.** The review asked
+    // for them, and pinning them is what put `stage3:AC-11` and `stage3a:AC-1` in the KNOWN list
+    // below — both are red today for *repairing* a known failure, which is a pinned baseline
+    // rotting on schedule. Reproducing that here would give this oracle the same expiry date. The
+    // vacuity hole (b) closes with a much weaker and non-rotting claim: **the child must have
+    // produced at least one parseable result.** Growing a check stays free; going silent does not.
+    const KNOWN: Record<string, string[]> = { "verify:stage3": ["AC-11"], "verify:stage3a": ["AC-1"] };
+
+    /** Each child's documented "I could not do my job" signal, as it actually prints it. */
+    const DEGRADED: Record<string, RegExp> = {
+      // verify-stage3.mts:1673 — its own guard for a Stage 1 that needed a live `gh` call.
+      "verify:stage3": /^\s*SKIP\s+AC-11\b/m,
+      // verify-stage3a.mts has no such guard; its AC-1 is in KNOWN and tolerated either way, so
+      // there is no degraded signal to look for that is not already covered.
+      "verify:stage3a": /(?!)/,
+    };
+
     const run = (script: string) => {
+      // **The opt-in is cleared, not inherited.** `verify:stage3`'s AC-12 spawns a real model
+      // session when AGENTOS_REAL_SESSION=1, and this suite's contract is that the model is never
+      // called. Inheriting the flag would make a fixture-only suite cost money and reach the
+      // network on the machine of whoever last ran the opt-in check (review of #31).
+      const env = { ...process.env };
+      delete env.AGENTOS_REAL_SESSION;
       try {
-        const out = execFileSync("pnpm", ["--silent", script], { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
-        return { out, ran: true };
+        const out = execFileSync("pnpm", ["--silent", script], { cwd: ROOT, encoding: "utf8", stdio: "pipe", env });
+        return { out, status: 0 };
       } catch (err) {
-        const e = err as { stdout?: string; stderr?: string };
-        return { out: `${e.stdout ?? ""}${e.stderr ?? ""}`, ran: true };
+        const e = err as { stdout?: string; stderr?: string; status?: number | null };
+        return { out: `${e.stdout ?? ""}${e.stderr ?? ""}`, status: e.status ?? -1 };
       }
     };
-    const summarize = (out: string) => ({
-      passes: (out.match(/^\s*PASS\s/gm) ?? []).length,
-      failIds: [...out.matchAll(/^\s*FAIL\s+(\S+)/gm)].map((m) => m[1]),
+
+    type Verdict =
+      | { kind: "silent"; why: string }
+      | { kind: "degraded"; why: string }
+      | { kind: "read"; passes: number; failIds: string[] };
+
+    const classify = (script: string, r: { out: string; status: number }): Verdict => {
+      const passes = (r.out.match(/^\s*PASS\s/gm) ?? []).length;
+      const failIds = [...r.out.matchAll(/^\s*FAIL\s+(\S+)/gm)].map((m) => m[1]);
+      const skips = (r.out.match(/^\s*SKIP\s/gm) ?? []).length;
+      if (passes + failIds.length + skips === 0) {
+        return {
+          kind: "silent",
+          why: `exit ${r.status} with no parseable check line — first 200 chars: ${JSON.stringify(r.out.slice(0, 200))}`,
+        };
+      }
+      if (DEGRADED[script].test(r.out)) {
+        return { kind: "degraded", why: `${script} reported its own degraded signal (${passes}P)` };
+      }
+      return { kind: "read", passes, failIds };
+    };
+
+    const children = ["verify:stage3", "verify:stage3a"].map((script) => ({
+      script,
+      short: script.replace("verify:", ""),
+      verdict: classify(script, run(script)),
+    }));
+
+    const silent = children.filter((c) => c.verdict.kind === "silent");
+    const degradedChildren = children.filter((c) => c.verdict.kind === "degraded");
+    const read = children.filter((c) => c.verdict.kind === "read");
+
+    const unexpected = read.flatMap((c) => {
+      const v = c.verdict as { kind: "read"; passes: number; failIds: string[] };
+      return v.failIds.filter((id) => !KNOWN[c.script].includes(id)).map((id) => `${c.short}:${id}`);
     });
 
-    const degraded = /gh: |Bad credentials|ENOTFOUND|rate limit/i;
-    const three = run("verify:stage3");
-    const threeA = run("verify:stage3a");
-
-    if (degraded.test(three.out) || degraded.test(threeA.out)) {
-      pass("AC-20", "SKIP — an upstream suite is degraded (GitHub unreachable); not reported as a regression");
+    if (silent.length > 0) {
+      // A child that could not run is a FAIL, not a skip: the oracle has no evidence either way,
+      // and silence is exactly the state that used to be reported as "unchanged".
+      fail(
+        "AC-20",
+        `an upstream suite produced no result — ${silent.map((c) => `${c.short}: ${(c.verdict as { why: string }).why}`).join("; ")}`,
+      );
+    } else if (unexpected.length > 0) {
+      fail("AC-20", `NEW upstream failures introduced by this stage: ${unexpected.join(", ")}`);
+    } else if (read.length === 0) {
+      // Reachable only if every child can signal degradation. Today exactly one can, so this is
+      // the shape of the rule rather than a path taken — stated here so the next reader does not
+      // mistake an unreachable branch for a tested one.
+      skip("AC-20", `every upstream suite is degraded — ${degradedChildren.map((c) => (c.verdict as { why: string }).why).join("; ")}`);
     } else {
-      const a = summarize(three.out);
-      const b = summarize(threeA.out);
-      // The two known failures on this base, both recorded in docs/HANDOFF.md and docs/BACKLOG.md:
-      // each pins Stage 1's expected result at the literal 7P/1F, and Stage 1 now passes 8/8 —
-      // two oracles red because a known failure was repaired. Anything ELSE red is this stage's.
-      const KNOWN = { "verify:stage3": ["AC-11"], "verify:stage3a": ["AC-1"] };
-      const unexpected = [
-        ...a.failIds.filter((id) => !KNOWN["verify:stage3"].includes(id)).map((id) => `stage3:${id}`),
-        ...b.failIds.filter((id) => !KNOWN["verify:stage3a"].includes(id)).map((id) => `stage3a:${id}`),
-      ];
-      unexpected.length === 0
-        ? pass("AC-20", `upstream unchanged — stage3 ${a.passes}P (known: ${a.failIds.join(",") || "none"}), stage3a ${b.passes}P (known: ${b.failIds.join(",") || "none"})`)
-        : fail("AC-20", `NEW upstream failures introduced by this stage: ${unexpected.join(", ")}`);
+      const summary = read
+        .map((c) => {
+          const v = c.verdict as { kind: "read"; passes: number; failIds: string[] };
+          return `${c.short} ${v.passes}P (known: ${v.failIds.join(",") || "none"})`;
+        })
+        .join(", ");
+      const aside = degradedChildren.length
+        ? `; skipped as degraded: ${degradedChildren.map((c) => c.short).join(", ")}`
+        : "";
+      pass("AC-20", `upstream unchanged — ${summary}${aside}`);
     }
   }
 }

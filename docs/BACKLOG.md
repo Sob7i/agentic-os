@@ -62,8 +62,9 @@ and things explicitly punted with a reason.
   172px → 200px in the same stage, so the number this entry waits on both changed and remains
   unlooked-at. Recording that estimate here as the evidence is exactly what `docs/FEATURES.md` did
   to Stage 3a's AC-10, and what Stage 3c exists to stop repeating. **The condition is unchanged and
-  is now one observation away:** take M-1 and M-1b (`docs/FEATURES.md` § *The measurements this
-  stage owes*), then decide.
+  needs two observations, not one — this entry trades reachability against width and has neither:**
+  M-1 is the reachability half (the ribbon) and M-1b is the width half (the board). Both are listed
+  in `docs/FEATURES.md` § *The measurements this stage owes*. Take both, then decide.
 
 - **`lib/tasks/data.ts` loads the Tasks board with N+1 queries** *(added 2026-08-19)*. Events are
   fetched per task, and tool calls, commit shas and inbox messages per session. Correct, and fine
@@ -163,6 +164,17 @@ and things explicitly punted with a reason.
   baseline, never a hardcoded pass/fail count.** Do not simply re-pin them to `8P/0F` — that
   re-arms the identical trap for the next time itqan goes quiet, which the dates say is roughly a
   month. Unblocked by: the same owner call as (a)/(b), which now also settles the oracles.
+  **Third half, observed live 2026-08-21 during the review round on #28–#31: a count is not an
+  identity, and both oracles can pass for the wrong reason.** GitHub's GraphQL quota ran out
+  mid-session. Stage 1's DC1 needs it, so `AC-1` went red with the documented offline symptom
+  (*"nadim severity is attention, expected drift"*) while `AC-2` went green — Stage 1 returned
+  `7P/1F` again, **with a different check failing**. Both oracles test `passes===7 && fails===1 &&
+  /AC-2/.test(out)`, and `/AC-2/` matches AC-2's *PASS* line just as happily as a FAIL one, so both
+  reported the upstream as unchanged. `verify:stage3`'s own `OFFLINE_SYMPTOM` branch — written for
+  exactly this outage — is **unreachable**, because `preSliceResult` is evaluated first and was
+  true. Two suites flipped from red to green inside one hour with no code change, for a reason that
+  had nothing to do with either of them. Whichever reading the owner picks, **the comparison has to
+  name which checks failed, not how many.**
 
 ### From the execution-layer re-scope (2026-08-15, D18–D22)
 

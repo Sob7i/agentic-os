@@ -257,6 +257,9 @@ on 2026-08-20.
 | Refuses a destination that is not a column | `archived` is refused, not passed through to SQLite to throw | **AC-13** | Stage 3c |
 | Never dispatches from a drop | `Run now` remains the only path into a session (D24) | **AC-15** | Stage 3c |
 | Refuses a cross-project drag | One project cannot move another's card | **AC-16** | Stage 3c |
+| Refuses an incomplete move request | A POST missing a field is refused at the form boundary; nothing is revalidated and no empty field is quoted back | **AC-16b** | Stage 3c |
+| Survives a move that never reaches the server | The refusal says nothing was changed, and the board keeps accepting drags — it does not go quietly read-only | *(code; no check — client-side)* | Stage 3c |
+| Drops a drag that lands mid-flight | The second gesture is refused rather than queued, so two moves cannot race and settle a card where neither put it | *(code; no check — client-side)* | Stage 3c |
 | Keeps the board keyboard-operable | dnd-kit's `KeyboardSensor`; drag does not swallow `Run now` or `Approve` | M-2 (**not yet observed**) | Stage 3c |
 | Opens Add task / Add agent in a drawer | Right-hand sheet on the native `<dialog>`; `Esc` closes unless a submit is pending | M-3 (**not yet observed**) | Stage 3c |
 | Keeps a refusal on screen | A failed create leaves the drawer open with its reason | AC-9 | Stage 3c |
@@ -282,7 +285,7 @@ browser bundle. **AC-1 walks every `"use client"` file transitively and asserts 
 
 ### The measurements this stage owes, and has not taken
 
-**Three observations remain unmade, and are recorded as unmade rather than estimated.** This is the
+**Four observations remain unmade, and are recorded as unmade rather than estimated.** This is the
 correction Stage 3a's AC-10 needed: that criterion has sat in this file since 2026-08-18 as a
 *computed estimate presented as a fact*, and repeating that here would be the same mistake twice.
 
@@ -295,7 +298,8 @@ correction Stage 3a's AC-10 needed: that criterion has sat in this file since 20
 
 **The arithmetic for M-1b, labelled as arithmetic.** Board minimum is `4 × 220 + 3 × 14` = **922px**;
 at 1280px with a 200px rail and 24px pane padding, **1032px** is available — 110px of slack, 248px
-per column, overflowing below a **1170px** viewport. The rail's 1px border is *not* subtracted
+per column, so the board begins to overflow at a viewport **narrower than 1170px**. That is a
+width calculation and says nothing about height. The rail's 1px border is *not* subtracted
 separately, because `app/globals.css` sets `* { box-sizing: border-box }`. **None of that is an
 observation.** Cards get taller with drag affordances and a drop target needs visible room that no
 column-width sum accounts for. If it turns out cramped, D23 named Concept C as the fallback in

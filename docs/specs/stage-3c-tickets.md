@@ -239,4 +239,5 @@ the entry or restate its condition — **do not leave it saying it is waiting fo
 now happened.**
 
 **Done when** `pnpm verify:stage3c` is green, `pnpm verify` shows no new red **compared per-suite**,
-and all three measurements are written down.
+and all **four** measurements (M-1, M-1b, M-2, M-3) are written down — *recorded as
+observed or recorded as owed*, which is what closing this ticket required and what it did.

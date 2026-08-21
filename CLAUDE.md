@@ -152,7 +152,7 @@ cache arrives with Stage 7 (derived and disposable). *Corrected 2026-08-18: this
 | `pnpm verify:stage3` | Stage 3 (the execution layer) only. Fixture-based; **AC-12 calls a real model and is opt-in**, skipped unless `AGENTOS_REAL_SESSION=1`. |
 | `pnpm verify:stage3a` | Stage 3a (the shell) only. Pure-function fixtures, plus the Stage 1/2 suites re-run as a regression oracle. |
 | `pnpm verify:stage3b` | Stage 3b (initialize, agents, tasks) only. Fixture repos in a temp dir; the model is never called. |
-| `pnpm verify:stage3c` | Stage 3c (the board and the rail) only. Fixture-based. **AC-20 spawns `verify:stage3` and `verify:stage3a` as a regression oracle, so this suite takes ~90s.** |
+| `pnpm verify:stage3c` | Stage 3c (the board and the rail) only. Fixture-based. **AC-20 spawns `verify:stage3` and `verify:stage3a` as a regression oracle, so this suite takes ~90s.** It clears `AGENTOS_REAL_SESSION` in the children, so running it never calls a model even on a machine where the opt-in is set. |
 | `pnpm type-check` | `tsc --noEmit`. |
 | `pnpm build` | Production build. |
 

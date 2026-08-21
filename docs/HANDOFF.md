@@ -40,13 +40,13 @@
 | `develop` head | `8643ef7` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #16, #17 (2026-08-19), #18 (2026-08-19) | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **100 of 102** — measured 2026-08-21 on `feat/stage-3c-t4-docs`, after Stage 3c T1–T4. The 2 failures are the pinned-baseline pair below, not regressions | `pnpm verify` |
-| — what is red, and why | Stage 1 **AC-2 now passes**, so `verify:stage3` **AC-11** and `verify:stage3a` **AC-1** fail — both pin Stage 1's expected result at `7P/1F`. **Two oracles went red because a known failure was fixed.** Cause: itqan's last commit was 2026-07-19 until *we* pushed to it on 2026-08-20, which un-stalled DC7. See `docs/LEARNINGS.md` (2026-08-21) and `docs/BACKLOG.md` | `pnpm verify:stage1` |
-| `pnpm verify:stage1` | **8 of 8** (was 7 of 8) — AC-2 green while itqan is active | `pnpm verify:stage1` |
+| `pnpm verify` | **101 checks; which two are red depends on whether GitHub is answering.** Both states were measured on `feat/stage-3c-t4-docs` within one hour on 2026-08-21, with no code change between them — see the row below. Connected: **99 of 101** (Stage 1 green 8/8; `verify:stage3` AC-11 and `verify:stage3a` AC-1 red). Rate-limited: **100 of 101** (Stage 1 AC-1 red; both oracles green). Plus 1 SKIP either way (`verify:stage3` AC-12, the opt-in real session). **The earlier *100 of 102* on this row was a miscount, not a third state** — it counted Stage 1's own PASS lines, which AC-11 was pasting into its failure message | `pnpm verify` |
+| — what is red, and why | **Read this row before treating anything above as stable.** `verify:stage3` **AC-11** and `verify:stage3a` **AC-1** both pin Stage 1's expected result at the literal `7P/1F`. (1) itqan's last commit was 2026-07-19 until *we* pushed to it on 2026-08-20, which un-stalled DC7 and turned Stage 1 AC-2 green — so **both oracles went red because a known failure was fixed.** (2) Then, an hour into 2026-08-21, GitHub's GraphQL quota ran out; Stage 1's DC1 needs it, `AC-1` went red with the documented offline symptom and Stage 1 returned `7P/1F` again — **a different check failing, the same count** — so both oracles went green again, for the wrong reason. `verify:stage3`'s own offline-detection branch never fires in that case, because the pinned comparison is evaluated first and matches. `docs/BACKLOG.md` carries all three halves of the fix; `docs/LEARNINGS.md` (2026-08-21) carries the lesson | `gh api rate_limit`, then `pnpm verify:stage1` |
+| `pnpm verify:stage1` | **8 of 8 when GitHub answers** (AC-2 green while itqan is active); **7 of 8 when it does not** — AC-1 fails with *"nadim severity is attention, expected drift"*, which is DC1 being unable to call `gh`, not a drift regression | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
-| `pnpm verify:stage3` | **34 of 35** — AC-11 red on the pinned `7P/1F` baseline. *Note: this file recorded `33 of 33` before 2026-08-21 and the suite now reports 35 checks. The delta was measured, not explained — nobody has chased where two checks came from, and it is not this stage's change.* | `pnpm verify:stage3` |
-| `pnpm verify:stage3a` | **7 of 8** — AC-1 red on the same pinned baseline | `pnpm verify:stage3a` |
-| `pnpm verify:stage3c` | **22 of 22** — AC-1…AC-21 plus AC-12b | `pnpm verify:stage3c` |
+| `pnpm verify:stage3` | **33 checks**, of which AC-12 is always a SKIP — so **32 of 33 with AC-11 red**, or **33 of 33** when the pinned baseline happens to match (see the row above). **The "33 → 35 checks" note this row carried as *measured but unexplained* is now explained, and the suite never grew.** When AC-11 went red it began quoting the first 300 characters of Stage 1's output into its own failure message — raw, newlines intact — so two or three of Stage 1's `PASS` lines were counted as Stage 3's, varying run to run with where the 300-character cut landed. Fixed 2026-08-21 by flattening the excerpt; `docs/LEARNINGS.md` has why it was worse than a miscount | `pnpm verify:stage3` |
+| `pnpm verify:stage3a` | **8 checks** — **7 of 8** or **8 of 8**, on the same pinned baseline and for the same reason as `verify:stage3` | `pnpm verify:stage3a` |
+| `pnpm verify:stage3c` | **23 of 23** — AC-1…AC-21 plus AC-12b and **AC-16b** (added in review of #30) | `pnpm verify:stage3c` |
 | `pnpm verify:stage3b` | 18 of 18 — T1's five + AC-2c/AC-2d, T2's five + AC-4b, T3's four, T4's **AC-9** (the four added in PR review) | `pnpm verify:stage3b` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
@@ -457,6 +457,58 @@ execution layer's tasks and goals, which do not exist yet), and everything in PR
 *if the Board is not opened daily within two weeks of Stage 2, the premise was wrong — record it
 and stop.* Stage 2 is not merged and that clock has not meaningfully started. The re-scope does
 not void that instruction; it makes it easier to forget.
+
+### The review round on #28–#31 (2026-08-21)
+
+All four Stage 3c PRs came back with comments. **Almost all of them were real, and the pattern
+across them is worth carrying forward: every finding made a check quieter, not louder.** Nothing
+was broken on screen; four separate guards agreed with code they could not actually see.
+
+- **AC-1's import walker followed one of three value-graph edge forms.** A client component could
+  have reached `node:sqlite` through `import "x"` or `export … from "x"` with the guard green.
+  Measured both ways before and after — see `docs/LEARNINGS.md` (2026-08-21).
+- **AC-7 asserted today's roster.** It demanded `templates` be a placeholder, so Stage 4 flipping it
+  to `live` — which Stage 4's own spec instructs — would have turned this suite red for the feature
+  landing as designed. Now derived from each row's `state`.
+- **AC-20 had four faults**, including a degraded-upstream detector matching text neither child
+  emits, and a vacuous pass when a child crashed before printing anything. Rewritten; each child is
+  now classified on its own, and silence is a FAIL.
+- **`moveTaskAction` acted on incomplete input** and revalidated `/p//tasks`. Guarded, and
+  **AC-16b** added — the one new check in this round.
+- **`DragBoard` could strand `pending` forever** if the server action rejected, leaving the board
+  silently read-only.
+- **The Esc-during-submit guard had a gap it could not cover**: `pending` reached the drawer only
+  after paint, and `<dialog>`'s `cancel` does not wait for paint.
+- **Doc rot D32 caused and this file's own T4 pass missed:** `docs/HUMAN-TEST.md` still described
+  the five-tab cap and a `configuration` link in two places, and three of its *"Try it"* steps
+  described outcomes the browser cannot produce. The Stage 3c spec still called M-1 *"finally
+  taken"* and M-2/M-3 *"measured"* while its own status line said all four were unobserved.
+
+**One thing the review did not find, and the rewrite did.** `verify:stage3`'s AC-11 was pasting the
+first 300 characters of Stage 1's output into its own failure message with the newlines intact, so
+Stage 1's `PASS` lines were being counted as Stage 3's. That is the whole of the *"33 → 35 checks,
+measured but unexplained"* note this file has carried since 2026-08-21 — the suite never grew — and
+it was one Stage 1 failure away from making AC-20 report `stage3:AC-2` as a regression this stage
+introduced. Fixed at the source. **The recorded `pnpm verify` total drops from 100 to 99 as a
+result, and nothing regressed.**
+
+**Three comments were rejected**, each after checking: a "T4 is the suite (`AC-9`)" line that
+belongs to *Stage 3b's* T4 and is correct there; a reading of M-1b's arithmetic as a claim about
+viewport *height* when it is a width calculation (the wording was clarified anyway); and a request
+to pin AC-20 to the children's exact pass totals, which is the very thing that has two upstream
+oracles red today.
+
+**And the suite state moved under us while this was being written.** GitHub's GraphQL quota ran
+out mid-session, Stage 1's AC-1 went red with the documented offline symptom, and Stage 1 returned
+`7P/1F` again — the same *count* the two oracles pin, with a *different check* failing. Both went
+green. `verify:stage3`'s own offline-detection branch, written for exactly this outage, never fired,
+because the pinned comparison is evaluated first and matched. **Two suites flipped from red to green
+inside an hour with no code change.** Not fixed here — it is another stage's suite and it needs the
+same owner call the pinned baseline already needs (`docs/BACKLOG.md`) — but it is now written down
+as a third half of that entry, because a count is not an identity.
+
+**None of this changes what the stage owes.** M-1, M-1b, M-2 and M-3 are still unobserved, and the
+Esc-mid-submit fix in particular narrows a race that only M-3 can actually confirm.
 
 ## Blockers
 
