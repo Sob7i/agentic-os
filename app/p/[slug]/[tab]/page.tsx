@@ -19,7 +19,9 @@ import {
   approveDoneAction,
   answerInboxAction,
   initializeProjectAction,
-  createTaskAction, moveTaskAction } from "./actions";
+  createTaskAction,
+  moveTaskAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 

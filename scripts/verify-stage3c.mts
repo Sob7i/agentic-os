@@ -33,7 +33,7 @@ import { GLYPH, WORD } from "../lib/severity";
 import { gateRefusalReason } from "../lib/agentos/mcp/gate";
 import { dropVerdict, dropTargets, handMoveReason } from "../lib/tasks/dnd";
 import { gateModelFor, cardModel, registerFor, evidenceLineFor } from "../lib/tasks/model";
-import { moveTaskForSlug } from "../app/p/[slug]/[tab]/actions";
+import { moveTaskForSlug, moveTaskAction } from "../app/p/[slug]/[tab]/actions";
 import {
   openDb,
   createProject,
@@ -903,6 +903,38 @@ async function runChecks(): Promise<void> {
       ? pass("AC-16", "a task id from another project in the SAME store is refused, names the id, and writes nothing")
       : fail("AC-16", problems.join("; "));
     shared.close();
+  }
+
+  // ---- AC-16b [G, hostile] — an incomplete request is refused at the form boundary ----
+  {
+    // A server action is reachable by any POST, not only by the board that renders it. Before this
+    // guard existed an empty `slug` revalidated the literal path `/p//tasks` and the refusal read
+    // `task  is not in project ''` — a missing field described as a missing task (review of #30).
+    //
+    // The check runs `moveTaskAction` itself rather than `moveTaskForSlug`, because the guard being
+    // asserted lives at the form boundary and the delegate has no idea it was skipped. That also
+    // makes the sin self-reporting: with the guard removed, execution reaches `revalidatePath`,
+    // which throws outside a request scope — so the check goes red rather than quietly agreeing.
+    const problems: string[] = [];
+    for (const [label, fields] of [
+      ["all three empty", {}],
+      ["no slug", { taskId: "t1", to: "doing" }],
+      ["no taskId", { slug: "x", to: "doing" }],
+      ["no destination", { slug: "x", taskId: "t1" }],
+    ] as [string, Record<string, string>][]) {
+      const body = new FormData();
+      for (const [k, v] of Object.entries(fields)) body.set(k, v);
+      const r = await attempt(() => moveTaskAction(body));
+      if (r.threw) problems.push(`${label}: threw instead of refusing — ${r.error}`);
+      else if (r.value.ok) problems.push(`${label}: ACCEPTED`);
+      else if (!r.value.reason) problems.push(`${label}: refused with no reason`);
+      else if (/''|is not in project\s*''/.test(r.value.reason)) {
+        problems.push(`${label}: the refusal quotes an empty field — "${r.value.reason}"`);
+      }
+    }
+    problems.length === 0
+      ? pass("AC-16b", "an incomplete move request is refused at the form boundary, without reaching revalidatePath or naming an empty field")
+      : fail("AC-16b", problems.join("; "));
   }
 
   // ---- AC-12b [G] — the board hands the drag path the HUMAN rendering ----

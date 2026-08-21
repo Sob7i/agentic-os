@@ -55,6 +55,12 @@ export function DragBoard({
   );
 
   async function onDragEnd(event: DragEndEvent) {
+    // **A drag that lands while another move is in flight is dropped, not queued** (review of
+    // #30). Without this, two overlapping moves race to `revalidatePath` and the board settles on
+    // whichever server call happened to finish last — a card resting somewhere neither drag put
+    // it. Refusing the second gesture is honest; there is no optimistic state to reconcile.
+    if (pending) return;
+
     const card = event.active.data.current as DropCandidate | undefined;
     const to = event.over?.id;
     if (!card || typeof to !== "string") return;
@@ -75,9 +81,21 @@ export function DragBoard({
     body.set("slug", slug);
     body.set("taskId", card.taskId);
     body.set("to", to);
-    const result = await moveAction(body);
-    setPending(false);
-    if (!result.ok && result.reason) setRefusal({ taskId: card.taskId, reason: result.reason });
+    try {
+      const result = await moveAction(body);
+      if (!result.ok && result.reason) setRefusal({ taskId: card.taskId, reason: result.reason });
+    } catch (err) {
+      // **A server action can reject** — a dropped connection, a redeploy mid-request. The `finally`
+      // is what matters: without it `pending` stays true forever and the board silently stops
+      // accepting drags, with no failure anywhere to explain why. Saying so is the alternative to a
+      // board that has quietly become read-only.
+      setRefusal({
+        taskId: card.taskId,
+        reason: `the move did not reach the server — nothing was changed (${err instanceof Error ? err.message : String(err)})`,
+      });
+    } finally {
+      setPending(false);
+    }
   }
 
   return (

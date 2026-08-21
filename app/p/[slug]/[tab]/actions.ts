@@ -331,10 +331,26 @@ export async function moveTaskForSlug(
   return { ok: true, reason: null };
 }
 
+/**
+ * The form-boundary half of the move: read three fields, refuse an incomplete request, delegate.
+ *
+ * **The empty-field guard is not defensive decoration** (raised in review of #30). Without it an
+ * empty `slug` revalidated the literal path `/p//tasks` — a route that does not exist, so the
+ * revalidation is silently wasted — and the refusal read `task  is not in project ''`, a sentence
+ * that describes a missing field as a missing task. `runNowAction` and `approveDoneAction` below
+ * both already refuse this way; this action was the one that did not, and a server action is
+ * reachable by any POST, not only by the board that renders it.
+ *
+ * The reason is worded for a person because `DragBoard` renders it verbatim (D36) — a drag that
+ * lost its own task id is a bug in this page, and saying so beats naming an empty string.
+ */
 export async function moveTaskAction(formData: FormData): Promise<MoveTaskResult> {
   const slug = String(formData.get("slug") ?? "");
   const taskId = String(formData.get("taskId") ?? "");
   const to = String(formData.get("to") ?? "");
+  if (!slug || !taskId || !to) {
+    return { ok: false, reason: "the move request was incomplete — nothing was changed" };
+  }
   const result = await moveTaskForSlug(slug, taskId, to);
   revalidatePath(`/p/${slug}/tasks`);
   return result;
