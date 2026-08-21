@@ -227,9 +227,18 @@ Closed. If a new one surfaces mid-build, **stop** and close it in `docs/DECISION
 7. **What happens after a failed step?** Halt with an attributed reason (AC-8). No retry, no skip.
    Retry is a human re-running the step, which is Stage 4's out-of-scope list until someone wants
    it twice.
-8. **Where do templates live in the UI?** Behind `configuration` (D23's rail), not in the five work
-   tabs. A template is setup; instantiating one is work, and that control lives on the Tasks board
-   beside `+ Task`.
+8. **Where do templates live in the UI?** Setup, not the five work tabs. A template is setup;
+   instantiating one is work, and that control lives on the Tasks board beside `+ Task`.
+   **Reallocated 2026-08-21 by D32, and the route is now built:** setup is no longer a single
+   `configuration` link but four rail rows with their own URLs, so templates render at
+   **`/p/<slug>/config/templates`** — a route that already exists and currently says *"Stage 4 —
+   templates and chains"*. Stage 4 replaces that placeholder rather than inventing a home. The
+   original wording said *"behind `configuration` (D23's rail)"*; D23's rail no longer has a
+   `configuration` link to sit behind, and the reasoning is unchanged — the work/setup split is now
+   a section divider plus a URL prefix instead of a five-tab cap.
+   **`SETUP_ROWS` in `lib/shell/model.ts` is the single definition of the four sections**; flipping
+   `templates` from `placeholder` to `live` there is the whole of the nav change, and AC-7 will
+   then require it to carry `builtBy: null`.
 
 ## §6 — Build notes
 

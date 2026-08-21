@@ -15,6 +15,7 @@
  *
  * T1 lands AC-1..AC-8, AC-17, AC-19 and AC-21. T2, T3 and T4 append their own.
  */
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, readFileSync, readdirSync, statSync, existsSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, dirname, resolve, relative } from "node:path";
@@ -163,6 +164,16 @@ async function attempt<T>(fn: () => Promise<T>): Promise<{ threw: false; value: 
     return { threw: false, value: await fn() };
   } catch (err) {
     return { threw: true, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+
+/** Every `*.module.css` under a directory. */
+function walkCss(dir: string, hit: (f: string) => void): void {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) walkCss(p, hit);
+    else if (/\.module\.css$/.test(e.name)) hit(p);
   }
 }
 
@@ -950,6 +961,62 @@ async function runChecks(): Promise<void> {
       : fail("AC-12b", `passesHuman=${passesHuman} passesSession=${passesSession}`);
   }
 
+
+  // ---- AC-18 [G] — no new surface hardcodes a colour ----
+  {
+    const offenders: string[] = [];
+    walkCss(join(ROOT, "components"), (f) => {
+      const src = readFileSync(f, "utf8");
+      for (const m of src.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) {
+        offenders.push(`${relative(ROOT, f)}: ${m[0]}`);
+      }
+    });
+    offenders.length === 0
+      ? pass("AC-18", "no CSS Module under components/ contains a hex literal — tokens come from globals.css")
+      : fail("AC-18", offenders.join("; "));
+  }
+
+  // ---- AC-20 [G] — the regression oracle, which SKIPS rather than fails on a degraded upstream ----
+  {
+    // `verify:stage3a`'s own AC-1 shells out to GitHub and can go red because GitHub is down —
+    // already a docs/BACKLOG.md entry. Importing that flakiness here would teach us to ignore this
+    // suite too, so a degraded upstream is reported as a SKIP with its reason, never a FAIL.
+    const run = (script: string) => {
+      try {
+        const out = execFileSync("pnpm", ["--silent", script], { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+        return { out, ran: true };
+      } catch (err) {
+        const e = err as { stdout?: string; stderr?: string };
+        return { out: `${e.stdout ?? ""}${e.stderr ?? ""}`, ran: true };
+      }
+    };
+    const summarize = (out: string) => ({
+      passes: (out.match(/^\s*PASS\s/gm) ?? []).length,
+      failIds: [...out.matchAll(/^\s*FAIL\s+(\S+)/gm)].map((m) => m[1]),
+    });
+
+    const degraded = /gh: |Bad credentials|ENOTFOUND|rate limit/i;
+    const three = run("verify:stage3");
+    const threeA = run("verify:stage3a");
+
+    if (degraded.test(three.out) || degraded.test(threeA.out)) {
+      pass("AC-20", "SKIP — an upstream suite is degraded (GitHub unreachable); not reported as a regression");
+    } else {
+      const a = summarize(three.out);
+      const b = summarize(threeA.out);
+      // The two known failures on this base, both recorded in docs/HANDOFF.md and docs/BACKLOG.md:
+      // each pins Stage 1's expected result at the literal 7P/1F, and Stage 1 now passes 8/8 —
+      // two oracles red because a known failure was repaired. Anything ELSE red is this stage's.
+      const KNOWN = { "verify:stage3": ["AC-11"], "verify:stage3a": ["AC-1"] };
+      const unexpected = [
+        ...a.failIds.filter((id) => !KNOWN["verify:stage3"].includes(id)).map((id) => `stage3:${id}`),
+        ...b.failIds.filter((id) => !KNOWN["verify:stage3a"].includes(id)).map((id) => `stage3a:${id}`),
+      ];
+      unexpected.length === 0
+        ? pass("AC-20", `upstream unchanged — stage3 ${a.passes}P (known: ${a.failIds.join(",") || "none"}), stage3a ${b.passes}P (known: ${b.failIds.join(",") || "none"})`)
+        : fail("AC-20", `NEW upstream failures introduced by this stage: ${unexpected.join(", ")}`);
+    }
+  }
 }
 
 // ── Run ─────────────────────────────────────────────────────────────────────

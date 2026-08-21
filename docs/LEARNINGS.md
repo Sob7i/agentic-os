@@ -471,3 +471,43 @@ belongs in `docs/DECISIONS.md` instead.
   the specific reason it is written down rather than fixed silently. `docs/BACKLOG.md` carries the
   fix; it needs the same owner decision AC-2 already needed, which is why this is a lesson and not
   a patch.
+
+- (2026-08-21) **A single NUL byte made an acceptance suite unreviewable, and nothing complained.**
+  `scripts/verify-stage3c.mts` was written with a `0x00` inside a sentinel constant. Behaviour was
+  unaffected — the constant is only ever compared to itself, and the suite passed 11/11 — but git
+  classifies a file containing a NUL as **binary**, so its diff renders as `Bin 22469 -> 26797
+  bytes`. **PR #28 therefore shipped its acceptance suite invisibly**: the one file a reviewer most
+  needs to read was the one file they could not. `type-check`, `build` and the suite itself were
+  all green throughout, because none of them is a check about *reviewability*. Found by a
+  sub-agent working in the file, not by any tooling. **The lesson is not "avoid NUL bytes" — it is
+  that a diff rendering as `Bin` for a text file is a defect, not a curiosity**, and the moment to
+  notice is while reading your own PR.
+
+- (2026-08-21) **Three checks in one ticket passed and could not have failed — each for a different
+  reason, and only the deletion probe found them.** T3 shipped six checks green; committing each
+  sin turned three of them red only after they were fixed:
+  *(a) **the wrong guard was being exercised.*** AC-16 seeded the two projects in **separate**
+  databases, so the attacker's repo path found no `Project` row and the refusal came from the data
+  lookup — the `task.projectId !== data.project.id` comparison it existed to test was never
+  reached, and deleting that line left it green. Fixed by putting both projects in one store.
+  *(b) **the pure function was right and the wiring was not checked.*** AC-12 asserted
+  `dropTargets` against a hand-built gate object, so the board feeding it the *session* refusal
+  string instead of the human one passed cleanly. This is the T7-2 failure again (2026-08-19) in a
+  new costume, and the fix is the same: assert the call site too.
+  *(c) **the guard ran after the thing it guards against had already killed the process.*** AC-15's
+  structural scan sat below its behavioural half, and a wrong implementation that really dispatches
+  spawns a runner and takes the run down before the scan is reached — so it reported only when the
+  code was already correct. Fixed by scanning first. **Ordering is part of whether a check works.**
+  The general rule, now three times learned: **a check passing is not evidence that it can fail.
+  The probe is the evidence, and it must be run per check, not per ticket.**
+
+- (2026-08-21) **`git checkout -- <file>` destroyed uncommitted work while reverting a test sin.**
+  Proving a guard means mutating a file, running the suite, and putting it back. Reverting with
+  `git checkout --` puts it back to **HEAD**, not to what was there a second ago — and the Stage 3c
+  T1 changes were not yet committed, so `SETUP_ROWS`, `projectRailModel`, `countOpenInboxByProject`
+  and a `revalidatePath` fix were silently deleted across three files. Nothing errored; the suite
+  simply started crashing with an export that no longer existed. **Second instance of this class**
+  (the first destroyed 50 `docs/BACKLOG.md` entries and survived a commit, a push and a merge), so
+  it is a rule rather than a note: **commit before proving guards, and revert from a copy — `cp`
+  the file aside, mutate, `cp` it back. Never `git checkout --` on a tree with work in it.**
+

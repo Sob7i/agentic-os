@@ -40,12 +40,13 @@
 | `develop` head | `8643ef7` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #16, #17 (2026-08-19), #18 (2026-08-19) | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **2 suites red, for a new reason** — measured 2026-08-21. Not a regression: see the row below | `pnpm verify` |
+| `pnpm verify` | **100 of 102** — measured 2026-08-21 on `feat/stage-3c-t4-docs`, after Stage 3c T1–T4. The 2 failures are the pinned-baseline pair below, not regressions | `pnpm verify` |
 | — what is red, and why | Stage 1 **AC-2 now passes**, so `verify:stage3` **AC-11** and `verify:stage3a` **AC-1** fail — both pin Stage 1's expected result at `7P/1F`. **Two oracles went red because a known failure was fixed.** Cause: itqan's last commit was 2026-07-19 until *we* pushed to it on 2026-08-20, which un-stalled DC7. See `docs/LEARNINGS.md` (2026-08-21) and `docs/BACKLOG.md` | `pnpm verify:stage1` |
 | `pnpm verify:stage1` | **8 of 8** (was 7 of 8) — AC-2 green while itqan is active | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
-| `pnpm verify:stage3` | **32 of 33** — AC-11 red on the pinned `7P/1F` baseline, everything else green | `pnpm verify:stage3` |
+| `pnpm verify:stage3` | **34 of 35** — AC-11 red on the pinned `7P/1F` baseline. *Note: this file recorded `33 of 33` before 2026-08-21 and the suite now reports 35 checks. The delta was measured, not explained — nobody has chased where two checks came from, and it is not this stage's change.* | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | **7 of 8** — AC-1 red on the same pinned baseline | `pnpm verify:stage3a` |
+| `pnpm verify:stage3c` | **22 of 22** — AC-1…AC-21 plus AC-12b | `pnpm verify:stage3c` |
 | `pnpm verify:stage3b` | 18 of 18 — T1's five + AC-2c/AC-2d, T2's five + AC-4b, T3's four, T4's **AC-9** (the four added in PR review) | `pnpm verify:stage3b` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
@@ -389,17 +390,15 @@
    automated, and it is currently recorded in `docs/FEATURES.md` as a **computed estimate, not an
    observation** — ~890px of 1280px. `pnpm dev` → any `/p/<name>`. If it is cramped, D23 named the
    fallback in advance and §5.4 kept the pane unconstrained so the swap stays a layout change.
-5. **Stage 3c is specced and is now the next slice** —
-   [`stage-3c-board-and-rail.spec.md`](specs/stage-3c-board-and-rail.spec.md) (`☐`), with its
-   four stacked tickets in [`stage-3c-tickets.md`](specs/stage-3c-tickets.md). It came out of the
-   owner's first real use of the app on 2026-08-20: drag-and-drop on the Kanban, a drawer for the
-   two long forms, the four setup surfaces as rail rows, and the rail rebuilt to frame `B′2`.
-   **Two things gate it and both are yours:** the five decisions it raises (D32–D36, all argued
-   in its §5), and **`agentos.yml` reaching `develop`** — until the D31 opt-in is merged there, a
-   branch cut from `develop` has no opted-in project, so every by-hand check and measurement in the
-   spec is unrunnable (§6.0). Check it with `git show develop:agentos.yml`, not against a PR number.
-   It is sequenced **before** Stage 4 because Stage 4 needs a `Templates` destination that does
-   not exist, and D32 creates one.
+5. **Stage 3c is built — but it owes four observations, and they are the owner's** (see
+   `docs/FEATURES.md` § *The measurements this stage owes*). **M-1** is Stage 3a's AC-10, still
+   never taken: the ribbon at 1280px, six names, freshness line, back control, no truncation.
+   **M-1b** is the board's own width, which changed when the rail grew 172px → 200px. **M-2** is
+   keyboard drag driven in a real browser. **M-3** is that the drawer is genuinely modal, including
+   that `Esc` is refused mid-submit. The arithmetic for M-1b says there is 110px of slack; **that
+   is arithmetic and must not be written down as an observation** — doing exactly that to AC-10 in
+   2026-08-18 is why these are enumerated rather than assumed. Taking M-1 and M-1b also settles the
+   `docs/BACKLOG.md` entry on the portfolio sidebar, which is now one look away from decidable.
 6. **Specs for Stages 4 and 5 are written** —
    [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) is **`☑`
    buildable** (no owner gate; it is sequenced behind Stage 3b, which is now built), and

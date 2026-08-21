@@ -157,6 +157,50 @@ be misconfigured.
 > ✅ **Try it:** watch an agent take a gated task to review and stop. The card should show
 > `human gate` and offer *Approve & mark done*. There is no button an agent could press.
 
+### Moving a card by dragging it
+
+Since Stage 3c you can drag a card between columns. Two things about that are deliberate.
+
+**A dragged card is recorded as moved by hand, and says so.** It gets the quoted-italic line —
+*"moved by hand · no session produced this"* — not the monospace machine line. That is the same
+distinction Part 3 opens with, and drag does not get an exemption from it: dragging is a new
+gesture, not a new kind of evidence.
+
+**A card with a human gate refuses to be dragged to done.** It tells you to use *Approve & mark
+done* instead. This looks like friction and is the point: the gate exists to make approving a
+deliberate act, and dragging is the cheapest gesture in the interface. The refusal is enforced
+**twice** — once in the browser so the drag simply will not land, and once in the server action,
+which does not trust that the first one happened.
+
+**The words are written for you, not for an agent.** The same refusal shown to a session says *"a
+session may not move it to 'done'"* and points at a tool called `inbox_ask`. You are not a session
+and cannot call that tool, so you get a different sentence from the same source.
+
+> ✅ **Try it:** drag a task from todo to doing, and read its evidence line — it should be the
+> quoted human one. Then create a task with *Require approval before done*, get it to review, and
+> try to drag it to done. It should refuse, name the Approve button, and the card should not move.
+
+> ✅ **Try it with the keyboard, too:** tab to a card, press space to lift it, arrow to another
+> column, space to drop. If that does not work, the drag library has not earned its place — the
+> buttons it replaced were fully keyboard-operable.
+
+### Adding a task or an agent
+
+Both forms now open in a **drawer** that slides in from the right, rather than sitting on the page.
+Escape closes it, focus is trapped inside it while it is open, and the page behind it is inert.
+
+**One deliberate exception:** while a submission is in flight, Escape is refused. A refusal that
+arrives a moment later needs somewhere to land, and a drawer that has already closed does not have
+it.
+
+**A successful save does not always close the drawer.** If you create an agent and the egress floor
+denied it `WebFetch`/`WebSearch`, the drawer stays open carrying that note — the save worked, and
+you are being told what was taken away from it. A drawer that closed on success would delete the
+one place that sentence appears.
+
+> ✅ **Try it:** open *+ Agent*, tick nothing unusual, save — the drawer should close. Then submit
+> the form with the title empty; it should stay open with the reason beside the button.
+
 ### What this page deliberately refuses to do
 
 - **Nothing moves on a running card.** No spinners, no pulsing. A running task is the one thing you

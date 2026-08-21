@@ -242,6 +242,66 @@ isolation.
 **No production code changed for this ticket.** T4 is the suite (`AC-9`) and the docs; AC-9 found no
 gap in T1–T3's own code to report.
 
+### Drag and drop, the drawer, and the SETUP rail (Stage 3c — D32–D36)
+
+**The second pass over the board and the rail**, driven by the owner's first real use of the app
+on 2026-08-20.
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Moves a card by dragging | Status and a paired `TaskEvent` in one transaction | `pnpm verify:stage3c` → AC-14 | Stage 3c |
+| Records a dragged card as hand-moved | Quoted italic naming a person — never the machine register | **AC-14** | Stage 3c |
+| Refuses to close a human gate by drag | The gated `review` card rejects the drop to `done` and points at *Approve & mark done* | AC-12 | Stage 3c |
+| Says it in words meant for a person | Names the Approve control; never mentions `inbox_ask`, a tool a human cannot call (D36) | **AC-12, AC-12b** | Stage 3c |
+| Refuses the same drop server-side | A crafted request the browser never sends is rejected; status and event count unchanged | **AC-13** | Stage 3c |
+| Refuses a destination that is not a column | `archived` is refused, not passed through to SQLite to throw | **AC-13** | Stage 3c |
+| Never dispatches from a drop | `Run now` remains the only path into a session (D24) | **AC-15** | Stage 3c |
+| Refuses a cross-project drag | One project cannot move another's card | **AC-16** | Stage 3c |
+| Keeps the board keyboard-operable | dnd-kit's `KeyboardSensor`; drag does not swallow `Run now` or `Approve` | M-2 (**not yet observed**) | Stage 3c |
+| Opens Add task / Add agent in a drawer | Right-hand sheet on the native `<dialog>`; `Esc` closes unless a submit is pending | M-3 (**not yet observed**) | Stage 3c |
+| Keeps a refusal on screen | A failed create leaves the drawer open with its reason | AC-9 | Stage 3c |
+| Keeps the egress-floor note on screen | A **successful** agent create that denied `WebFetch`/`WebSearch` still leaves the drawer open | **AC-9** | Stage 3c |
+| Refuses to open an edit sheet for an unknown agent | `?agent=<unknown>` opens nothing rather than an empty form | AC-11 | Stage 3c |
+| Offers four setup destinations | `Agents · Templates · Environments · Repos` as rail rows, each with its own URL | AC-2, AC-7 | Stage 3c |
+| Says what will build an unbuilt setup surface | Each placeholder names its stage, or states it is unspecced | AC-7 | Stage 3c |
+| Refuses an unknown setup section | `/p/<slug>/config/nope` → 404 | AC-7 | Stage 3c |
+| Offers no setup surfaces without an execution layer | `/p/<watched-only>/config` → 404 (**a change** — it used to render) | AC-7 | Stage 3c |
+| Shows the project's severity in the rail | Glyph and word from the shared vocabulary, at every severity — no delta, no sentence (D35) | AC-5 | Stage 3c |
+| Carries the Inbox count in the rail | Right-aligned monospace — the only counter in the product | AC-2, AC-3 | Stage 3c |
+| Distinguishes "none" from "not counted" | An uninitialized project shows no count, never `0` | **AC-3** | Stage 3c |
+| Agrees with the Inbox page about the count | Both numbers come from one rule | **AC-4** | Stage 3c |
+
+**No component library was added.** Drag is `@dnd-kit/core`; the drawer is the browser's own
+`<dialog>` with `showModal()`. D34 records why shadcn/ui was rejected — it would have made Tailwind
+a fourth styling idiom, and its defaults contradict rules already validated here.
+
+**`Board` and `Card` are still server components.** Only three small wrappers are client code, and
+they receive server-rendered cards as children — so no card rendering and no model code enters the
+browser bundle. **AC-1 walks every `"use client"` file transitively and asserts none reaches
+`node:*` or the store**, which is D19's layer boundary made structural instead of remembered.
+
+### The measurements this stage owes, and has not taken
+
+**Three observations remain unmade, and are recorded as unmade rather than estimated.** This is the
+correction Stage 3a's AC-10 needed: that criterion has sat in this file since 2026-08-18 as a
+*computed estimate presented as a fact*, and repeating that here would be the same mistake twice.
+
+| # | What must be looked at | Status |
+|---|---|---|
+| **M-1** | The **ribbon** at 1280px: six project names, the freshness line, the back control — **without truncating a name**. This *is* Stage 3a's AC-10 | **not observed** |
+| **M-1b** | The **board** at 1280px with real cards, including the longest agent name (`@implementation-plan-executioner`) | **not observed** — arithmetic only |
+| **M-2** | Keyboard drag driven in a real browser: lift, move, drop, with no pointer | **not observed** |
+| **M-3** | The drawer is modal: focus trapped, background inert, `::backdrop` painted, and `Esc` refused **while a submit is pending** | **not observed** |
+
+**The arithmetic for M-1b, labelled as arithmetic.** Board minimum is `4 × 220 + 3 × 14` = **922px**;
+at 1280px with a 200px rail and 24px pane padding, **1032px** is available — 110px of slack, 248px
+per column, overflowing below a **1170px** viewport. The rail's 1px border is *not* subtracted
+separately, because `app/globals.css` sets `* { box-sizing: border-box }`. **None of that is an
+observation.** Cards get taller with drag affordances and a drop target needs visible room that no
+column-width sum accounts for. If it turns out cramped, D23 named Concept C as the fallback in
+advance and §5.4 kept the pane unconstrained, so the swap stays a layout change; the cheaper first
+move is dropping the column floor 220px → 200px, which buys 80px in one line.
+
 ### The Overview
 
 *Not built.* Planned: PRD §6.8, **Stage 6** (re-scoped by D22 to read two sources). `/overview`

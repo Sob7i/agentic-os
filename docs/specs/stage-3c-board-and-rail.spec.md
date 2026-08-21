@@ -1,8 +1,7 @@
 # Spec — Stage 3c: the board and the rail, second pass
 
-status: ☐ design closed — **five decisions gate the build (D32–D36), all raised in §5 and all
-owner-clearable in one sitting.** One further prerequisite is an owner action, not a decision:
-`agentos.yml` must be on `develop` before any ticket is cut (§6.0).
+status: ☑ **built 2026-08-21 — D32–D36 closed, 22 checks green.** Four by-hand measurements
+(M-1, M-1b, M-2, M-3) remain **unobserved** and are owner work; see docs/FEATURES.md.
 
 > **Stage 3b closed the loop; this stage makes it usable.** The owner ran the app for the first
 > time against a real opted-in project on 2026-08-20 and produced five pieces of frontend
