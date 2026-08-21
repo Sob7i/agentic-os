@@ -6,7 +6,8 @@
  * validator twice (light teal #0f766e sits below the chroma floor at 0.086 and
  * reads gray; all three dark values fall outside the dark lightness band). The
  * values below are the corrected set, passing all six checks in both modes.
- * Do not substitute by eye — re-run scripts/validate_palette.js.
+ * Do not substitute by eye — re-run dataviz's scripts/validate_palette.js.
+ * (It is not in this repo; see docs/DESIGN-BRIEF.md. This stage adds no colours.)
  */
 :root {
   --bg: #faf8f5;
@@ -24,6 +25,9 @@
   --drift-soft: #9f123914;
 
   --radius: 10px;
+  /* The project rail's width (D32/frame B'2). A token because M-1b's board
+     arithmetic depends on it — one place to change, one place to re-measure. */
+  --rail-w: 200px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
 }

@@ -765,6 +765,28 @@ export function listInboxMessagesBySession(db: DatabaseSync, sessionId: string):
     .all(sessionId) as unknown as InboxMessageRow[];
 }
 
+/**
+ * The rail's Inbox counter (D32) — one `COUNT(*)`, not the N+1 loader.
+ *
+ * Joined through `Task` because `InboxMessage` carries `taskId` and the project
+ * lives one hop away. `loadProjectExecutionData` would answer the same question
+ * by fetching every task, session, tool call and commit sha for the project;
+ * the rail renders on four routes, so that cost would be paid on every page.
+ *
+ * Matches `inboxModel`'s rule exactly — `status = 'open'` — and AC-4 asserts the
+ * two agree on a fixture rather than trusting that they were written the same.
+ */
+export function countOpenInboxByProject(db: DatabaseSync, projectId: string): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM InboxMessage m
+         JOIN Task t ON t.id = m.taskId
+        WHERE t.projectId = ? AND m.status = 'open'`,
+    )
+    .get(projectId) as unknown as { n: number };
+  return Number(row?.n ?? 0);
+}
+
 export function answerInboxMessage(db: DatabaseSync, id: string, answer: string, status: string): void {
   db.prepare("UPDATE InboxMessage SET answer = ?, status = ?, answeredAtISO = ? WHERE id = ?").run(
     answer,

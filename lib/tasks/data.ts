@@ -6,6 +6,7 @@ import {
   getTask,
   listAgentsByProject,
   listCommitShas,
+  countOpenInboxByProject,
   listInboxMessagesBySession,
   listProjects,
   listSessionsByProject,
@@ -126,4 +127,27 @@ export function loadSessionDetail(
     toolCalls: listToolCallsBySession(db, session.id),
     commitShas: listCommitShas(db, session.id).map((r) => r.sha),
   };
+}
+
+/**
+ * The rail's Inbox count, or `null`.
+ *
+ * **`null` is not `0`.** Null means the question was never asked — no store on
+ * disk, or no `Project` row for this repo path. Zero means it was asked and the
+ * answer was none. Collapsing them would put a confident "no open questions"
+ * in the rail for a project that has never been initialized, which is
+ * invariant 2 in the one component that is always on screen (AC-3).
+ *
+ * Same null contract as `loadProjectExecutionData` above, for the same reason,
+ * and it never calls `getDb()` — opening a page must not create the store.
+ */
+export function openInboxCount(
+  primaryRepoPath: string,
+  dbOverride?: DatabaseSync,
+): number | null {
+  const db = dbOverride ?? dbIfExists();
+  if (!db) return null;
+  const project = listProjects(db).find((p) => p.primaryRepoPath === primaryRepoPath);
+  if (!project) return null;
+  return countOpenInboxByProject(db, project.id);
 }

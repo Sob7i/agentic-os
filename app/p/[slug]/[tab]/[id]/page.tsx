@@ -6,7 +6,7 @@ import { DriftBand } from "@/components/shell/DriftBand";
 import { BackShortcut } from "@/components/shell/BackShortcut";
 import { ProjectRail } from "@/components/shell/ProjectRail";
 import s from "@/components/shell/shell.module.css";
-import { loadSessionDetail } from "@/lib/tasks/data";
+import { loadSessionDetail, openInboxCount } from "@/lib/tasks/data";
 import { sessionViewModel } from "@/lib/tasks/session-model";
 import { SessionView } from "@/components/tasks/SessionView";
 
@@ -41,7 +41,11 @@ export default async function SessionDetailPage({
       <Ribbon model={ribbonModel(board)} currentSlug={slug} />
       {band && <DriftBand check={band} />}
       <div className={s.body}>
-        <ProjectRail nav={nav} currentTab="sessions" />
+        <ProjectRail
+          nav={nav}
+          currentTab="sessions"
+          inboxOpenCount={openInboxCount(nav.project.path)}
+        />
         <main className={s.pane}>
           <SessionView model={model} />
         </main>

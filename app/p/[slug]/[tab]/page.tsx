@@ -7,7 +7,7 @@ import { BackShortcut } from "@/components/shell/BackShortcut";
 import { ProjectRail } from "@/components/shell/ProjectRail";
 import s from "@/components/shell/shell.module.css";
 import t from "@/components/tasks/tasks.module.css";
-import { loadProjectExecutionData } from "@/lib/tasks/data";
+import { loadProjectExecutionData, openInboxCount } from "@/lib/tasks/data";
 import { cardModel, columnsFor } from "@/lib/tasks/model";
 import { inboxModel } from "@/lib/tasks/inbox-model";
 import { Board } from "@/components/tasks/Board";
@@ -54,7 +54,9 @@ export default async function TabPage({ params }: { params: Promise<{ slug: stri
       <Ribbon model={ribbonModel(board)} currentSlug={slug} />
       {band && <DriftBand check={band} />}
       <div className={s.body}>
-        <ProjectRail nav={nav} currentTab={tab} />
+        <ProjectRail nav={nav} currentTab={tab}
+          inboxOpenCount={openInboxCount(nav.project.path)}
+        />
         <main className={s.pane}>
           <h1 className={s.h1}>{nav.tabs.find((tb) => tb.key === tab)?.label}</h1>
           <TabBody tab={tab} slug={slug} projectPath={nav.project.path} />
