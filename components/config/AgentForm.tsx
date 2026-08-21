@@ -50,6 +50,15 @@ export function AgentForm({
   const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
   const allowedNow: string[] = agent ? (JSON.parse(agent.allowedToolsJson) as string[]) : [];
 
+  // **Set synchronously on submit, not only from the effect below.** `useActionState` flips
+  // `pending` during the transition, but the effect that mirrors it up to the drawer runs after
+  // paint — and `<dialog>`'s `cancel` event does not wait for paint. That gap is small and it is
+  // exactly the gap this guard exists to close: an `Esc` inside it closes the drawer while the
+  // submit is still in flight, and the refusal that arrives a moment later has nowhere to land
+  // (spec §7.2). Raised in review of #29.
+  //
+  // The `onSubmit` handler is safe against the form's own `required` fields: a form that fails
+  // native validation never fires `submit`, so `pending` is never stranded true.
   useEffect(() => {
     onPendingChange?.(pending);
   }, [pending, onPendingChange]);
@@ -61,7 +70,7 @@ export function AgentForm({
   }, [state, pending]);
 
   return (
-    <form action={formAction} className={s.form}>
+    <form action={formAction} className={s.form} onSubmit={() => onPendingChange?.(true)}>
       <input type="hidden" name="slug" value={slug} />
       {agent && <input type="hidden" name="agentId" value={agent.id} />}
 

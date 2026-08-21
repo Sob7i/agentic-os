@@ -47,6 +47,15 @@ export function TaskForm({
 }) {
   const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
 
+  // **Set synchronously on submit, not only from the effect below.** `useActionState` flips
+  // `pending` during the transition, but the effect that mirrors it up to the drawer runs after
+  // paint — and `<dialog>`'s `cancel` event does not wait for paint. That gap is small and it is
+  // exactly the gap this guard exists to close: an `Esc` inside it closes the drawer while the
+  // submit is still in flight, and the refusal that arrives a moment later has nowhere to land
+  // (spec §7.2). Raised in review of #29.
+  //
+  // The `onSubmit` handler is safe against the form's own `required` fields: a form that fails
+  // native validation never fires `submit`, so `pending` is never stranded true.
   useEffect(() => {
     onPendingChange?.(pending);
   }, [pending, onPendingChange]);
@@ -59,7 +68,7 @@ export function TaskForm({
   }, [state, pending]);
 
   return (
-    <form action={formAction} className={s.taskForm}>
+    <form action={formAction} className={s.taskForm} onSubmit={() => onPendingChange?.(true)}>
       <input type="hidden" name="slug" value={slug} />
 
       <label className={s.field}>
