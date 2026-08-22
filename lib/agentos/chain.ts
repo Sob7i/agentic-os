@@ -111,7 +111,24 @@ export function instantiateTemplate(input: InstantiateTemplateInput): Instantiat
     return refuse(`instantiate refused: template '${templateSlug}' has no steps`);
   }
 
-  const agentsByName = new Map(listAgentsByProject(db, projectId).map((a) => [a.name, a]));
+  /**
+   * **A duplicate agent name refuses the whole instantiate.** Raised in review of #36.
+   * `Agent` has no uniqueness constraint on `(projectId, name)`, so building a `Map` keyed on the
+   * name silently keeps the last row and binds every step naming it to an arbitrary agent — one
+   * with different tool grants, a different model, and a different budget than whoever wrote the
+   * template meant. Nothing downstream could detect it: the chain would run, cost money, and look
+   * correct.
+   *
+   * §3.1 makes a template portable by resolving *names* rather than ids, and that portability is
+   * exactly what makes an ambiguous name unresolvable rather than merely awkward. So this is the
+   * same all-or-nothing refusal as an unbound variable (§3.3): stated, before anything is written.
+   * Only names a step actually references are checked — an unrelated duplicate elsewhere in the
+   * project is not this template's problem.
+   */
+  const allAgents = listAgentsByProject(db, projectId);
+  const countByName = new Map<string, number>();
+  for (const a of allAgents) countByName.set(a.name, (countByName.get(a.name) ?? 0) + 1);
+  const agentsByName = new Map(allAgents.map((a) => [a.name, a]));
 
   // ── Resolve every step before writing anything (§3.3) ─────────────────────────────────────
   const resolved: { ord: number; boundPrompt: string; assigneeAgentId: string | null }[] = [];
@@ -128,6 +145,12 @@ export function instantiateTemplate(input: InstantiateTemplateInput): Instantiat
       // §3.5: the literal `human` becomes `null` — human-only, never unassigned.
       assigneeAgentId = null;
     } else {
+      const duplicates = countByName.get(step.assigneeAgentName) ?? 0;
+      if (duplicates > 1) {
+        return refuse(
+          `instantiate refused at step ${step.ord} ('${step.name}'): assignee '${step.assigneeAgentName}' matches ${duplicates} agents in project '${project.slug}' — rename them so one step names one agent`,
+        );
+      }
       const agent = agentsByName.get(step.assigneeAgentName);
       if (!agent) {
         return refuse(
@@ -249,7 +272,27 @@ export async function advanceChainAfterDone(taskId: string, deps: DispatchDeps =
   // blocked-on-dependency fact.
   setTaskBlockedReason(db, next.id, null);
 
-  const result = await dispatch(next.id, "chain", deps);
+  /**
+   * **A throw is not a refusal, and both have to halt.** Raised in review of #38. `dispatch`
+   * returns `{ started: false }` for its five preconditions, but it can also *reject* — worktree
+   * creation, the session insert, or the transition write failing. By this line `lastDispatchedOrd`
+   * is already claimed and the next card's `blockedReason` is already cleared, so an uncaught
+   * rejection would leave a chain that is `running`, shows an unblocked card, has no session, and
+   * can never advance again — the claim guarantees no second attempt. That is the silent stall
+   * AC-8 exists to prevent, reached by the one path AC-8 did not cover.
+   */
+  let result: Awaited<ReturnType<typeof dispatch>>;
+  try {
+    result = await dispatch(next.id, "chain", deps);
+  } catch (err) {
+    haltChain(
+      db,
+      task.chainId,
+      next.id,
+      `chain halted at step ${next.chainOrd} ('${next.name}'): dispatch threw — ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
 
   if (!result.started) {
     // §3.5: a human-only step's assignee is `null` by construction (never defaulted, §7.1), and

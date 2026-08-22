@@ -36,6 +36,8 @@ export function Card({
         <span className={s.scheduleChip}>{card.scheduleLabel}</span>
       </div>
 
+      {card.chainPosition && <span className={s.chainPosition}>{card.chainPosition}</span>}
+
       {card.blockedReason && <span className={s.blocked}>blocked · {card.blockedReason}</span>}
 
       <Evidence card={card} slug={slug} />
@@ -44,21 +46,18 @@ export function Card({
         <div className={s.gate}>
           <span className={s.gateLabel}>{card.gate.label}</span>
           <p className={s.gateSubtitle}>&ldquo;{card.gate.subtitle}&rdquo;</p>
-          {card.gate.chainConsequence && (
-            <p className={s.gateConsequence}>{card.gate.chainConsequence}</p>
-          )}
           <div className={s.gateActions}>
             {approveDoneAction ? (
               <form action={approveDoneAction}>
                 <input type="hidden" name="taskId" value={card.id} />
                 <input type="hidden" name="slug" value={slug} />
                 <button className={s.gateApprove} type="submit">
-                  Approve &amp; mark done
+                  {card.gate.approveLabel}
                 </button>
               </form>
             ) : (
               <button className={s.gateApprove} type="button" disabled>
-                Approve &amp; mark done
+                {card.gate.approveLabel}
               </button>
             )}
             <button className={s.gateReadSpec} type="button" disabled title="Not wired in this slice">

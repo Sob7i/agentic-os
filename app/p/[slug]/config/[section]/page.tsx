@@ -79,7 +79,7 @@ export default async function ConfigSectionPage({
               <span className="mono">data/agentos.sqlite</span>. Initialize it from the{" "}
               <Link href={`/p/${slug}/tasks`}>Tasks</Link> tab first — one button, in one place.
             </p>
-          ) : (
+          ) : row.key === "agents" ? (
             <section className={c.section}>
               <div className={c.sectionHeader}>
                 <h2 className={c.h2}>Agents</h2>
@@ -111,6 +111,51 @@ export default async function ConfigSectionPage({
                   ))}
                 </ul>
               )}
+            </section>
+          ) : (
+            // The only other row that ever reaches `live` today (AC-8 forbids naming any setup
+            // row's key as a literal in this file, past `agents`: `row.label` renders whatever
+            // `SETUP_ROWS` in `lib/shell/model.ts` says, which stays the single definition).
+            <section className={c.section}>
+              <div className={c.sectionHeader}>
+                <h2 className={c.h2}>{row.label}</h2>
+              </div>
+              {data.templates.length === 0 ? (
+                <p className={c.empty}>
+                  No templates yet — the built-in <span className="mono">compound-engineer-workflow</span>{" "}
+                  seeds automatically the next time this project is initialized.
+                </p>
+              ) : (
+                <ul className={c.templateList}>
+                  {data.templates.map((template) => (
+                    <li key={template.slug} className={c.templateCard}>
+                      <div className={c.templateHead}>
+                        <span className={c.templateName}>{template.name}</span>
+                        <span className={c.templateSlug}>{template.slug}</span>
+                      </div>
+                      <p className={c.templateDescription}>{template.description}</p>
+                      <p className={c.templateMeta}>
+                        {template.steps.length} steps · variables:{" "}
+                        {template.variables.length > 0 ? template.variables.join(", ") : "none"}
+                      </p>
+                      <ol className={c.templateSteps}>
+                        {template.steps.map((step) => (
+                          <li key={step.ord}>
+                            step {step.ord} — {step.name} —{" "}
+                            {step.assigneeAgentName === "human" ? "human" : `@${step.assigneeAgentName}`}
+                            {step.approvalGate ? " · gated" : ""}
+                          </li>
+                        ))}
+                      </ol>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className={c.empty}>
+                Instantiating a template is work, not setup — use{" "}
+                <span className="mono">+ From template</span> on the{" "}
+                <Link href={`/p/${slug}/tasks`}>Tasks</Link> board.
+              </p>
             </section>
           )}
         </main>

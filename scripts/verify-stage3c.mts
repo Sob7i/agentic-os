@@ -970,12 +970,25 @@ async function runChecks(): Promise<void> {
     // AC-12 asserts `dropTargets` on a hand-built gate, so it cannot see how the board wires it.
     // A correct pure function that the UI feeds the wrong string is the T7-2 failure exactly
     // (`docs/LEARNINGS.md`, 2026-08-19), and it stayed green here until this check existed.
-    const src = readFileSync(join(ROOT, "components/tasks/Board.tsx"), "utf8");
-    const passesHuman = /humanRefusalReason:\s*card\.gate\.humanRefusalReason/.test(src);
-    const passesSession = /humanRefusalReason:\s*card\.gate\.refusalReason/.test(src);
-    passesHuman && !passesSession
-      ? pass("AC-12b", "Board passes gate.humanRefusalReason into the drop candidate, not the session string (D36)")
-      : fail("AC-12b", `passesHuman=${passesHuman} passesSession=${passesSession}`);
+    //
+    // **Read wherever `dropCandidateFor` actually lives, rather than pinning a file.** Stage 4's
+    // review moved that adapter out of `Board.tsx` into `lib/tasks/dnd.ts`, because it had silently
+    // dropped `blockedReason` and no suite could see it there — "every decision that can be wrong
+    // goes in `lib/`". This check kept asserting the right property at the wrong address and went
+    // red for a move, not a regression: the same shape as AC-17 pinning a table count. Searching
+    // both files keeps the property asserted and survives the next move.
+    const candidateSources = ["lib/tasks/dnd.ts", "components/tasks/Board.tsx"]
+      .map((rel) => join(ROOT, rel))
+      .filter((abs) => existsSync(abs))
+      .map((abs) => readFileSync(abs, "utf8"));
+    const adapter = candidateSources.find((s) => /function dropCandidateFor/.test(s)) ?? "";
+    const passesHuman = /humanRefusalReason:\s*card\.gate\.humanRefusalReason/.test(adapter);
+    const passesSession = /humanRefusalReason:\s*card\.gate\.refusalReason/.test(adapter);
+    adapter === ""
+      ? fail("AC-12b", "could not find dropCandidateFor in lib/tasks/dnd.ts or components/tasks/Board.tsx")
+      : passesHuman && !passesSession
+        ? pass("AC-12b", "the drop-candidate adapter passes gate.humanRefusalReason, not the session string (D36)")
+        : fail("AC-12b", `passesHuman=${passesHuman} passesSession=${passesSession}`);
   }
 
 

@@ -39,11 +39,17 @@ export interface DropCandidate {
    * the card is not a session and cannot call that tool.
    */
   gate: { humanRefusalReason: string } | null;
+  /**
+   * `Task.blockedReason` — non-null while a chain step is waiting on its predecessor (Stage 4 §3.2).
+   *
+   * Optional so every pre-Stage-4 caller keeps compiling; absent and `null` both mean "not blocked".
+   */
+  blockedReason?: string | null;
 }
 
 export type DropVerdict =
   | { ok: true; from: TaskRow["status"]; to: TaskRow["status"] }
-  | { ok: false; kind: "gate" | "unknown-column" | "same-column"; reason: string };
+  | { ok: false; kind: "gate" | "unknown-column" | "same-column" | "blocked"; reason: string };
 
 function isColumn(value: string): value is TaskRow["status"] {
   return (COLUMN_ORDER as readonly string[]).includes(value);
@@ -76,7 +82,53 @@ export function dropVerdict(card: DropCandidate, to: string): DropVerdict {
   if (to === "done" && card.gate) {
     return { ok: false, kind: "gate", reason: card.gate.humanRefusalReason };
   }
+  /**
+   * **A `blocked` chip has to block something.** Raised in review of #38.
+   *
+   * Stage 3 §7.6 called `blockedReason` "a label on the card, not a fifth status value", and that
+   * was accurate when nothing produced one. Stage 4 produces eight of them per chain, and a label
+   * that refuses nothing is a claim the UI makes and the system does not honour — the exact shape
+   * this product exists to catch. Dragging step 6 to `doing` while step 5 has never run reorders a
+   * sequence the human was shown as a forecast (§3.2).
+   *
+   * It stays a label, not a status: this refuses the *move*, and the chip clears by itself the
+   * moment the predecessor finishes (`advanceChainAfterDone`). Nothing here needs a sixth column.
+   */
+  if (card.blockedReason) {
+    return {
+      ok: false,
+      kind: "blocked",
+      reason: `${card.blockedReason} — finish that step first, or delete this card`,
+    };
+  }
   return { ok: true, from: card.from, to };
+}
+
+/**
+ * Build the `DropCandidate` a card hands to the drag layer.
+ *
+ * **This lives in `lib/` because it is a decision that can be wrong, and it was.** It sat in
+ * `components/tasks/Board.tsx` and silently omitted `blockedReason`, so D43's refusal — real,
+ * tested, and asserted by AC-3b — never fired on the actual board: every blocked card dragged
+ * cleanly and was caught only by the server. A suite that cannot see this function cannot catch
+ * that, which is exactly what `CLAUDE.md`'s "every decision that can be wrong goes in `lib/`" rule
+ * exists to prevent. Raised in review of #38; AC-3c asserts it here.
+ *
+ * Structurally typed rather than importing `CardModel`, which would pull `lib/tasks/model.ts` —
+ * and through it `db` — into this leaf.
+ */
+export function dropCandidateFor(
+  card: { id: string; gate: { humanRefusalReason: string } | null; blockedReason: string | null },
+  columnKey: TaskRow["status"],
+): DropCandidate {
+  return {
+    taskId: card.id,
+    from: columnKey,
+    // The gate's **human** rendering is what crosses the boundary (D36) — never the session string,
+    // which tells the reader a session may not do this and points at a tool they cannot call.
+    gate: card.gate ? { humanRefusalReason: card.gate.humanRefusalReason } : null,
+    blockedReason: card.blockedReason,
+  };
 }
 
 export interface DropTarget {

@@ -14,17 +14,24 @@
  * `implementation-plan-executioner`, `senior-dev`, `librarian`) except AC-1b's, which omits one on
  * purpose.
  *
+ * AC-6, AC-9 (T4, "the UI, and the SETUP row goes live") append after AC-10 — both asserted on
+ * rendered strings produced by pure functions (`gateApprovalLabel`/`chainPositionLabel` in
+ * `lib/agentos/chain-render.ts`, and `cardModel` in `lib/tasks/model.ts` one layer up), never by
+ * rendering a route or importing a component (`docs/specs/stage-4-tickets.md`'s "standing
+ * constraints" — "no acceptance script imports a component").
+ *
  * Fixture-based; the model is never called. Style, PASS/FAIL format and exit-code behaviour match
  * `scripts/verify-stage3b.mts`. A fresh temp dir per check, one unconditional cleanup sweep at the
  * true end — never `data/agentos.sqlite`.
  *
  * Run: pnpm verify:stage4
  */
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import {
@@ -35,11 +42,14 @@ import {
   createSession,
   createTask,
   createTemplate,
+  claimChainOrd,
   getAgent,
   getChain,
+  haltChain,
   getSession,
   getTask,
   getTemplateBySlug,
+  listAgentsByProject,
   listSessionsByTask,
   listTasksByChain,
   listTasksByProject,
@@ -53,10 +63,14 @@ import type { SessionRow } from "../lib/agentos/types";
 import { seedBuiltInTemplates } from "../lib/agentos/templates/seed";
 import { COMPOUND_ENGINEER_TEMPLATE } from "../lib/agentos/templates/compound-engineer";
 import { instantiateTemplate, advanceChainAfterDone } from "../lib/agentos/chain";
+import { gateApprovalLabel } from "../lib/agentos/chain-render";
 import { dispatch } from "../lib/agentos/dispatch";
 import { FakeRunner } from "../lib/agentos/runner/fake";
 import { createTaskUpdateStatusTool } from "../lib/agentos/mcp/agentos-server";
 import { moveTaskForSlug, approveDoneForSlug } from "../app/p/[slug]/[tab]/actions";
+import { cardModel, showsRunControl } from "../lib/tasks/model";
+import { dropVerdict, dropCandidateFor } from "../lib/tasks/dnd";
+import { runBootSweep } from "../lib/agentos/sweep";
 
 /**
  * `PROJECTS` is reached through `createRequire`, never a top-level import — the same two-registry
@@ -184,6 +198,9 @@ function makeChainFixture(
  * "pre-Stage-4" database by running this text directly, rather than importing anything from
  * `db.ts` that already assumes migration 2 has landed.
  */
+/** Repo root, for the one check that asserts source structure (AC-8d). */
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const MIGRATION_1_SQL = `
   CREATE TABLE IF NOT EXISTS Project (
     id                     TEXT PRIMARY KEY,
@@ -289,7 +306,9 @@ const MIGRATION_1_SQL = `
   CREATE INDEX IF NOT EXISTS idx_inbox_session         ON InboxMessage(sessionId);
 `;
 
-console.log("\nStage 4 acceptance — schema and seed (T1), instantiate all-or-nothing (T2), advance/refuse/halt (T3)\n");
+console.log(
+  "\nStage 4 acceptance — schema and seed (T1), instantiate all-or-nothing (T2), advance/refuse/halt (T3), the UI's own pure functions (T4)\n",
+);
 
 /**
  * Polls `getSession` against a deadline rather than sleeping a fixed amount — `dispatch`'s
@@ -443,16 +462,26 @@ async function runChecks() {
       );
     } else if (after.chainId !== null || after.chainOrd !== null) {
       fail("AC-0a", `new columns are not NULL — chainId=${JSON.stringify(after.chainId)}, chainOrd=${JSON.stringify(after.chainOrd)}`);
-    } else if (versionAfterFirst !== 2) {
-      fail("AC-0a", `user_version did not land on 2 after the first migrate, got ${versionAfterFirst}`);
+    } else if (versionAfterFirst < 2) {
+      // Was pinned at the literal `2`, which made adding migration 3 (review of #34's UNIQUE index)
+      // fail a check about *additivity and idempotency* — neither of which has anything to say
+      // about how many migrations exist. What matters is that the migration that introduces the
+      // chain tables has run, and that replaying is a no-op; the equality below asserts the second.
+      fail("AC-0a", `user_version did not reach at least 2 after the first migrate, got ${versionAfterFirst}`);
     } else if (secondError) {
       fail("AC-0a", `migrating a second time threw instead of no-op'ing: ${secondError}`);
-    } else if (versionAfterSecond !== 2) {
-      fail("AC-0a", `user_version moved on a second migrate — expected 2, got ${versionAfterSecond}`);
+    } else if (versionAfterSecond !== versionAfterFirst) {
+      // Compared against the first run's own answer, not a literal — the assertion is "replaying
+      // changes nothing", and pinning the number instead made it also assert "there are exactly two
+      // migrations", which is not this check's business and broke the moment one was added.
+      fail(
+        "AC-0a",
+        `user_version moved on a second migrate — expected it to stay at ${versionAfterFirst}, got ${versionAfterSecond}`,
+      );
     } else {
       pass(
         "AC-0a",
-        `migration 2 is additive (every pre-existing Task column unchanged, chainId/chainOrd NULL) and idempotent (user_version 1→2 then stays 2, no error on replay)`,
+        `migration is additive (every pre-existing Task column unchanged, chainId/chainOrd NULL) and idempotent (user_version 1→${versionAfterFirst}, unchanged on replay, no error)`,
       );
     }
   }
@@ -466,7 +495,10 @@ async function runChecks() {
     const gatesCorrect = gateOrds.length === 2 && gateOrds[0] === 1 && gateOrds[1] === 9;
     const step9 = steps.find((s) => s.ord === 9);
     const step9Human = step9?.assigneeAgentName === "human";
-    const emptyNames = steps.filter((s) => s.ord !== 9 && s.name.trim().length === 0).map((s) => s.ord);
+    // Every step, step 9 included. The `s.ord !== 9` exemption this line used to carry meant a
+    // blanked step-9 name passed unnoticed — raised in review of #34. Step 9 is the human review
+    // gate; an unnamed card is exactly the one a person would fail to act on.
+    const emptyNames = steps.filter((s) => s.name.trim().length === 0).map((s) => s.ord);
 
     if (steps.length !== 9) {
       fail("AC-0b", `expected 9 steps, got ${steps.length}`);
@@ -481,7 +513,7 @@ async function runChecks() {
     } else {
       pass(
         "AC-0b",
-        `9 steps, ord 1-9 with no gap, approvalGate true only at steps 1 and 9, step 9 assignee is the literal 'human', every other step named`,
+        `9 steps, ord 1-9 with no gap, approvalGate true only at steps 1 and 9, step 9 assignee is the literal 'human', all nine named`,
       );
     }
   }
@@ -588,6 +620,25 @@ async function runChecks() {
     });
     const afterCount = listTasksByProject(fixtureB.db, fixtureB.projectId).length;
 
+    // Part 3 — a third case, added by T4 (docs/specs/stage-4-tickets.md, Step 3): `branchName`
+    // supplied as the literal `""`, not omitted, must refuse exactly like part 2. T2's own
+    // `bindPrompt` (correctly, per its own brief) only ever checked `hasOwnProperty`, so `""`
+    // bound — unreachable while only the suite could call it, but the instantiate form T4 adds
+    // (`components/tasks/InstantiateForm.tsx`) submits a blank field as `""`, not as an absent
+    // key, which makes this reachable for the first time. Fixed in `bindPrompt` itself (the
+    // stricter of the two candidate fixes in the ticket, "cannot be bypassed by a second caller"),
+    // so this asserts the systemic fix, not a form-level workaround.
+    const fixtureC = makeChainFixture("ac2c");
+    const withBlankBranchName = { ...FULL_VARS, branchName: "" };
+    const beforeCountC = listTasksByProject(fixtureC.db, fixtureC.projectId).length;
+    const refusalC = instantiateTemplate({
+      db: fixtureC.db,
+      projectId: fixtureC.projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: withBlankBranchName,
+    });
+    const afterCountC = listTasksByProject(fixtureC.db, fixtureC.projectId).length;
+
     if (!bound.ok) {
       fail("AC-2", `setup: instantiate with every variable supplied was refused: ${bound.reason}`);
     } else if (survivedBraces.length > 0) {
@@ -600,10 +651,16 @@ async function runChecks() {
       fail("AC-2", `refusal did not name the step: ${JSON.stringify(refusal.reason)}`);
     } else if (beforeCount !== 0 || afterCount !== beforeCount) {
       fail("AC-2", `Task count is not unchanged: ${beforeCount} before, ${afterCount} after the refused attempt`);
+    } else if (refusalC.ok) {
+      fail("AC-2", `instantiate succeeded with 'branchName' supplied as the literal "" — an unbound variable must never bind to an empty string`);
+    } else if (!refusalC.reason.includes("branchName")) {
+      fail("AC-2", `the "" case's refusal did not name the variable: ${JSON.stringify(refusalC.reason)}`);
+    } else if (beforeCountC !== 0 || afterCountC !== beforeCountC) {
+      fail("AC-2", `Task count is not unchanged for the "" case: ${beforeCountC} before, ${afterCountC} after`);
     } else {
       pass(
         "AC-2",
-        `bound total (no "{{" survives) when every variable is supplied; refused omitting 'branchName': "${refusal.reason}" — Task count unchanged (${beforeCount})`,
+        `bound total (no "{{" survives) when every variable is supplied; refused omitting 'branchName': "${refusal.reason}"; refused 'branchName' as "": "${refusalC.reason}" — Task count unchanged in both cases`,
       );
     }
   }
@@ -704,15 +761,19 @@ async function runChecks() {
       // manipulation AC-0a already uses. There is no production write accessor for editing a
       // TemplateStep (T2 is restricted to read accessors in db.ts, and one should not be added
       // only to serve this test).
+      // Fail loudly if the seeded row is missing rather than running the UPDATE against an empty
+      // templateId — raised in review of #36. With `template?.id ?? ""` the statement matched
+      // nothing, `step3Edited` came back `undefined`, and the "did the edit actually land" guard
+      // below compared `undefined` against a real string, passed, and let the check report a
+      // success it had not demonstrated.
       const template = getTemplateBySlug(db, projectId, COMPOUND_ENGINEER_TEMPLATE.slug);
+      if (!template) throw new Error("AC-11 setup: the seeded template row is missing");
       db.prepare("UPDATE TemplateStep SET promptTemplate = ?, name = ? WHERE templateId = ? AND ord = 3").run(
         "EDITED AFTER INSTANTIATE — must never reach a running chain",
         "Edited step name",
-        template?.id ?? "",
+        template.id,
       );
-      const step3Edited = template
-        ? listTemplateSteps(db, template.id).find((s) => s.ord === 3)?.promptTemplate
-        : undefined;
+      const step3Edited = listTemplateSteps(db, template.id).find((s) => s.ord === 3)?.promptTemplate;
 
       const chainAfter = getChain(db, result.chainId);
       const versionAfter = chainAfter ? parseJsonColumn<StoredVersion>(chainAfter.templateVersionJson) : null;
@@ -850,6 +911,21 @@ async function runChecks() {
       assigneeAgentId: agentRow.id,
       chainId: chain2.id,
       chainOrd: 2,
+    });
+    /**
+     * `approveDoneForSlug` now refuses anything that is not a gated card in `review` (review of
+     * #38 — the action is reachable by a crafted POST and `writeTaskTransition` exempts `human`
+     * from the legal-transition table, so it could close a *blocked* `todo` step and advance the
+     * chain past it). This fixture previously approved straight out of `todo` and passed, which is
+     * precisely the hole. Move the card the way the real flow does — a session leaves it in
+     * `review`, and the human closes it from there.
+     */
+    writeTaskTransition(db, {
+      taskId: approveStep1.id,
+      toStatus: "review",
+      actorType: "human",
+      actorId: "owner",
+      reason: "left in review for the approver (test)",
     });
     const approveResult = await approveDoneForSlug(slug, approveStep1.id, { db, runner });
     const sessionsAfterApprove = listSessionsByTask(db, approveStep2.id);
@@ -1162,6 +1238,553 @@ async function runChecks() {
       );
     }
   })();
+
+  // ── AC-6 · the gate states its consequence ────────────────────────────────────────────────
+  // `gateApprovalLabel` in isolation, plus `gateModelFor` (via `cardModel`) end to end against a
+  // real instantiated chain — the isolated check alone would pass even if a call site forgot to
+  // pass `next` at all, silently falling back to the plain label; the end-to-end half is what
+  // actually proves the wiring, not just the string-composing function.
+  {
+    const bareLabel = gateApprovalLabel(null);
+    const chainLabel = gateApprovalLabel({ ord: 2, assigneeLabel: "@plan" });
+    const humanLabel = gateApprovalLabel({ ord: 9, assigneeLabel: "human" });
+
+    const { db, projectId } = makeChainFixture("ac6");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+
+    if (bareLabel !== "Approve & mark done") {
+      fail("AC-6", `gateApprovalLabel(null) is not "Approve & mark done": got ${JSON.stringify(bareLabel)}`);
+    } else if (chainLabel !== "Approve & start step 2 (@plan)") {
+      fail("AC-6", `gateApprovalLabel did not compose the spec's exact wording for a chain step: got ${JSON.stringify(chainLabel)}`);
+    } else if (humanLabel !== "Approve & start step 9 (human)") {
+      fail("AC-6", `gateApprovalLabel for a human-only next step: got ${JSON.stringify(humanLabel)}`);
+    } else if (!result.ok) {
+      fail("AC-6", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const tasks = listTasksByChain(db, result.chainId);
+      const step1 = tasks.find((t) => t.chainOrd === 1)!;
+      const step2 = tasks.find((t) => t.chainOrd === 2)!;
+      const step2Agent = step2.assigneeAgentId ? getAgent(db, step2.assigneeAgentId) : null;
+
+      // Move step 1 into 'review' the way a completed session would (§7.6's legal session
+      // transitions: todo->doing, doing->review) — dispatch itself is not under test here, only
+      // the gate's own rendered label once a task is sitting at its gate.
+      writeTaskTransition(db, { taskId: step1.id, toStatus: "doing", actorType: "session", actorId: "fake-session", reason: "setup" });
+      writeTaskTransition(db, { taskId: step1.id, toStatus: "review", actorType: "session", actorId: "fake-session", reason: "setup" });
+      const step1Reviewing = getTask(db, step1.id)!;
+      const agentsById = new Map(listAgentsByProject(db, projectId).map((a) => [a.id, a]));
+
+      const card = cardModel({
+        task: step1Reviewing,
+        events: [],
+        sessionsById: new Map(),
+        toolCallCountBySession: new Map(),
+        commitShasBySession: new Map(),
+        agentsById,
+        chainTasks: tasks,
+        chainTemplateName: COMPOUND_ENGINEER_TEMPLATE.name,
+      });
+
+      const expected = `Approve & start step 2 (@${step2Agent?.name})`;
+      if (!card.gate) {
+        fail("AC-6", "setup: cardModel returned no gate for a gated task sitting in 'review'");
+      } else if (card.gate.approveLabel !== expected) {
+        fail(
+          "AC-6",
+          `end-to-end: the gate's approveLabel does not name the step and agent it will start — got ${JSON.stringify(card.gate.approveLabel)}, expected ${JSON.stringify(expected)}`,
+        );
+      } else {
+        pass(
+          "AC-6",
+          `the gate reads "${card.gate.approveLabel}" — never a bare "Approve"`,
+        );
+      }
+    }
+  }
+
+  // ── AC-9 · every chained card knows its position ──────────────────────────────────────────
+  // Two chains of different lengths, so a hardcoded `9` cannot pass: the seeded template (9 steps)
+  // and a hand-built 3-step chain, neither sharing a fixture with the other.
+  {
+    const { db, projectId } = makeChainFixture("ac9");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+
+    const smallDbPath = tempDbPath("ac9-small");
+    const smallDb = openDb(smallDbPath);
+    const smallProject = createProject(smallDb, {
+      slug: "ac9-small-project",
+      primaryRepoPath: "/tmp/ac9-small-fixture-does-not-need-to-exist",
+      yamlPath: "/tmp/ac9-small-fixture-does-not-need-to-exist/agentos.yml",
+    });
+    const smallTemplate = createTemplate(smallDb, {
+      projectId: smallProject.id,
+      slug: "three-step",
+      name: "three-step",
+      description: "a deliberately short template, to prove `total` is never a hardcoded 9",
+      variables: [],
+      seeded: false,
+      steps: [],
+    });
+    const smallChain = createChain(smallDb, {
+      projectId: smallProject.id,
+      templateId: smallTemplate.template.id,
+      templateVersion: { template: { id: smallTemplate.template.id }, steps: [] },
+      variables: {},
+    });
+    const smallTasks = [1, 2, 3].map((ord) =>
+      createTask(smallDb, {
+        projectId: smallProject.id,
+        name: `small step ${ord}`,
+        description: "d",
+        approvalGate: false,
+        assigneeAgentId: null,
+        chainId: smallChain.id,
+        chainOrd: ord,
+      }),
+    );
+    const smallCard = cardModel({
+      task: smallTasks[1],
+      events: [],
+      sessionsById: new Map(),
+      toolCallCountBySession: new Map(),
+      commitShasBySession: new Map(),
+      agentsById: new Map(),
+      chainTasks: smallTasks,
+      chainTemplateName: "three-step",
+    });
+    smallDb.close();
+
+    if (!result.ok) {
+      fail("AC-9", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const tasks = listTasksByChain(db, result.chainId);
+      const agentsById = new Map(listAgentsByProject(db, projectId).map((a) => [a.id, a]));
+      const step3 = tasks.find((t) => t.chainOrd === 3)!;
+      const nineCard = cardModel({
+        task: step3,
+        events: [],
+        sessionsById: new Map(),
+        toolCallCountBySession: new Map(),
+        commitShasBySession: new Map(),
+        agentsById,
+        chainTasks: tasks,
+        chainTemplateName: COMPOUND_ENGINEER_TEMPLATE.name,
+      });
+      const expectedNine = `step 3 of 9 · ${COMPOUND_ENGINEER_TEMPLATE.name}`;
+      const expectedSmall = "step 2 of 3 · three-step";
+
+      if (nineCard.chainPosition !== expectedNine) {
+        fail("AC-9", `9-step chain's ord-3 card read ${JSON.stringify(nineCard.chainPosition)}, expected ${JSON.stringify(expectedNine)}`);
+      } else if (smallCard.chainPosition !== expectedSmall) {
+        fail(
+          "AC-9",
+          `a 3-step chain's own card read ${JSON.stringify(smallCard.chainPosition)}, expected ${JSON.stringify(expectedSmall)} — total is not reading from the chain's own size`,
+        );
+      } else {
+        pass(
+          "AC-9",
+          `a 9-step chain reads "${nineCard.chainPosition}"; a 3-step chain reads "${smallCard.chainPosition}" — total is read from the chain's own size, never hardcoded`,
+        );
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // Review of #34/#36/#37/#38 — one check per fix. Numbered "b"/"c" against the AC each defends,
+  // following this repo's existing AC-8b/AC-6b/AC-16b convention for a check added in review.
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+
+  // ── AC-1c · a duplicate agent name refuses, it does not pick one ──────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac1c");
+    // A second agent sharing step 2's name. `Agent` has no uniqueness constraint on
+    // (projectId, name), so before the fix a Map keyed on the name kept whichever row came last —
+    // binding every `plan` step to an arbitrary agent with different grants, model and budget.
+    createAgent(db, {
+      projectId,
+      name: "plan",
+      monogram: "PL",
+      model: "claude-opus-5",
+      rolePrompt: "an impostor with the same name",
+      allowedTools: [],
+      disallowedTools: [],
+      canCommit: false,
+      maxTurns: null,
+      maxBudgetUsd: null,
+    });
+    const before = Number((db.prepare("SELECT count(*) AS n FROM Task").get() as { n: number }).n);
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    const after = Number((db.prepare("SELECT count(*) AS n FROM Task").get() as { n: number }).n);
+
+    if (result.ok) {
+      fail("AC-1c", "instantiate succeeded with two agents named 'plan' — a step bound to an arbitrary one");
+    } else if (!/matches 2 agents/.test(result.reason) || !/plan/.test(result.reason)) {
+      fail("AC-1c", `refused, but the reason names neither the count nor the agent: ${result.reason}`);
+    } else if (after !== before) {
+      fail("AC-1c", `refused but wrote ${after - before} Task row(s) — instantiate is all-or-nothing`);
+    } else {
+      pass("AC-1c", `refused: ${JSON.stringify(result.reason)} — Task count unchanged (${after})`);
+    }
+  }
+
+  // ── AC-3b · a blocked step is blocked, not merely labelled ────────────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac3b");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    if (!result.ok) {
+      fail("AC-3b", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const step5 = listTasksByChain(db, result.chainId).find((t) => t.chainOrd === 5);
+      if (!step5 || !step5.blockedReason) {
+        fail("AC-3b", "setup: step 5 is not blocked, so this check would prove nothing");
+      } else {
+        const problems: string[] = [];
+
+        // 1. The board offers no Run now.
+        if (showsRunControl({ agent: { monogram: "IM", name: "impl" }, blockedReason: step5.blockedReason }, "todo")) {
+          problems.push("showsRunControl returned true for a blocked card");
+        }
+
+        // 2. A drag is refused by the shared decision — so `moveTaskForSlug` is refused too.
+        const verdict = dropVerdict(
+          { taskId: step5.id, from: "todo", gate: null, blockedReason: step5.blockedReason },
+          "doing",
+        );
+        if (verdict.ok) problems.push("dropVerdict allowed a blocked card to be dragged to 'doing'");
+        else if (verdict.kind !== "blocked") problems.push(`dropVerdict refused for the wrong reason: ${verdict.kind}`);
+
+        // 3. And the funnel itself refuses, so no other caller can start it either.
+        const dispatched = await dispatch(step5.id, "manual", { db, runner: new FakeRunner({ messages: [] }) });
+        if (dispatched.started) problems.push("dispatch started a blocked task");
+        else if (dispatched.refusedBy !== "dispatchable") {
+          problems.push(`dispatch refused for the wrong precondition: ${dispatched.refusedBy}`);
+        }
+
+        problems.length === 0
+          ? pass(
+              "AC-3b",
+              "a blocked step 5 offers no Run now, refuses a drag with kind 'blocked', and is refused by dispatch's 'dispatchable' precondition — the chip is enforced, not decorative",
+            )
+          : fail("AC-3b", problems.join("; "));
+      }
+    }
+  }
+
+  // ── AC-6b · the approve button only closes what it claims to ──────────────────────────────
+  {
+    const { db, projectId, slug } = makeChainFixture("ac6b", { registerInBoard: true });
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    if (!result.ok) {
+      fail("AC-6b", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const tasks = listTasksByChain(db, result.chainId);
+      const blockedStep2 = tasks.find((t) => t.chainOrd === 2)!;
+      const runner = new FakeRunner({ messages: [] });
+
+      // The attack the fix exists to stop: a crafted POST naming a blocked `todo` step. Before the
+      // fix this closed it and advanced the chain — running step 3 before step 1 had ever started.
+      const craftedPost = await approveDoneForSlug(slug, blockedStep2.id, { db, runner });
+      const sessionsForStep3 = listSessionsByTask(db, tasks.find((t) => t.chainOrd === 3)!.id);
+      const step2After = getTask(db, blockedStep2.id);
+
+      if (craftedPost.ok) {
+        fail("AC-6b", "approveDoneForSlug closed a blocked 'todo' chain step");
+      } else if (step2After?.status !== "todo") {
+        fail("AC-6b", `refused, but the task moved anyway: now '${step2After?.status}'`);
+      } else if (sessionsForStep3.length !== 0) {
+        fail("AC-6b", `refused, but the chain advanced: ${sessionsForStep3.length} session(s) for step 3`);
+      } else {
+        pass("AC-6b", `refused a blocked 'todo' step: ${JSON.stringify(craftedPost.reason)} — nothing moved, nothing dispatched`);
+      }
+    }
+  }
+
+  // ── AC-8b · the first halt is the one that sticks ─────────────────────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac8b");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    if (!result.ok) {
+      fail("AC-8b", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const tasks = listTasksByChain(db, result.chainId);
+      const first = tasks.find((t) => t.chainOrd === 3)!;
+      const later = tasks.find((t) => t.chainOrd === 6)!;
+
+      haltChain(db, result.chainId, first.id, "the step that actually stopped the chain");
+      // A second failure callback arriving afterwards — asynchronous, and a chain can have more
+      // than one step in flight. Before the fix this silently rewrote the attribution.
+      haltChain(db, result.chainId, later.id, "a later failure that must not steal the attribution");
+      const chain = getChain(db, result.chainId);
+
+      if (chain?.status !== "halted") {
+        fail("AC-8b", `chain is '${chain?.status}', expected 'halted'`);
+      } else if (chain.haltedAtTaskId !== first.id) {
+        fail("AC-8b", "a later halt overwrote haltedAtTaskId — the stored attribution moved off the step that stopped it");
+      } else if (!/actually stopped/.test(chain.haltReason ?? "")) {
+        fail("AC-8b", `haltReason was overwritten: ${chain.haltReason}`);
+      } else {
+        pass("AC-8b", "a second halt left haltedAtTaskId and haltReason on the first stopping step — attribution does not drift");
+      }
+    }
+  }
+
+  // ── AC-8c · a restart that interrupts a chain step halts the chain ────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac8c");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    if (!result.ok) {
+      fail("AC-8c", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const step1 = listTasksByChain(db, result.chainId).find((t) => t.chainOrd === 1)!;
+      // A session left `running` by a process that no longer exists — exactly what a `pnpm dev`
+      // restart leaves behind, and the state §7.7's boot sweep exists to settle. It never passes
+      // through `runSessionToCompletion`, so T3's failure hook never fires for it.
+      const orphaned = createSession(db, {
+        taskId: step1.id,
+        agentId: listAgentsByProject(db, projectId)[0].id,
+        triggerKind: "chain",
+        worktreePath: null,
+        baseRef: "deadbeef",
+        pid: 999999,
+        bootId: "a-previous-boot",
+        driftAtSpawn: {
+          severity: "unverifiable",
+          claim: "fixture",
+          verified: "fixture",
+          source: "fixture",
+          check: "fixture",
+          checkedAtISO: new Date().toISOString(),
+        },
+      });
+      // `todo -> doing` is a `session` transition in §7.6's table, not a `system` one — the same
+      // write `dispatch` makes when it starts a run. `writeTaskTransition` enforces that table, so
+      // the fixture has to reproduce the real actor rather than assert one.
+      writeTaskTransition(db, {
+        taskId: step1.id,
+        toStatus: "doing",
+        actorType: "session",
+        actorId: orphaned.id,
+        reason: "fixture: mid-run when the process died",
+      });
+
+      await runBootSweep(db, "the-current-boot");
+      const chain = getChain(db, result.chainId);
+
+      if (chain?.status !== "halted") {
+        fail(
+          "AC-8c",
+          `the boot sweep interrupted a chain step and left Chain.status '${chain?.status}' — later steps stay eligible with nothing driving them`,
+        );
+      } else if (chain.haltedAtTaskId !== step1.id) {
+        fail("AC-8c", `halted, but attributed to ${chain.haltedAtTaskId} rather than the interrupted step`);
+      } else {
+        pass("AC-8c", `the boot sweep halted the chain at the interrupted step: ${JSON.stringify(chain.haltReason)}`);
+      }
+    }
+  }
+
+  // ── AC-10b · a halt wins the race against a claim ─────────────────────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac10b");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    if (!result.ok) {
+      fail("AC-10b", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const step1 = listTasksByChain(db, result.chainId).find((t) => t.chainOrd === 1)!;
+      haltChain(db, result.chainId, step1.id, "halted before the claim landed");
+      // `advanceChainAfterDone` reads Chain.status and then claims, two statements — a halt landing
+      // between them used to leave the claim succeeding, the next card unblocked and `dispatch`
+      // called on a stopped chain. `dispatch` knows nothing about chains, so nothing downstream
+      // would have caught it.
+      const claimed = claimChainOrd(db, result.chainId, 2);
+
+      if (claimed) {
+        fail("AC-10b", "claimChainOrd succeeded on a halted chain — a halt does not win the race");
+      } else {
+        pass("AC-10b", "claimChainOrd refused on a halted chain — halting and claiming decide against each other in one statement");
+      }
+    }
+  }
+
+  // ── AC-0d · migration 3 reconciles duplicates before it constrains ────────────────────────
+  {
+    /**
+     * A database that already lost the seed race: two `(projectId, slug)` rows, one of them
+     * referenced by a `Chain`. Before this fix `CREATE UNIQUE INDEX` failed on it — inside
+     * `migrate()`, inside `openDb()` — so the app refused to start, on exactly the machines the
+     * race had already hit. Raised in review of #38.
+     *
+     * Built by opening normally, then *undoing* migration 3 (drop the index, rewind
+     * `user_version`) and planting the duplicate. That is less code than a verbatim copy of
+     * migration 2's DDL and, more usefully, it cannot drift from the real schema the way a copy can.
+     */
+    const path = tempDbPath("ac0d");
+    const seeded = openDb(path);
+    const projectId = randomUUID();
+    const project = createProject(seeded, {
+      slug: "dup-fixture",
+      primaryRepoPath: join(tmpdir(), "dup-fixture"),
+      yamlPath: join(tmpdir(), "dup-fixture", "agentos.yml"),
+      maxConcurrentSessions: 1,
+    });
+    seedBuiltInTemplates(seeded, project.id);
+    const keeper = getTemplateBySlug(seeded, project.id, COMPOUND_ENGINEER_TEMPLATE.slug)!;
+
+    seeded.exec("DROP INDEX IF EXISTS idx_tasktemplate_project_slug");
+    const loserId = randomUUID();
+    seeded
+      .prepare(
+        "INSERT INTO TaskTemplate (id, projectId, slug, name, description, variablesJson, seeded, createdAt) VALUES (?,?,?,?,?,?,?,?)",
+      )
+      .run(loserId, project.id, keeper.slug, keeper.name, keeper.description, keeper.variablesJson, 1, new Date().toISOString());
+    seeded
+      .prepare(
+        "INSERT INTO TemplateStep (id, templateId, ord, name, promptTemplate, assigneeAgentName, approvalGate, notes) VALUES (?,?,?,?,?,?,?,?)",
+      )
+      .run(randomUUID(), loserId, 1, "s", "p", "human", 1, null);
+    // A Chain on the row that is about to lose — the case a naive DELETE orphans.
+    const chain = createChain(seeded, {
+      projectId: project.id,
+      templateId: loserId,
+      templateVersion: { steps: [] },
+      variables: {},
+    });
+    seeded.exec("PRAGMA user_version = 2");
+    seeded.close();
+
+    let openError: string | null = null;
+    let templatesAfter = -1;
+    let chainTemplateId: string | null = null;
+    let orphanSteps = -1;
+    try {
+      const db = openDb(path);
+      templatesAfter = Number(
+        (db.prepare("SELECT count(*) AS n FROM TaskTemplate WHERE projectId = ?").get(project.id) as { n: number }).n,
+      );
+      chainTemplateId = (db.prepare("SELECT templateId AS t FROM Chain WHERE id = ?").get(chain.id) as { t: string }).t;
+      orphanSteps = Number(
+        (
+          db
+            .prepare("SELECT count(*) AS n FROM TemplateStep WHERE templateId NOT IN (SELECT id FROM TaskTemplate)")
+            .get() as { n: number }
+        ).n,
+      );
+      db.close();
+    } catch (err) {
+      openError = err instanceof Error ? err.message : String(err);
+    }
+
+    if (openError) {
+      fail("AC-0d", `openDb() threw on a database holding a duplicate — the app would not start: ${openError}`);
+    } else if (templatesAfter !== 1) {
+      fail("AC-0d", `expected the duplicate reconciled to 1 TaskTemplate row, got ${templatesAfter}`);
+    } else if (chainTemplateId !== keeper.id) {
+      fail("AC-0d", "the Chain was left pointing at the deleted row rather than re-pointed at the keeper");
+    } else if (orphanSteps !== 0) {
+      fail("AC-0d", `${orphanSteps} TemplateStep row(s) were orphaned by the reconciliation`);
+    } else {
+      pass(
+        "AC-0d",
+        "a database carrying a duplicate (projectId, slug) migrates cleanly: one row survives, its Chain is re-pointed at the keeper, no orphaned steps, openDb() does not throw",
+      );
+    }
+  }
+
+  // ── AC-3c · the board's own adapter carries the blocked reason ────────────────────────────
+  {
+    // AC-3b proves `dropVerdict` refuses a blocked card. That is the *function*. This proves the
+    // board actually hands it one — the adapter omitted `blockedReason` entirely, so every blocked
+    // card dragged cleanly and was caught only by the server: a real guard, tested, and unreachable.
+    // Raised in review of #38. The adapter now lives in `lib/tasks/dnd.ts` so this check can see it.
+    const candidate = dropCandidateFor(
+      { id: "T1", gate: null, blockedReason: "waiting on step 1 ('Write a spec')" },
+      "todo",
+    );
+    const verdict = dropVerdict(candidate, "doing");
+
+    if (candidate.blockedReason !== "waiting on step 1 ('Write a spec')") {
+      fail("AC-3c", `the adapter dropped blockedReason: ${JSON.stringify(candidate.blockedReason)}`);
+    } else if (verdict.ok || verdict.kind !== "blocked") {
+      fail("AC-3c", `a candidate built by the adapter was not refused as blocked: ${JSON.stringify(verdict)}`);
+    } else {
+      pass("AC-3c", "the candidate the board builds carries blockedReason, so the drag is refused client-side and never becomes a request");
+    }
+  }
+
+  // ── AC-8d · the late halt is scoped to the session that still owns the task ───────────────
+  {
+    /**
+     * **A structural check, and deliberately labelled as one.** The behaviour — a human closing a
+     * card *while* its session is still settling, then the failure callback landing late — needs
+     * the runner to be suspended mid-flight and released on cue, and `FakeRunner` has no such seam.
+     * Adding one would be this stage's third seam, which spec §7 argues against by name.
+     *
+     * So this asserts the shape instead: `haltChain` must appear inside `runSessionToCompletion`'s
+     * `status === "doing"` branch, not beside it. That branch is exactly "this run is still what
+     * happened to this task"; keying the halt on `chainId` alone — true forever once set — let a
+     * late failure stop a chain that a human had already advanced past. Raised in review of #38.
+     *
+     * The precedent for asserting source structure is `verify-stage3a` AC-3, which counts
+     * `boardOnce` call sites the same way and for the same reason: the property is real, and no
+     * amount of fixture drives it.
+     */
+    const src = readFileSync(join(ROOT, "lib/agentos/dispatch.ts"), "utf8");
+    const guardIdx = src.indexOf('currentTask.status === "doing"');
+    const haltIdx = src.indexOf("haltChain(", guardIdx);
+    // The branch runs from the guard to the closing of the `if (runError)` block that contains it.
+    const branchEnd = src.indexOf("\n  }\n}", guardIdx);
+    const unconditional = /if \(currentTask\?\.chainId\)/.test(src);
+
+    if (guardIdx === -1) {
+      fail("AC-8d", 'could not find the `currentTask.status === "doing"` guard in dispatch.ts');
+    } else if (haltIdx === -1 || haltIdx > branchEnd) {
+      fail("AC-8d", "haltChain is not inside the status === 'doing' branch — a late failure can halt a chain the session no longer owns");
+    } else if (unconditional) {
+      fail("AC-8d", "dispatch.ts still contains an `if (currentTask?.chainId)` halt outside the ownership guard");
+    } else {
+      pass("AC-8d", "the chain halt sits inside runSessionToCompletion's status === 'doing' branch — a late failure cannot stop a chain a human already advanced past");
+    }
+  }
 }
 
 try {
@@ -1172,5 +1795,5 @@ try {
   for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
 }
 
-console.log(failures === 0 ? "\nAll Stage 4 acceptance criteria pass (T1 + T2 + T3).\n" : `\n${failures} FAILING.\n`);
+console.log(failures === 0 ? "\nAll Stage 4 acceptance criteria pass (T1 + T2 + T3 + T4).\n" : `\n${failures} FAILING.\n`);
 process.exit(failures === 0 ? 0 : 1);

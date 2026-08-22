@@ -70,6 +70,9 @@
 
 .scheduleChip { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 
+/* Chain position (§8.2, Stage 4 AC-9) — mono, muted, same register as the schedule chip. */
+.chainPosition { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
 .blocked {
   display: inline-flex;
   align-items: center;
@@ -116,7 +119,6 @@
   color: var(--attention);
 }
 .gateSubtitle { font-size: 12px; color: var(--muted); margin: 0; font-style: italic; }
-.gateConsequence { font-size: 11px; color: var(--muted); margin: 0; }
 .gateActions { display: flex; gap: 8px; margin-top: 2px; }
 .gateApprove {
   font-size: 12px;
@@ -193,9 +195,26 @@
   color: var(--bg);
   border-radius: 6px;
   cursor: pointer;
-  margin: 0 0 16px;
 }
 .addTaskTrigger:hover { opacity: 0.9; }
+
+/* ── The two board triggers, side by side (Stage 4, T4, spec §5.8 — "on the Tasks board beside
+   + Task") ──────────────────────────────────────────────────────────────────────────────────── */
+.taskActions { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; }
+
+/* Same shape as `.addTaskTrigger`, an outline rather than a fill — a template is the second-most
+   common action here, not the primary one. */
+.addFromTemplateTrigger {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 6px 13px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.addFromTemplateTrigger:hover { background: var(--surface-2); }
 
 /* ── Task create form (T3, spec §1.3/§6 note 3) — now the drawer's content (T2) ──────────── */
 .taskForm {

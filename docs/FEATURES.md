@@ -306,6 +306,61 @@ column-width sum accounts for. If it turns out cramped, D23 named Concept C as t
 advance and §5.4 kept the pane unconstrained, so the swap stays a layout change; the cheaper first
 move is dropping the column floor 220px → 200px, which buys 80px in one line.
 
+### Templates, gates, and chains (Stage 4 — spec: `docs/specs/stage-4-templates-chains.spec.md`)
+
+**The stage with no new machinery** (spec §1): a chain is `dispatch()`'s existing funnel plus the
+existing approval gate, sequenced. Nothing here scans, polls, or schedules.
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Lists the templates a project has | `compound-engineer-workflow` appears, seeded | Load `/p/<slug>/config/templates` | Stage 4 |
+| Instantiates a template as a chain | Nine cards appear in `todo`, in order, each naming its agent | `pnpm verify:stage4` → AC-1 | Stage 4 |
+| Binds template variables | Every `{{var}}` in every step prompt is replaced before any card is written | AC-2 | Stage 4 |
+| Refuses an unbound variable | Instantiate fails, names the variable and the step; no cards are created — an explicit `""` refuses exactly like an omitted key (T4 closed this: `bindPrompt` treats an empty string the same as a missing one) | **AC-2** | Stage 4 |
+| Blocks a step behind its predecessor | Steps 2–9 carry a `blocked` chip naming **its own immediate predecessor** — see the correction below | AC-3, AC-8 | Stage 4 |
+| **Enforces** that chip rather than printing it | A blocked step offers no `Run now`, refuses a drag, and is refused by `dispatch` — three points, no new status (**D43**) | **AC-3b** | Stage 4 |
+| Refuses an approval for a card that is not awaiting one | *"Approve & mark done"* closes a **gated card in `review`** and nothing else; a crafted request naming a blocked `todo` step is refused and the chain does not advance | **AC-6b** | Stage 4 |
+| Refuses a template whose agent name is ambiguous | Two agents sharing a name → instantiate refuses naming the count and the step; no cards written | **AC-1c** | Stage 4 |
+| Keeps a halt attributed to the step that caused it | A later failure cannot rewrite `haltedAtTaskId` or `haltReason` — the first halt wins | **AC-8b** | Stage 4 |
+| Halts a chain whose step a restart interrupted | The boot sweep halts the chain, naming the interruption — later steps stop being eligible with nothing driving them | **AC-8c** | Stage 4 |
+| Lets a halt win a race against an advance | The chain-step claim and the halt decide against each other in one statement | **AC-10b** | Stage 4 |
+| Starts the next step when one is marked done | Step 1 `done` → step 2 dispatches with `trigger: 'chain'` | **AC-4** | Stage 4 |
+| Will not start step 2 from a session token | The gated `done` on step 1 is refused; step 2 never dispatches | **AC-5** | Stage 4 |
+| Says what approving will start | The gate reads *"Approve & start step 2 (@plan)"* — never a bare "Approve" | AC-6 | Stage 4 |
+| Leaves a human step for a human, and keeps the chain running | A step with no agent cannot be dispatched; the refusal names the reason — see the second correction below | **AC-7** | Stage 4 |
+| Halts the chain on an automated step's failure | A failed step stops the chain, attributed to that step | **AC-8** | Stage 4 |
+| Records the chain on every card | Each card shows `step N of 9 · compound-engineer`, `N` and the total read from the chain's own data, never a hardcoded 9 | **AC-9** | Stage 4 |
+| Never re-dispatches a step | A step already run cannot be started twice by the chain, even raced | **AC-10** | Stage 4 |
+| A running chain ignores template edits | Editing the seeded template after instantiate leaves the chain's stored prompts and step count unchanged | AC-11 | Stage 4 |
+
+**Two corrections, because what is built is not quite what the spec's own prose says:**
+
+- **§2 and AC-8 both read "later steps say which step stopped them."** What is built gives each
+  blocked step a `blockedReason` naming **its own immediate predecessor**, not the step that
+  actually halted the chain — behind a failure at step 5, step 6 reads "waiting on step 5" (correct
+  either way), but step 7 reads "waiting on step 6," not "waiting on step 5." Followed one hop at a
+  time the chain of reasons still reaches step 5; read in isolation, step 7's own reason does not
+  name it.
+- **§3.4 states flatly that a refused dispatch halts the chain.** There is one deliberate
+  exception, and it is easy to miss because it lives only in code and a check: a refusal on a
+  **human-only** step (`assigneeAgentId === null`) leaves `Chain.status` at `running` rather than
+  `halted` (spec §3.5, asserted by AC-7) — a human-only step ends the chain's *automation*, not the
+  chain itself, and attributing that to a halt would misreport a design choice as a fault. Every
+  *other* refused dispatch still halts, attributed (AC-8).
+
+**Where the controls live (spec §5.8):** the template list is setup, at
+`/p/<slug>/config/templates`. Instantiating one is work — the form is on the Tasks board, beside
+`+ Task`.
+
+**Reused unchanged, per spec §7's "no new test seam":** `dispatch()` and its five preconditions,
+the approval gate, the `Runner` fixture. `verify:stage4` never calls a model.
+
+**One measurement this stage owes, and has not taken** (owner work, not build work): instantiating
+the seeded template for real, once, in a project whose six named agents actually resolve, and
+looking at the nine resulting cards — eight of them blocked. Nobody has seen whether that reads as
+"one plan" or as "eight stalled tasks." `docs/specs/stage-4-tickets.md`'s own closing section has
+the argument in full.
+
 ### The Overview
 
 *Not built.* Planned: PRD §6.8, **Stage 6** (re-scoped by D22 to read two sources). `/overview`

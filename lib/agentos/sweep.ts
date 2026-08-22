@@ -17,6 +17,7 @@ import {
   getProject,
   getSession,
   getTask,
+  haltChain,
   listSessionsByStatus,
   updateSession,
   writeTaskTransition,
@@ -89,6 +90,21 @@ export async function runBootSweep(db: DatabaseSync, currentBootId: string): Pro
         actorId: null,
         reason: failureReason,
       });
+    }
+
+    /**
+     * **An interrupted chain step halts its chain, exactly like a failed one.** Raised in review of
+     * #38, and it is the same defect as the one #33's review found in AC-8 — a halt path with no
+     * production caller — reached by the other route. T3 hooked `runSessionToCompletion`'s failure
+     * branch, but a session killed by a restart never reaches that function at all: this sweep is
+     * what settles it. Without this, a `pnpm dev` restart mid-chain left the chain `running` with
+     * its step back in `todo`, so later steps stayed indefinitely eligible while nothing was
+     * driving them — a stall that reports itself as healthy, which §7.7 exists to prevent.
+     *
+     * Read `task` rather than re-fetching: `chainId` does not change across a transition.
+     */
+    if (task?.chainId) {
+      haltChain(db, task.chainId, task.id, failureReason);
     }
 
     // Re-read rather than pushing the pre-sweep row: `listSessionsByStatus` handed us a snapshot

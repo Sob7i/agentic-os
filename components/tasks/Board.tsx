@@ -1,5 +1,5 @@
 import type { CardModel, ColumnModel } from "@/lib/tasks/model";
-import type { DropCandidate } from "@/lib/tasks/dnd";
+import { dropCandidateFor } from "@/lib/tasks/dnd";
 import type { MoveTaskResult } from "@/app/p/[slug]/[tab]/actions";
 import { DragBoard, DroppableColumn, DraggableCard } from "./DragBoard";
 import { showsRunControl } from "@/lib/tasks/model";
@@ -63,7 +63,7 @@ function Column({
       <div className={s.col}>
         {col.cards.length === 0 && <p className={s.colEmpty}>Nothing here.</p>}
         {col.cards.map((card: CardModel) => (
-          <DraggableCard key={card.id} card={dropCandidateFor(card, col)}>
+          <DraggableCard key={card.id} card={dropCandidateFor(card, col.key)}>
           <Card
             key={card.id}
             card={card}
@@ -82,16 +82,3 @@ function Column({
   );
 }
 
-/**
- * The plain data a drag needs, computed on the server.
- *
- * The gate's **human** rendering is what crosses the boundary (D36) — never the session string,
- * which tells the reader a session may not do this and points at a tool they cannot call.
- */
-function dropCandidateFor(card: CardModel, col: ColumnModel): DropCandidate {
-  return {
-    taskId: card.id,
-    from: col.key,
-    gate: card.gate ? { humanRefusalReason: card.gate.humanRefusalReason } : null,
-  };
-}

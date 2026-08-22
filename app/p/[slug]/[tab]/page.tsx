@@ -14,6 +14,7 @@ import { Board } from "@/components/tasks/Board";
 import { Inbox } from "@/components/tasks/Inbox";
 import { InitializeButton } from "@/components/tasks/InitializeButton";
 import { TaskDrawer } from "@/components/tasks/TaskDrawer";
+import { InstantiateDrawer } from "@/components/tasks/InstantiateDrawer";
 import {
   runNowAction,
   approveDoneAction,
@@ -21,6 +22,7 @@ import {
   initializeProjectAction,
   createTaskAction,
   moveTaskAction,
+  instantiateTemplateAction,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -84,6 +86,17 @@ function TabBody({ tab, slug, projectPath }: { tab: string; slug: string; projec
       );
     }
     if (tab === "tasks") {
+      // Stage 4: every task sharing a `chainId` groups together — the chain-position chip
+      // (AC-9) reads `total` from this group's own size, and the gate label (AC-6) reads the
+      // group to find the very next step. Grouped once here rather than inside the map below, so
+      // a chain of N tasks does not re-filter `data.tasks` N times.
+      const tasksByChainId = new Map<string, typeof data.tasks>();
+      for (const task of data.tasks) {
+        if (!task.chainId) continue;
+        const group = tasksByChainId.get(task.chainId);
+        if (group) group.push(task);
+        else tasksByChainId.set(task.chainId, [task]);
+      }
       const cards = data.tasks.map((task) =>
         cardModel({
           task,
@@ -92,12 +105,19 @@ function TabBody({ tab, slug, projectPath }: { tab: string; slug: string; projec
           toolCallCountBySession: data.toolCallCountBySession,
           commitShasBySession: data.commitShasBySession,
           agentsById: data.agentsById,
+          chainTasks: task.chainId ? tasksByChainId.get(task.chainId) : undefined,
+          chainTemplateName: task.chainId
+            ? data.chainTemplateNameByChainId.get(task.chainId)
+            : undefined,
         }),
       );
       const columns = columnsFor(cards, data.tasks);
       return (
         <>
-          <TaskDrawer slug={slug} agents={[...data.agentsById.values()]} action={createTaskAction} />
+          <div className={t.taskActions}>
+            <TaskDrawer slug={slug} agents={[...data.agentsById.values()]} action={createTaskAction} />
+            <InstantiateDrawer slug={slug} templates={data.templates} action={instantiateTemplateAction} />
+          </div>
           <Board
             columns={columns}
             slug={slug}

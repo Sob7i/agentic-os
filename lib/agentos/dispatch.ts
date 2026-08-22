@@ -186,6 +186,19 @@ export async function dispatch(
   if (task.status !== "todo") {
     return refuse("dispatchable", `task ${taskId} is '${task.status}', not 'todo'`);
   }
+  /**
+   * **A blocked task is not dispatchable.** Raised in review of #38. Every chain step 2–9 is a
+   * `todo` task with an agent, so without this the `Run now` server path would start step 6 before
+   * step 5 had ever run — reordering the sequence the human was shown as a forecast (Stage 4 §3.2)
+   * and, worse, doing it through the funnel, so the run would look entirely legitimate afterwards.
+   *
+   * This belongs here rather than only in the UI because §7.3's preconditions are the one place
+   * every start passes through, whatever triggered it — and because `advanceChainAfterDone` clears
+   * the reason *before* it dispatches, so the chain's own advance is unaffected by design.
+   */
+  if (task.blockedReason) {
+    return refuse("dispatchable", `task ${taskId} is blocked: ${task.blockedReason}`);
+  }
   const taskSessions = listSessionsByTask(db, taskId);
   const taskLive = taskSessions.find((s) => s.status === "running" || s.status === "waiting-inbox");
   if (taskLive) {
@@ -435,24 +448,26 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
         actorId: null,
         reason: `session ${session.id} failed: ${runError.message}`,
       });
-    }
 
-    // T3, spec §3.4: a chain step's failure halts the chain rather than retrying — "a chain that
-    // retries is a scheduler, and D24 declined to build one." This is the ONE hook this ticket adds
-    // to this file, and it lives here rather than beside `advanceChainAfterDone` in `chain.ts`
-    // because a `Runner` that throws is handled entirely inside this function (it marks the session
-    // `failed` and writes `doing -> todo` above); the failure never passes through `done`, so a hook
-    // that only fired after `done` would leave `haltChain` with no production caller at all — the
-    // chain would silently stall instead of halting. Read from `currentTask` (fetched above,
-    // independent of whatever `Task.status` ends up being) because `chainId` is the only fact this
-    // halt needs, and it does not change across a transition.
-    if (currentTask?.chainId) {
-      haltChain(
-        db,
-        currentTask.chainId,
-        taskId,
-        `session ${session.id} failed at step ${currentTask.chainOrd ?? "?"}: ${runError.message}`,
-      );
+      /**
+       * **Inside the `doing` branch, not beside it.** Raised in review of #38. A human may move any
+       * task to `done` at any time, so a failure callback arriving late can find the card already
+       * closed and the chain already advanced past it — and halting there would stop a chain on
+       * behalf of a session that no longer owns the step. The `status === 'doing'` test is exactly
+       * "this run is still the thing that happened to this task"; the halt has to share it rather
+       * than key on `chainId` alone, which is true forever once set.
+       *
+       * `haltChain` is additionally a no-op on an already-halted chain (its own `status` guard), so
+       * two failing steps cannot fight over the attribution either.
+       */
+      if (currentTask.chainId) {
+        haltChain(
+          db,
+          currentTask.chainId,
+          taskId,
+          `session ${session.id} failed at step ${currentTask.chainOrd ?? "?"}: ${runError.message}`,
+        );
+      }
     }
   }
 }
