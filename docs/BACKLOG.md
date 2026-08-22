@@ -519,6 +519,53 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   **Unblock condition:** T4 starting. Close it before that form ships, not after — this is the one
   entry here whose cost is measured in model spend rather than time.
 
+- **`Chain.status` never becomes `'completed'`** *(added 2026-08-22, found building Stage 4 T3)*.
+  A chain is created `running` and T3 moves it to `halted` on a failure, but nothing marks it done
+  when its last step closes. **No acceptance criterion in the Stage 4 spec requires it** — AC-1…AC-11
+  never mention `completed` — and T3's Owns list does not cover it, so T3 left it alone rather than
+  inventing behaviour, which was the right call. **Why it still matters:** `ChainStatus` declares the
+  value, so the type promises a state the code cannot reach, and T4's UI has to render a finished
+  chain somehow — most likely identically to a running one, which is the wrong answer on a board
+  whose whole job is showing what is in flight. **The decision hiding in it:** *what closes a chain?*
+  The last step reaching `done` is the obvious answer and it is wrong for the seeded template, whose
+  step 9 is a human review that may sit for days — the chain's automation ended at step 8. **Unblock
+  condition:** T4 needing to render a completed chain differently, which it probably does. Answer it
+  there rather than here.
+
+- **Nothing tests that a chain halts when it hits the concurrency cap** *(added 2026-08-22, found in
+  review of Stage 4 T3)*. Spec §3.4 lists *"a chain cannot exceed the project's concurrency cap"*
+  as one of three payoffs for advancing through `dispatch` rather than around it, and §3.4 also says
+  a refused dispatch halts the chain with that reason. **Precondition 3 is real and the halt path is
+  real; no check joins them.** The chain fixture in `scripts/verify-stage4.mts` sets
+  `maxConcurrentSessions: 20` so that multi-step chains are not blocked by their own predecessors'
+  still-settling fake sessions — a reasonable fixture choice, and the cost is that the cap refusal is
+  never exercised. **Why this is not urgent:** in the real flow the cap is not reached, because a
+  step's session has already completed by the time a human marks that step `done`. **Why it is worth
+  closing anyway:** `agentos.yml` in this repo sets `maxConcurrentSessions: 1` deliberately, so the
+  one project most likely to run a chain first is the one running closest to the cap, and the
+  untested branch is the one that would fire. **Unblock condition:** none — it is one fixture with a
+  cap of 1 and a still-live predecessor session, and it belongs with T4 or the first real chain run.
+
+- **`stage-4-tickets.md` AC-8 describes a `blockedReason` shape T2 did not build** *(added
+  2026-08-22, found building Stage 4 T3)*. The ticket says AC-8 asserts *"steps 6–9 still blocked
+  with a reason naming step 5"*. `instantiateTemplate` gives each step a reason naming its
+  **immediate** predecessor — step 7 names step 6, not the halted step 5 — which is the more useful
+  rendering and is what AC-3 already asserts. T3 resolved it by asserting step 6 names step 5 and
+  steps 7–9 remain blocked, rather than rewriting working logic to match a sentence. **The ticket
+  text is what is wrong**, and it is left uncorrected only because that ticket is merged and its T3
+  section is now history. **Fix it if `docs/FEATURES.md` inherits the wording** — T4 writes those
+  rows, and copying *"a reason naming step 5"* into the behaviour table would publish the error
+  rather than retire it.
+
+- **A refused dispatch on a human-only step leaves the chain `running`, and the spec does not say so**
+  *(added 2026-08-22, found building Stage 4 T3)*. T3 implemented it that way and flagged it rather
+  than deciding silently. Spec §3.5 — *"a human step ends the chain's automation, not the chain"* —
+  supports it, and AC-7 now asserts `Chain.status` stays `running`; every other precondition-4
+  refusal still halts. **What is missing is the spec sentence, not the behaviour.** §3.4 says flatly
+  that a refused dispatch halts the chain, §3.5 implies one refusal that must not, and only the code
+  and a check record which is which. **Unblock condition:** T4's `docs/FEATURES.md` rows — write the
+  distinction into the behaviour table there, and amend §3.4's sentence to name its own exception.
+
 ## Done / superseded
 
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than
