@@ -111,6 +111,7 @@ deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state*
 | `docs/specs/stage-4-templates-chains.spec.md` | Queue | Templates, gates and chains — **decision-closed, not built.** The stage with no new machinery: if it needs one, something has gone wrong |
 | `docs/specs/stage-4-tickets.md` | Queue | Stage 4's four build tickets. **They stack; T2 off T1, T3 off T2, T4 off T3 — never off `develop`.** Its *inherited facts* list is measured, not assumed — read it before briefing anyone |
 | `docs/specs/stage-4b-delivery.spec.md` | Queue | **The delivery path** — branch, prepared workspace, verified result, PR (D37–D41). The stage that lets the product build itself; sequenced after Stage 4 and **before Stage 6** |
+| `docs/specs/stage-4b-tickets.md` | Queue | Stage 4b's four build tickets. **They stack; T2 off T1, T3 off T2, T4 off T3 — never off `develop`.** Its *inherited facts* list is measured, not assumed — in particular **the next migration is 4, not the spec's "3"** |
 | `docs/specs/stage-5-goals.spec.md` | Queue | Goals, the orchestrator and four rails — **one owner decision still open** (§5.11, the spend cap). The only genuinely new control loop in the product |
 | `docs/specs/AgentOS-spec.md` | Reference | Reconstructed source spec for the execution layer — **a reconstruction, not a contract** |
 | `design/wireframes.pen` | Design | Round-1/2 wireframes (Pencil; plain JSON, readable directly) |

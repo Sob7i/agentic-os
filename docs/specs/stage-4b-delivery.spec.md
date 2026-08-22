@@ -405,10 +405,13 @@ are the contract.
 
 ## §6 — Build notes
 
-Four tickets, stacked, in this order. **The ticket file does not exist yet** —
-`docs/specs/stage-4b-tickets.md` is written before T1 starts and is not part of this spec's PR, so
-do not follow that link expecting to find it. The sketch below is the input to writing it, not a
-substitute for it. (The first draft linked it as though it existed; raised in review of #33.)
+Four tickets, stacked, in this order. **The ticket file now exists** —
+[`stage-4b-tickets.md`](stage-4b-tickets.md), written 2026-08-22 before T1 started and in its own PR,
+not this spec's. The sketch below was the input to writing it and is **not** a substitute for it:
+the ticket file carries twelve measured inherited facts, and at least one of them corrects this
+spec — **the next migration number is 4, not the "migration 3" §3.1 and AC-13 name**, because
+Stage 4 added a migration 3 in review of #38. Read the tickets, not this list. (The first draft
+linked the file as though it existed before it did; raised in review of #33.)
 
 1. **T1 — D37/D38, migration 3, and the branch.** `worktree.ts` (the branch parameter and its
    create/attach flag, and the empty-branch delete), `dispatch.ts` (base ref resolution: task →

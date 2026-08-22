@@ -54,7 +54,7 @@
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
-| `develop` head | `8643ef7` | `git log --oneline -1 origin/develop` |
+| `develop` head | `f383c42` (measured 2026-08-22, after #38 merged) | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #16, #17 (2026-08-19), #18 (2026-08-19) | `gh pr list --state merged --limit 5` |
 | `pnpm verify` | **101 checks across 6 suites, as last counted on `feat/stage-3c-t4-docs`; a 7th suite (`verify:stage4`, 16 checks) exists as of `feat/stage-4-t4-ui` and is not yet folded into this total** — see the 2026-08-22 note above for that branch's own per-suite result. Which one or two of the 101 are red still depends on whether GitHub is answering, exactly as below. Connected: **99 of 101** (Stage 1 green 8/8; `verify:stage3` AC-11 and `verify:stage3a` AC-1 red). Rate-limited: **100 of 101** (Stage 1 AC-1 red; both oracles green). Plus 1 SKIP either way (`verify:stage3` AC-12, the opt-in real session). **The earlier *100 of 102* on this row was a miscount, not a third state** — it counted Stage 1's own PASS lines, which AC-11 was pasting into its failure message | `pnpm verify` |
@@ -455,6 +455,19 @@ touched no hub doc, on purpose.
 4. `pnpm type-check` and `pnpm build` both clean as of this commit.
 
 ## Next up
+
+> **Stage 4b's ticket queue is written (2026-08-22).**
+> [`docs/specs/stage-4b-tickets.md`](specs/stage-4b-tickets.md) — four stacked tickets, T2 off T1,
+> T3 off T2, T4 off T3. Stage 4 (templates and chains) landed the same day across #34, #36, #37
+> and #38, so the build item below is **T1: the branch, the declared base, and migration 4.** The
+> ticket file's inherited facts carry one correction to the spec that would have bitten
+> immediately: the spec says *migration 3* and migration 3 already exists — Stage 4 added it in
+> review of #38 — so this stage adds **migration 4**.
+>
+> **Stage 4b lands with an owner gate of its own, AC-17**, and no fixture can close it: one real
+> branch, pushed, with a real PR opened and merged. It joins the two below rather than replacing
+> them.
+
 
 > **Corrected while landing T4:** items 2, 5 and 6 below (both Stage 3 spec gates already cleared
 > by D27, "build Stage 3" with Stage 3/3a/3b all already built, and committing `wireframes2.pen`
