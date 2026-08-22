@@ -952,3 +952,189 @@ written, and AC-12 asserts the drag refusal is the human one.
 
 **Rejected: ship the existing string verbatim.** Simpler, and it puts a sentence about sessions in
 front of a person — in the product whose entire premise is that a displayed claim must be true.
+
+## D37 — A session commits to a named branch, created at spawn (2026-08-22)
+
+**Spec:** [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) §3.2.
+
+Today `createWorktree` runs `git worktree add --detach <path> <sha>`, and teardown runs
+`git worktree remove --force`. [`lib/agentos/worktree.ts:137`](../lib/agentos/worktree.ts#L137)
+documents the consequence in its own words: commits are left *"unreferenced on a detached HEAD:
+recoverable only as `git branch <name> <sha>` … and eventually reclaimed by gc."*
+
+**So the output of a successful run is a sha with a deadline on it.** That is a direct contradiction
+of D19's evidence rule — everything the execution layer stores carries a session id and a commit sha
+*as evidence*, and evidence a garbage collector can delete is not evidence. It is also the reason
+nothing downstream can exist: you cannot push a detached HEAD without inventing a ref, and inventing
+one at push time means inventing it after the worktree that produced it is gone.
+
+**Decision:** the worktree is created with `-b agentos/<task-slug>-<short session id>`. The branch
+exists **before the model is called**, so every commit is on a ref from the first one. Teardown
+deletes the branch **only when the run committed nothing** (§3.4) — a ref pointing at its own base
+is noise, and noise makes `git branch --list 'agentos/*'` useless, which is the whole cleanup story.
+
+**The `agentos/` prefix is load-bearing, not cosmetic.** This repo's branches are `feat/`, `fix/`,
+`chore/`, `docs/` (`CLAUDE.md`), so the namespace is unclaimed and a human can delete all of them
+without reading any of them. And because the session id is *in* the name, branch → session and
+session → branch are both computable with no lookup table — the second source of truth D11 forbids.
+
+**What this also buys, unasked:** an interrupted session stops being a loss. Stage 3 §7.7's boot
+sweep already reports a killed session honestly; with a branch, the honest report is also actionable
+— *"interrupted at `<sha>` on `<branch>`"*. It does not make sessions survive a restart, and D20
+still owns that.
+
+**One interaction, found in review of #33 and worth stating inside the decision** because it is the
+only place `-b` is not simply correct: `resumeSession` builds a fresh worktree **reusing the same
+session id** after an inbox pause, so the branch already exists by then. An unconditional `-b` fails
+there, and recreating from the base would silently discard whatever the paused turn committed — the
+work the `inbox_ask` tool's own description instructed the agent to commit before asking. **A resume
+attaches to the branch; only a first dispatch creates it.** The spec's §3.2 and AC-15 carry it.
+
+**Rejected: create the branch at push time from the recorded sha.** It works right up until gc runs,
+a crash happens before the record is written, or the worktree read fails — and every one of those is
+the moment the work was most worth keeping.
+
+---
+
+## D38 — The base ref is declared, never inherited from the owner's checkout (2026-08-22)
+
+**Spec:** [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) §3.1.
+
+[`lib/agentos/dispatch.ts:236`](../lib/agentos/dispatch.ts#L236) hardcodes `const BASE_REF = "HEAD"`,
+with an honest comment: the schema has no per-project or per-task branch column, so *"the primary
+repo"* is the only ref a dispatch can mean without one.
+
+**`HEAD` means "wherever the owner happens to be standing."** If the owner is on a feature branch,
+mid-rebase, or on `main`, the agent silently branches from there. `CLAUDE.md` already records the
+mirror image of this failure from the other direction — *"never provision a sub-agent worktree from
+the default base"*, after four agents in a row started at a commit predating the entire build. The
+lesson was that a base has to be **stated and checked**, and the execution layer does neither.
+
+**Decision:** `Project.integrationBranch` (from `agentos.yml`, default `develop`),
+`Project.defaultBaseRef` (**defaulting to `integrationBranch`**), and a nullable `Task.baseRef` that
+overrides both. `dispatch` resolves task → project default → integration branch, and precondition 5
+already verifies the result with `git rev-parse`, so a bad ref refuses at the gate it already has.
+
+**The fallback must not end at `HEAD`, and the first draft of this decision said it did.** Raised in
+review of #33: with `HEAD` as the default, a project that sets nothing behaves exactly as it does
+today, so the decision would have been a claim about configurability rather than a change in
+behaviour — and the failure mode it exists to prevent would survive untouched in the common case.
+`HEAD` stays available as something a project **writes down**; what it stops being is what happens
+when nobody chose.
+
+**The second reason, which is the one that matters for Stage 4:** stacked work becomes expressible.
+Every ticket file in this project says the same thing — *T2 branches off T1, never off `develop`* —
+and until a task can name a base, a chain physically cannot honour it. A nine-step chain whose steps
+all branch from the same sha is nine parallel attempts, not a sequence.
+
+**Rejected: infer the base from the previous step's branch.** It is right most of the time, which is
+what makes it dangerous: the times it is wrong are the times a step was re-run or skipped, and an
+inferred base is not visible anywhere for a human to check. A declared one is a column.
+
+---
+
+## D39 — The workspace is prepared by a declared command, which may reach the network (2026-08-22)
+
+**Spec:** [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) §3.5.
+
+`git worktree add` produces a checkout with **no `node_modules`**. Nothing in the execution layer
+installs anything — verified 2026-08-22 by grep: no `pnpm install` exists anywhere under `lib/` or
+`app/`. So a session in this repo cannot run `pnpm verify`, `pnpm type-check`, or a single test.
+`CLAUDE.md`'s own instruction for hand-made worktrees is *"`pnpm install` in it, and hand the agent
+the path"* — the automated path skips the step the manual path requires.
+
+**Decision:** `agentos.yml` gains an optional `prepare:` key, run as a child process inside the
+worktree **before** the model call — on a first dispatch **and on an inbox resume**, which builds its
+own fresh worktree and would otherwise reach the model with no dependencies. A non-zero exit
+**refuses the dispatch** — no session row, no cost, worktree removed, **and the branch D37 created
+deleted**. Absent key → skipped, and `prepareExitCode` stays `null`, never `0`.
+
+**The command is argv with a declared timeout, not a shell string.** Two corrections from review of
+#33, both of which the first person to run this would have hit: the project's child-process helper
+uses `execFile`, which does not tokenize or invoke a shell, so `pnpm install --frozen-lockfile` as
+one string is looked up as an executable with that whole name; and its 15-second default — right for
+`git rev-parse` — would kill a cold install partway and report it as a broken repo. Argv also
+removes quoting rules and any injection surface, and leaves `["sh","-c","…"]` available as something
+the owner writes out on purpose rather than gets by accident.
+
+**Refusing rather than warning, because of what proceeding costs.** A workspace with no dependencies
+is one where the first command the agent runs fails for a reason that has nothing to do with the
+task, and the next twenty turns are spent diagnosing *our* bug on the owner's budget. Refusing costs
+nothing.
+
+**This is inside D19's carve-out, and the boundary is who wrote the command.** Invariant 1 permits
+an execution layer *the model API, and the hosts a session's environment explicitly allow-lists.* A
+command typed by hand into the project's own `agentos.yml` **is** that allow-list — the owner
+declaring it, in a file the owner owns, read at dispatch time. **What the product may never do is
+suggest, default, or infer it.** Inferring `pnpm install` from the presence of `pnpm-lock.yaml` is
+the obvious convenience and it is the line: a lockfile is not consent to execute a package manager,
+and any repo that grew one would start running an install nobody authorised.
+
+**Rejected: symlink or copy the owner's `node_modules` into the worktree.** Faster, and it hands a
+session a path into the checkout the owner is actively working in — the one thing the ephemeral
+worktree exists to prevent. Paying the install cost honestly is the correct trade; a content-
+addressed cache is a `docs/BACKLOG.md` entry if it ever hurts enough.
+
+---
+
+## D40 — Verification is run by the runner, and never reported by the session (2026-08-22)
+
+**Spec:** [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) §3.6.
+
+**A session saying "the tests pass" is a claim.** This product exists because claims and reality
+diverge, and Invariant 2 — *never assert without a check* — is stated to apply to the dashboard
+*about itself*, not only about the projects it watches. A session's own account of its work is
+exactly the class of statement the whole system refuses to take at face value from anyone else.
+
+**Decision:** `agentos.yml` gains an optional `verify:` key, run by the runner as a child process
+**after** the model call settles and **before** teardown. Its exit code and the last 40 lines of
+output land on the `Session` row. The session is never asked, and nothing it says is recorded as the
+answer.
+
+**The two facts are recorded separately and neither may hide the other.** `Session.status` reports
+what the *run* did; `verifyExitCode` reports what the *code* does. A session that correctly reported
+a pre-existing red suite is a successful run over broken code, and collapsing the two would render
+it as a crash. This is the same rule `dispatch.ts` already applies to a teardown failure, which is
+appended to the reason rather than reclassifying a completed run as failed.
+
+**AC-7 is written adversarially on purpose:** a `FakeRunner` scripted to announce success while the
+verify command exits non-zero, asserting the recorded result is the child process's. A test where
+the session's claim and the check agree proves nothing about which one was read — the
+specimen-not-behaviour trap `docs/LEARNINGS.md` records from Stage 1's AC-2.
+
+---
+
+## D41 — Push and PR are one human click; merge is not the product's to make (2026-08-22)
+
+**Spec:** [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) §3.8.
+
+Pushing a branch is the first thing this product does that **publishes** — that puts bytes somewhere
+other people read. It is *not* the first thing that touches the network, and the first draft of this
+decision said it was: D39 one entry earlier permits an owner-declared `prepare:` command to reach a
+package registry, and `gh` and the model API were always permitted. Raised in review of #33, and the
+distinction is the load-bearing part — **egress is not the boundary here, publication is.** Invariant
+4 gates writes; D19 moved the execution layer's gate from per-write to **per-session, authorised at
+spawn** — and a push is not a write inside the granted manifest. It is a shared remote that
+teammates, CI, and anyone watching the repo will see.
+
+**Decision, three parts:**
+
+1. **Push and PR happen on one explicit human click**, on a settled session that has a branch and at
+   least one commit. Never automatically on completion.
+2. **One click does the whole gesture** — push, `gh pr create` against the project's
+   `integrationBranch` (default `develop`), store the URL. Not three confirmations. A gate people
+   learn to click through three times is one gate with worse copy; the honesty lives in the label,
+   which names the branch and the base: *"Push `agentos/…` & open PR → develop"*. Same reasoning as
+   Stage 2's approval copy and Stage 4 §5.3's chain gate.
+3. **The product never merges.** `CLAUDE.md` is already explicit — *the agent never merges, not its
+   own PR, not any PR; the agent's output is a PR, and that is where its authority ends.* Stage 4b's
+   AC-11 asserts `gh pr merge` and `git merge` appear in no shipped source file.
+
+**Why a source-level assertion for part 3, which looks crude.** It is an invariant, and an invariant
+enforced only by everyone remembering not to violate it is enforced by nobody — the same argument
+`local.ts` makes for forcing `WebFetch`/`WebSearch` into `disallowedTools` on every composed call
+rather than trusting the seed row. The `gh` seam being an injected argv-taking function makes the
+same rule checkable behaviourally as well.
+
+**Rejected: push automatically, gate only the PR.** A pushed branch is already visible to everyone
+watching the repo and already triggers CI. The moment it leaves is the moment to ask.

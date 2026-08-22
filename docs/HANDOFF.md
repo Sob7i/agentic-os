@@ -1,7 +1,8 @@
 # Agentic OS — Session Handoff
 
-> Continuation notes for the next working session (human or agent). Updated **2026-08-18**
-> (round-3 design closed; Stages 3a/4/5 specced; **Stage 3a built**).
+> Continuation notes for the next working session (human or agent). Updated **2026-08-22**
+> (Stage 4's ticket queue written; **Stage 4b specced** — the delivery path, D37–D41). Previous
+> update 2026-08-18 (round-3 design closed; Stages 3a/4/5 specced; **Stage 3a built**).
 > Read `CLAUDE.md` first (session ritual, conventions, doc map); this file is only "where we
 > are and what's next."
 >
@@ -399,14 +400,38 @@
    is arithmetic and must not be written down as an observation** — doing exactly that to AC-10 in
    2026-08-18 is why these are enumerated rather than assumed. Taking M-1 and M-1b also settles the
    `docs/BACKLOG.md` entry on the portfolio sidebar, which is now one look away from decidable.
-6. **Specs for Stages 4 and 5 are written** —
+6. **Build Stage 4, then Stage 4b — the queue is written and both are `☑`.**
    [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) is **`☑`
-   buildable** (no owner gate; it is sequenced behind Stage 3b, which is now built), and
-   [`stage-5-goals.spec.md`](specs/stage-5-goals.spec.md) is **`☐`**, gated on one owner call in
-   its §5.11 — the default spend cap, and whether a goal may spawn unattended before the loop has
+   buildable** (no owner gate; it is sequenced behind Stage 3b, which is now built) and as of
+   **2026-08-22** it has a ticket file: [`stage-4-tickets.md`](specs/stage-4-tickets.md), four
+   stacked tickets with six **measured** inherited facts — read those before briefing anyone, they
+   include the one that says instantiating the seeded template in *this* project refuses today
+   because **none** of its six non-human agent names exists here. That refusal is the spec working.
+   [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) is new the same day and also
+   **`☑`** (D37–D41 closed).
+   [`stage-5-goals.spec.md`](specs/stage-5-goals.spec.md) is still **`☐`**, gated on one owner call
+   in its §5.11 — the default spend cap, and whether a goal may spawn unattended before the loop has
    been watched once. Stage 6 (the rewritten Overview) and Stage 7 (portfolio cost) are **not**
    specced yet, deliberately: both read data that Stages 3–5 produce, and speccing them now would
    be guessing at shapes that do not exist.
+
+7. **⚠ Stage 4b is the reason nothing built so far can build anything** *(added 2026-08-22)*. Asked
+   whether the execution layer could run the Stage 4 build itself, the answer measured out as **no,
+   and for one specific reason**: a session's commits land on a **detached HEAD** in a worktree that
+   is then `--force` removed, so a successful run's entire output is a sha with a garbage
+   collector's deadline on it. There is no branch, no push, no PR; the worktree has no
+   `node_modules`, so the agent cannot run `pnpm verify` on its own work; `dispatch` branches from
+   whatever `HEAD` the owner's checkout happens to be on; and the prompt a session receives is
+   literally `Task: <name>\n\n<description>` and nothing else. **Every one of those is closed by
+   Stage 4b** (D37–D41). **And the flat fact under all of this is how many sessions have ever run —
+   a volatile value, so it is not restated here:** reproduce it with
+   `sqlite3 data/agentos.sqlite "select count(*) from Session"`, and read the *Verified state*
+   block above for what it was when last checked. If the answer is still zero, the first Stage 4b
+   acceptance run is *also* the first proof that `LocalRunner` works end-to-end — two unknowns at
+   once, and why D27
+   chose `fractal-code` for first real runs rather than this repo. Sequenced **before Stage 6**,
+   because Stage 6 is the first stage that could plausibly be built by this product instead of by
+   hand — and it cannot be while finished work is recoverable only by reading a sha out of SQLite.
 
 - **2026-08-18** — Round-3 wireframes reviewed and the shell closed as **D23**: Concept B′ over
   the design agent's own recommendation of C, because the Kanban is the surface this product will be
@@ -544,3 +569,28 @@ None.
   pre-code"* while its own Commands table documented 19 passing acceptance checks — fixed, with a
   lesson (`docs/LEARNINGS.md`). **No code was written and no behaviour changed**, so
   `docs/FEATURES.md` is deliberately untouched.
+
+- **2026-08-22** — Asked whether the execution layer could run its own Stage 4 build. **It cannot,
+  and the reason is one gap with four faces**, all measured rather than reasoned about: commits land
+  on a **detached HEAD** in a worktree that is then force-removed, so the output of a successful run
+  is a sha with a gc deadline; the worktree has **no `node_modules`** and nothing installs any, so
+  the agent cannot run `pnpm verify` on its own work; `dispatch` hardcodes `BASE_REF = "HEAD"`, which
+  means *wherever the owner's checkout happens to be standing*, so stacked tickets are inexpressible;
+  and the prompt is `Task: <name>\n\n<description>` and nothing more. **And the flat fact underneath
+  it, as measured on 2026-08-22:** `select count(*) from Session` returned **0** — nothing had ever
+  run, so the first real dispatch would also be the first proof `LocalRunner` works, two unknowns at
+  once. *Written as a dated past measurement, not a present-tense claim, because the value moves the
+  first time anyone dispatches anything; the live one lives in* **Verified state** *and nowhere else.*
+  Two documents written, no code: **[`stage-4-tickets.md`](specs/stage-4-tickets.md)** (four stacked
+  tickets, six measured inherited facts, and the note that the advance hook **cannot** go inside
+  `writeTaskTransition` — it is sync, and `db.ts` importing `dispatch.ts` is a cycle) and
+  **[`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md)**, which closes **D37–D41**:
+  a named branch created at spawn, a declared base ref, a declared `prepare:` command, verification
+  run by the runner and never reported by the session, and push+PR as one human click that can never
+  merge. **Named 4b rather than 3d on purpose** — Stage 3's motor is complete on its own terms; this
+  is the boundary between running work and shipping it, and it only becomes urgent once chains exist
+  to produce more than one commit worth handing back. It is sequenced **before Stage 6**, because
+  Stage 6 is the first stage that could plausibly be built by this product rather than by hand.
+  **Stage 4b carries its own owner gate (AC-17)** and it is the same shape as Stage 2's and Stage
+  3b's: every fixture check runs against a bare repo in `/tmp`, so until one real PR exists on
+  GitHub that this product opened, the last mile is code nobody has run.

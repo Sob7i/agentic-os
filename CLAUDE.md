@@ -38,11 +38,22 @@ read `docs/HANDOFF.md` §Verified state — this file does not carry suite resul
 the kind of evidence that closed it) and D26 (the app shell splits out of Stage 3 as **Stage 3a**).
 **Stage 3c is built** (drag, the drawer, the SETUP rail group, the rail to frame `B′2` — D32–D36).
 **Next build step: Stage 4** (templates and chains), which now has a `Templates` destination to fill
-in rather than invent, then Stage 5 (goals). **Stage 3c owes four by-hand observations that nobody
+in rather than invent, **then Stage 4b** (the delivery path — D37–D41, added 2026-08-22), then
+Stage 5 (goals). **Stage 3c owes four by-hand observations that nobody
 has taken** — `docs/FEATURES.md` § *The measurements this stage owes*; they are owner work, not
 build work. Stage 4
 sequences parts that have now all run at least once, which is exactly why 3b was inserted before it.
 Behaviour today: `docs/FEATURES.md`; in plain language, `docs/HUMAN-TEST.md`.
+
+**⚠ The execution layer cannot yet hand work back, and that is what Stage 4b is for.** A session's
+commits land on a **detached HEAD** in a worktree that is then force-removed — so a successful run's
+output is a sha with a garbage collector's deadline on it, there is no branch, no push and no PR,
+and the worktree has no `node_modules`, so the agent cannot run `pnpm verify` on its own work.
+**Whether any session has ever run is a volatile fact and lives in `docs/HANDOFF.md`'s *Verified
+state* block, not here** — reproduce it with
+`sqlite3 data/agentos.sqlite "select count(*) from Session"`. Until 4b lands, no stage of this product can
+be built *by* this product, which is the whole reason 4b is sequenced before Stage 6 —
+`docs/specs/stage-4b-delivery.spec.md`.
 
 **Counts, PR states and branch heads are
 deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state* block, once.
@@ -97,6 +108,10 @@ deliberately absent here** — they live in `docs/HANDOFF.md`'s *Verified state*
 | `docs/specs/stage-3b-tickets.md` | Queue | Stage 3b's four build tickets — sequencing, file ownership, hand-off contracts. **They stack; T2 branches off T1, not `develop`** |
 | `docs/specs/stage-3c-board-and-rail.spec.md` | Queue | Drag-and-drop, the drawer, the SETUP rail group, and the rail rebuilt to frame `B′2` — **built 2026-08-21**. Its own `status:` line is the contract |
 | `docs/specs/stage-3c-tickets.md` | Queue | Stage 3c's four build tickets. **They stack; T2 off T1, T3 off T2, T4 off T3 — never off `develop`** |
+| `docs/specs/stage-4-templates-chains.spec.md` | Queue | Templates, gates and chains — **decision-closed, not built.** The stage with no new machinery: if it needs one, something has gone wrong |
+| `docs/specs/stage-4-tickets.md` | Queue | Stage 4's four build tickets. **They stack; T2 off T1, T3 off T2, T4 off T3 — never off `develop`.** Its *inherited facts* list is measured, not assumed — read it before briefing anyone |
+| `docs/specs/stage-4b-delivery.spec.md` | Queue | **The delivery path** — branch, prepared workspace, verified result, PR (D37–D41). The stage that lets the product build itself; sequenced after Stage 4 and **before Stage 6** |
+| `docs/specs/stage-5-goals.spec.md` | Queue | Goals, the orchestrator and four rails — **one owner decision still open** (§5.11, the spend cap). The only genuinely new control loop in the product |
 | `docs/specs/AgentOS-spec.md` | Reference | Reconstructed source spec for the execution layer — **a reconstruction, not a contract** |
 | `design/wireframes.pen` | Design | Round-1/2 wireframes (Pencil; plain JSON, readable directly) |
 | `design/wireframes2.pen` | Design | **Round-3** wireframes — the shell, Tasks, Goals, Sessions, Inbox, plus six rationale notes. Shell closed as D23 |
