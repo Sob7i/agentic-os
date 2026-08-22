@@ -725,22 +725,29 @@ async function runChecks(): Promise<void> {
       : fail("AC-11", bad.join("; "));
   }
 
-  // ---- AC-17 [G] — exactly eight tables ----
+  // ---- AC-17 [G] — exactly the tables a decision named ----
+  // Stage 4 (docs/specs/stage-4-templates-chains.spec.md §3.1) decided on three more —
+  // TaskTemplate, TemplateStep, Chain — so they join the list rather than defeating the guard:
+  // the point was never "eight forever", it was "nobody backs a placeholder with a table nobody
+  // decided on" (D32). Any table not named here still fails this check.
   {
     const src = readFileSync(join(ROOT, "lib/agentos/db.ts"), "utf8");
     const names = [...src.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]).sort();
     const expected = [
       "Agent",
+      "Chain",
       "CommitSha",
       "InboxMessage",
       "Project",
       "Session",
       "Task",
       "TaskEvent",
+      "TaskTemplate",
+      "TemplateStep",
       "ToolCall",
     ];
     JSON.stringify(names) === JSON.stringify(expected)
-      ? pass("AC-17", "eight tables, names unchanged — a placeholder cannot have grown a schema")
+      ? pass("AC-17", `${names.length} tables, names unchanged from the decided set — a placeholder cannot have grown a schema nobody decided on`)
       : fail("AC-17", `got ${names.length}: ${names.join(", ")}`);
   }
 
