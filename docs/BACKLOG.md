@@ -451,6 +451,53 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   Recorded here so nobody reads D37 as having closed the older entry. **Unblocked by:** the same
   thing as before — D20's cloud runner, or a detached child process.
 
+### From measuring the suite (2026-08-22)
+
+- **`pnpm verify` re-runs the same suites up to three times in one invocation** *(added 2026-08-22)*.
+  Measured on `feat/stage-4-t1-schema`, one run each: stage1 **3.1s**, stage2 **2.8s**, stage3
+  **11.6s**, stage3a **5.5s**, stage3b **6.2s**, stage3c **59.3s**, stage4 **0.4s** — full run
+  **~89s**. *(A dated measurement, recorded as history the way `CLAUDE.md`'s convention allows for a
+  decision's evidence; it is not a live value and nothing should read it as one. Reproduce with
+  `pnpm verify:<suite>` and a stopwatch.)*
+  **stage3c is two-thirds of the total, and it is nesting, not slowness.** Its AC-20 spawns
+  `verify:stage3` and `verify:stage3a` as a regression oracle
+  ([`scripts/verify-stage3c.mts:1072`](../scripts/verify-stage3c.mts#L1072)), and `verify:stage3a`
+  in turn spawns `verify:stage1` and `verify:stage2`
+  ([`scripts/verify-stage3a.mts:77`](../scripts/verify-stage3a.mts#L77)). So one `pnpm verify`
+  executes **stage1 and stage2 three times each, stage3 and stage3a twice** — roughly a quarter of
+  the wall time is re-running suites that already ran in the same invocation.
+  **Why this is not simply a bug to fix:** the oracle is the point. AC-20 and AC-1 exist to catch a
+  change that breaks an earlier stage, and they must run the *real* suite rather than trust a
+  recorded result — that is `verify-before-claim` applied to the verifier itself. Deleting the
+  nesting would delete the guarantee.
+  **What a fix looks like:** `verify-all.mts` already discovers and runs every suite, so it is the
+  one place that knows a suite's result *this invocation*. Let it publish results to a run-scoped
+  cache (a temp file keyed on a run id it passes down), and let an oracle consume that cache **only
+  when the child was already run in the same invocation** — falling back to spawning when it was
+  not, so `pnpm verify:stage3c` on its own keeps working exactly as it does today. The saving is
+  ~23s now and grows with every stage added, because each new suite that oracles an earlier one
+  multiplies the same re-runs.
+  **Why it is deferred:** 89 seconds is annoying, not blocking, and the cache is a second source of
+  truth about test results — the thing this project is most careful about. It needs the run id to be
+  genuinely per-invocation and the fallback to be exercised, or a stale cache file makes a suite
+  report a pass it never ran, which is worse than any amount of waiting.
+  **Unblock condition:** the full run crossing roughly three minutes, or a fourth suite acquiring an
+  oracle. Measure it; do not predict it.
+
+- **Sub-agent build turns stop early when they background a long command** *(added 2026-08-22)*.
+  Observed three times while building Stage 4 T1: the agent launched `pnpm verify` as a background
+  job and ended its turn to wait for the result, which surfaces to the lead as *"agent completed"*
+  with a result reading *"Waiting for the background verify run to complete."* No work was lost —
+  each resume continued correctly — but one ticket took three notify/resume cycles instead of one,
+  and on the third the lead had already done the same work in parallel, so it was done twice.
+  **The fix is a line in the brief, not code:** tell the agent to run verify in the **foreground**,
+  and to run the full suite **once at the end** rather than as a before/after pair — the per-suite
+  baseline is already recorded in `docs/HANDOFF.md` §Verified state, and stage3/stage3a's red is
+  known and logged, so re-deriving it costs ~90s and answers nothing. Applied to T2's brief onward.
+  **Why it is a backlog entry rather than only a habit:** it belongs in whatever standing agent
+  brief this project eventually keeps, and it will be re-learned once per person otherwise. **Unblock
+  condition:** none — fold it into the ticket-brief template the first time one is written down.
+
 ## Done / superseded
 
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than
