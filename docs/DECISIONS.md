@@ -1138,3 +1138,46 @@ same rule checkable behaviourally as well.
 
 **Rejected: push automatically, gate only the PR.** A pushed branch is already visible to everyone
 watching the repo and already triggers CI. The moment it leaves is the moment to ask.
+
+---
+
+## D42 — An explicitly empty template variable is refused in `bindPrompt`, not at the form (2026-08-22)
+
+**Spec:** [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) §3.3, AC-2.
+Ticket: [`stage-4-tickets.md`](specs/stage-4-tickets.md) T4, "one open question you must answer."
+
+**The gap T2 left, correctly, and T4 made reachable.** `bindPrompt` (`lib/agentos/chain-render.ts`)
+decided "missing" with `Object.prototype.hasOwnProperty` alone, because AC-2's own wording is *"with
+`branchName` **omitted**"* and nothing but `scripts/verify-stage4.mts` could call the function yet —
+an absent key is the only shape a suite produces without inventing one. T4 adds the instantiate form
+on the Tasks board (`components/tasks/InstantiateForm.tsx`), and an HTML form submits a blank field
+as `vars.branchName === ""`, not as an absent key. `hasOwnProperty` alone would have bound that to
+*"create a branch named  and implement"* and let it run — spec §3.3's own example of the failure
+this stage exists to prevent, reachable through the UI for the first time.
+
+**Decision: `bindPrompt` refuses `""` the same as an absent key.** Two candidates were on the table:
+(a) refuse a blank field at the form's own edge, leaving `bindPrompt` literal about "omitted"; (b)
+make `bindPrompt` itself treat an explicit empty string as missing, so the rule holds regardless of
+caller. **(b) is what shipped.** It is the stricter reading and it cannot be bypassed by a second
+caller — a future trigger (goal, cron, webhook; `TriggerKind` already names all four) that calls
+`instantiateTemplate` directly, never touching this form, gets the same protection for free. (a)
+alone would leave exactly the gap this decision closes: a caller that skips its own edge check
+reopens the hole `bindPrompt` was supposed to have closed at the source.
+
+**The form also carries an HTML `required` attribute on every variable field — decoration, stated as
+such.** It stops a native submit one keystroke earlier, which is worth having, but a crafted POST
+bypasses it exactly as it bypasses any client-side check; `bindPrompt`'s own refusal is what
+actually holds. Belt-and-suspenders was considered and rejected as *two* systemic fixes — the
+`required` attribute is UX only, not a second copy of the rule, so there is no divergence to keep in
+sync.
+
+**AC-2 grew a third case rather than a new AC number.** The spec's own AC-2 already asserts "refuses
+an unbound variable, no cards written"; the empty-string case is the same rule under a different
+shape of "unbound," not a new behaviour, so it lives in AC-2 alongside the omitted-key case rather
+than as an AC-2b. `[G]`: the guard was proven by reverting the `|| vars[name] === ""` clause,
+observing AC-2 go red on the new case, and reverting.
+
+**Rejected: silently trim and treat whitespace-only as empty too.** Tempting, and out of scope —
+nothing in §3.3 discusses whitespace, and inventing a normalisation rule here would be deciding a
+second, unasked question under cover of the first. If a whitespace-only prompt ever turns out to be
+a real problem, that is its own decision, not a rider on this one.

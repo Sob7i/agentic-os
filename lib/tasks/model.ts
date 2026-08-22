@@ -1,5 +1,6 @@
 import type { AgentRow, SessionRow, TaskEventRow, TaskRow } from "@/lib/agentos/types";
 import { gateRefusalReason } from "@/lib/agentos/mcp/gate";
+import { chainPositionLabel, gateApprovalLabel, type NextChainStep } from "@/lib/agentos/chain-render";
 import { COLUMN_ORDER } from "./columns";
 
 /**
@@ -184,19 +185,65 @@ export interface GateModel {
    * two strings that must be kept in agreement.
    */
   humanRefusalReason: string;
-  /** Only when a chain exists (Stage 4) — always absent in this slice; no chain schema exists yet. */
-  chainConsequence?: string;
+  /**
+   * The approval control's own rendered label (Stage 4 §5 decision 3, AC-6) — `"Approve & mark
+   * done"` for a hand-made task or a chain's own last gate, `"Approve & start step 2 (@plan)"` when
+   * approving will dispatch a following step. Composed by `gateApprovalLabel`
+   * (`lib/agentos/chain-render.ts`), never retyped here — never a bare "Approve".
+   */
+  approveLabel: string;
 }
 
-/** A `review` card whose task has `approvalGate` carries the gate block (§8.4); every other card gets `null`. */
-export function gateModelFor(task: TaskRow): GateModel | null {
+/**
+ * A `review` card whose task has `approvalGate` carries the gate block (§8.4); every other card gets
+ * `null`. `next` — the chain's own next step, or `null` outside a chain or at the chain's last gate
+ * — decides `approveLabel`'s wording (AC-6); every existing caller that does not pass it keeps the
+ * plain "Approve & mark done" label unchanged.
+ */
+export function gateModelFor(task: TaskRow, next: NextChainStep | null = null): GateModel | null {
   if (task.status !== "review" || !task.approvalGate) return null;
   return {
     label: "human gate",
     subtitle: "agent reached review · only you can mark done",
     refusalReason: gateRefusalReason(task.id),
     humanRefusalReason: gateRefusalReason(task.id, "human"),
+    approveLabel: gateApprovalLabel(next),
   };
+}
+
+/**
+ * The chain's own next step after `task`, or `null` outside a chain or when `task` is the chain's
+ * last step — the input `gateApprovalLabel` needs and the one lookup (`agentsById`) `chain-render.ts`
+ * cannot do itself, being a leaf module. `chainTasks` is every task sharing `task.chainId` (any
+ * order, including `task` itself) — supplied by the (non-pure) page loader, never re-queried here.
+ */
+function nextChainStepFor(
+  task: TaskRow,
+  chainTasks: TaskRow[] | undefined,
+  agentsById: Map<string, AgentRow>,
+): NextChainStep | null {
+  if (task.chainId === null || task.chainOrd === null || !chainTasks) return null;
+  const next = chainTasks.find((t) => t.chainOrd === task.chainOrd! + 1);
+  if (!next) return null;
+  const assigneeLabel = next.assigneeAgentId
+    ? `@${agentsById.get(next.assigneeAgentId)?.name ?? "unknown"}`
+    : "human";
+  return { ord: next.chainOrd!, assigneeLabel };
+}
+
+/**
+ * `step 3 of 9 · compound-engineer` (§8.2, AC-9), or `null` for a hand-made task. `total` is read
+ * from `chainTasks.length` — the actual number of tasks this chain instantiated, since every step is
+ * materialised up front (§3.2) and none is ever deleted — **never a hardcoded 9**, so a template of
+ * a different length still renders correctly.
+ */
+function chainPositionFor(
+  task: TaskRow,
+  chainTasks: TaskRow[] | undefined,
+  chainTemplateName: string | undefined,
+): string | null {
+  if (task.chainId === null || task.chainOrd === null || !chainTasks || !chainTemplateName) return null;
+  return chainPositionLabel(task.chainOrd, chainTasks.length, chainTemplateName);
 }
 
 /**
@@ -235,6 +282,8 @@ export interface CardModel {
    *  Mon 09:00` is drawn in the wireframe but not built. */
   scheduleLabel: string;
   blockedReason: string | null;
+  /** `step 3 of 9 · compound-engineer` (§8.2, AC-9), or `null` for a hand-made task. */
+  chainPosition: string | null;
   evidence: EvidenceLine;
   register: EvidenceRegister;
   gate: GateModel | null;
@@ -242,6 +291,13 @@ export interface CardModel {
 
 export interface CardInput extends EvidenceInput {
   agentsById: Map<string, AgentRow>;
+  /**
+   * Every task sharing this card's `chainId` (any order, including this one) — Stage 4. Omitted (or
+   * empty) for a hand-made task, which has no chain to position itself in or advance.
+   */
+  chainTasks?: TaskRow[];
+  /** Display name of the chain's originating template (`Chain.templateVersionJson.template.name`) — required alongside `chainTasks` for `chainPosition` to render; harmless to omit otherwise. */
+  chainTemplateName?: string;
 }
 
 export function cardModel(input: CardInput): CardModel {
@@ -249,15 +305,17 @@ export function cardModel(input: CardInput): CardModel {
   const agent = input.task.assigneeAgentId
     ? agentBadge(input.agentsById.get(input.task.assigneeAgentId))
     : null;
+  const next = nextChainStepFor(input.task, input.chainTasks, input.agentsById);
   return {
     id: input.task.id,
     title: input.task.name,
     agent,
     scheduleLabel: "once",
     blockedReason: input.task.blockedReason,
+    chainPosition: chainPositionFor(input.task, input.chainTasks, input.chainTemplateName),
     evidence,
     register: registerFor(evidence),
-    gate: gateModelFor(input.task),
+    gate: gateModelFor(input.task, next),
   };
 }
 

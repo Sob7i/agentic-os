@@ -15,12 +15,13 @@ import {
   getSession,
   getTask,
   listProjects,
+  listTemplatesByProject,
   parseJsonColumn,
   writeTaskTransition,
 } from "@/lib/agentos/db";
 import { dispatch, resumeSession } from "@/lib/agentos/dispatch";
 import type { Runner } from "@/lib/agentos/runner/runner";
-import { advanceChainAfterDone } from "@/lib/agentos/chain";
+import { advanceChainAfterDone, instantiateTemplate } from "@/lib/agentos/chain";
 import { parseAgentosYml } from "@/lib/agentos/config";
 import { boardOnce } from "@/lib/reconcile/cached";
 import { projectNav } from "@/lib/shell/model";
@@ -281,6 +282,79 @@ export async function createTaskAction(
   const slug = String(formData.get("slug") ?? "");
   if (!slug) return { ...EMPTY_TASK_RESULT, reason: "missing project slug" };
   const result = await createTaskForSlug(slug, formData);
+  revalidatePath(`/p/${slug}/tasks`);
+  return result;
+}
+
+/**
+ * The instantiate form's testable core (T4, docs/specs/stage-4-tickets.md, spec §5.8: "on the
+ * Tasks board beside `+ Task`, not in setup — a template is setup, instantiating one is work").
+ * Injectable `db`, the same split every action in this file already uses.
+ *
+ * **Ownership check** (the AC-8b/AC-6b shape, `docs/specs/stage-4-tickets.md`'s "standing
+ * constraints"): the submitted `templateSlug` must belong to *this* project, confirmed by looking
+ * it up in `listTemplatesByProject(db, data.project.id)` rather than trusting the form — the same
+ * posture `createTaskForSlug`'s `assigneeAgentId` check above already takes, and for the same
+ * reason: a crafted post naming another project's template slug must not instantiate it here.
+ *
+ * Every `variable_<name>` field the form submits is read as a plain string — `""` for a field the
+ * human left blank — and handed to `instantiateTemplate` unchanged. `chain-render.ts`'s
+ * `bindPrompt` (Stage 4, T4 Step 3) is what refuses that `""`, not this function: refusing here too
+ * would just be a second, divergent copy of the same rule.
+ */
+export interface InstantiateResult {
+  ok: boolean;
+  reason: string | null;
+  chainId: string | null;
+}
+
+const EMPTY_INSTANTIATE_RESULT: InstantiateResult = { ok: false, reason: null, chainId: null };
+
+export async function instantiateTemplateForSlug(
+  slug: string,
+  formData: FormData,
+  deps: { db?: DatabaseSync } = {},
+): Promise<InstantiateResult> {
+  const db = deps.db ?? getDb();
+  const data = await resolveExecutionProject(slug, db);
+  if (!data) {
+    return { ...EMPTY_INSTANTIATE_RESULT, reason: `no such project '${slug}', or it has not been initialized` };
+  }
+
+  const templateSlug = String(formData.get("templateSlug") ?? "");
+  if (!templateSlug) return { ...EMPTY_INSTANTIATE_RESULT, reason: "no template selected" };
+
+  const template = listTemplatesByProject(db, data.project.id).find((t) => t.slug === templateSlug);
+  if (!template) {
+    return {
+      ...EMPTY_INSTANTIATE_RESULT,
+      reason: `template '${templateSlug}' does not belong to project '${slug}'`,
+    };
+  }
+
+  const variableNames = parseJsonColumn<string[]>(template.variablesJson);
+  const variables: Record<string, string> = {};
+  for (const name of variableNames) {
+    variables[name] = String(formData.get(`variable_${name}`) ?? "");
+  }
+
+  const result = instantiateTemplate({
+    db,
+    projectId: data.project.id,
+    templateSlug,
+    variables,
+  });
+  if (!result.ok) return { ok: false, reason: result.reason, chainId: null };
+  return { ok: true, reason: null, chainId: result.chainId };
+}
+
+export async function instantiateTemplateAction(
+  _prevState: InstantiateResult,
+  formData: FormData,
+): Promise<InstantiateResult> {
+  const slug = String(formData.get("slug") ?? "");
+  if (!slug) return { ...EMPTY_INSTANTIATE_RESULT, reason: "missing project slug" };
+  const result = await instantiateTemplateForSlug(slug, formData);
   revalidatePath(`/p/${slug}/tasks`);
   return result;
 }

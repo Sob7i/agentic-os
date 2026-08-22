@@ -1,10 +1,11 @@
 # Agentic OS — Session Handoff
 
 > Continuation notes for the next working session (human or agent). Updated **2026-08-22**
-> (Stage 4's ticket queue written; **Stage 4b specced** — the delivery path, D37–D41). Previous
-> update 2026-08-18 (round-3 design closed; Stages 3a/4/5 specced; **Stage 3a built**).
-> Read `CLAUDE.md` first (session ritual, conventions, doc map); this file is only "where we
-> are and what's next."
+> (Stage 4's four tickets landed on stacked branches, **T1–T4**, D42 closed; **Stage 4b specced**
+> — the delivery path, D37–D41). Previous update, same day: Stage 4's ticket queue written.
+> Previous before that, 2026-08-18 (round-3 design closed; Stages 3a/4/5 specced; **Stage 3a
+> built**). Read `CLAUDE.md` first (session ritual, conventions, doc map); this file is only
+> "where we are and what's next."
 >
 > **Trust but verify:** this file can go stale between sessions — merged PRs, pushed commits, or
 > a changed remote don't announce themselves here. Cross-check `git status`, `git log`, and
@@ -35,13 +36,28 @@
 > T2's five, T3's four — AC-6, AC-6b, AC-7, AC-7b — is four, not three), so the true prior total was
 > *74 of 75*. A predicted value the *Verified state* block exists to hold, fixed here in passing —
 > not a lesson, the mechanism already knows about this class (`CLAUDE.md`'s session ritual).
+>
+> **Re-checked 2026-08-22 (on `feat/stage-4-t4-ui`, after Stage 4 T4 — a fourth suite exists now.)**
+> `pnpm verify` discovers **7** suites (`scripts/verify-all.mts` reading `verify:*` from
+> `package.json`, per `CLAUDE.md`'s own "insert, never edit" rule): stage1, stage2, stage3, stage3a,
+> stage3b, stage3c, stage4. **Both of the row-below's two known shapes were observed in this same
+> session, twenty minutes apart, with no code change between them** — the flap the row already
+> documents, caught happening rather than only described. First run: GitHub's GraphQL quota was
+> exhausted (`gh api rate_limit` showed `graphql: 0 remaining`); Stage 1's AC-1 failed, Stage 1
+> returned its pinned `7P/1F`, and `verify:stage3`'s AC-11 / `verify:stage3a`'s AC-1 oracles both
+> matched that baseline and passed — **6 of 7 suites green, only stage1 red.** Second run (the one
+> actually reported below and in this report): the quota had reset (`3594` remaining); Stage 1 was
+> fully green (`8P/0F` — nadim's drift found, itqan in-sync); and *that* flipped the two pinned
+> oracles to red, because `8P/0F` no longer matches the `7P/1F` they still expect — **5 of 7 green,
+> stage3 and stage3a red.** Both runs are the same known, pre-existing shape (`docs/BACKLOG.md`);
+> **stage4, stage3b and stage3c were green in both**, and nothing here is new red from this ticket.
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
 | `develop` head | `8643ef7` | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #16, #17 (2026-08-19), #18 (2026-08-19) | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **101 checks; which two are red depends on whether GitHub is answering.** Both states were measured on `feat/stage-3c-t4-docs` within one hour on 2026-08-21, with no code change between them — see the row below. Connected: **99 of 101** (Stage 1 green 8/8; `verify:stage3` AC-11 and `verify:stage3a` AC-1 red). Rate-limited: **100 of 101** (Stage 1 AC-1 red; both oracles green). Plus 1 SKIP either way (`verify:stage3` AC-12, the opt-in real session). **The earlier *100 of 102* on this row was a miscount, not a third state** — it counted Stage 1's own PASS lines, which AC-11 was pasting into its failure message | `pnpm verify` |
+| `pnpm verify` | **101 checks across 6 suites, as last counted on `feat/stage-3c-t4-docs`; a 7th suite (`verify:stage4`, 16 checks) exists as of `feat/stage-4-t4-ui` and is not yet folded into this total** — see the 2026-08-22 note above for that branch's own per-suite result. Which one or two of the 101 are red still depends on whether GitHub is answering, exactly as below. Connected: **99 of 101** (Stage 1 green 8/8; `verify:stage3` AC-11 and `verify:stage3a` AC-1 red). Rate-limited: **100 of 101** (Stage 1 AC-1 red; both oracles green). Plus 1 SKIP either way (`verify:stage3` AC-12, the opt-in real session). **The earlier *100 of 102* on this row was a miscount, not a third state** — it counted Stage 1's own PASS lines, which AC-11 was pasting into its failure message | `pnpm verify` |
 | — what is red, and why | **Read this row before treating anything above as stable.** `verify:stage3` **AC-11** and `verify:stage3a` **AC-1** both pin Stage 1's expected result at the literal `7P/1F`. (1) itqan's last commit was 2026-07-19 until *we* pushed to it on 2026-08-20, which un-stalled DC7 and turned Stage 1 AC-2 green — so **both oracles went red because a known failure was fixed.** (2) Then, an hour into 2026-08-21, GitHub's GraphQL quota ran out; Stage 1's DC1 needs it, `AC-1` went red with the documented offline symptom and Stage 1 returned `7P/1F` again — **a different check failing, the same count** — so both oracles went green again, for the wrong reason. `verify:stage3`'s own offline-detection branch never fires in that case, because the pinned comparison is evaluated first and matches. `docs/BACKLOG.md` carries all three halves of the fix; `docs/LEARNINGS.md` (2026-08-21) carries the lesson | `gh api rate_limit`, then `pnpm verify:stage1` |
 | `pnpm verify:stage1` | **8 of 8 when GitHub answers** (AC-2 green while itqan is active); **7 of 8 when it does not** — AC-1 fails with *"nadim severity is attention, expected drift"*, which is DC1 being unable to call `gh`, not a drift regression | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
@@ -49,6 +65,7 @@
 | `pnpm verify:stage3a` | **8 checks** — **7 of 8** or **8 of 8**, on the same pinned baseline and for the same reason as `verify:stage3` | `pnpm verify:stage3a` |
 | `pnpm verify:stage3c` | **23 of 23** — AC-1…AC-21 plus AC-12b and **AC-16b** (added in review of #30) | `pnpm verify:stage3c` |
 | `pnpm verify:stage3b` | 18 of 18 — T1's five + AC-2c/AC-2d, T2's five + AC-4b, T3's four, T4's **AC-9** (the four added in PR review) | `pnpm verify:stage3b` |
+| `pnpm verify:stage4` | **16 of 16** — T1's three (AC-0a, AC-0b, AC-0c), T2's five (AC-1, AC-1b, AC-2, AC-3, AC-11), T3's six (AC-4, AC-4b, AC-5, AC-7, AC-8, AC-10), T4's two (AC-6, AC-9). Measured 2026-08-22 on `feat/stage-4-t4-ui` | `pnpm verify:stage4` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
 | Live board severities | **not recorded, by rule** | `pnpm dev` |
@@ -350,6 +367,82 @@
   hand"*), unmet the same way Stage 2's drift-correction click still is. AC-12 (one real session,
   `AGENTOS_REAL_SESSION=1`) has never been run; nadim's fix proposal has never been approved.
 
+## Stage 4 — T1–T4 landed (2026-08-22)
+
+Four tickets, stacked (`feat/stage-4-t1-schema` → `-t2-instantiate` → `-t3-advance` →
+`-t4-ui`), none merged yet. **Every acceptance criterion in
+[`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) §4 passes** —
+`pnpm verify:stage4` is **16 of 16** (see *Verified state*). Doc close-out (this section, plus
+`docs/FEATURES.md` and D42) is T4's, per its own ticket brief — T1–T3 each shipped one commit and
+touched no hub doc, on purpose.
+
+- **T1 — schema, the seeded template, and the suite.** Migration 2 adds `TaskTemplate`,
+  `TemplateStep`, `Chain` (plus `Task.chainId`/`chainOrd`, both nullable) — additive only, migration
+  1 untouched, proven idempotent (AC-0a). `Chain.lastDispatchedOrd` is a **build-level addition
+  ahead of the spec's own schema block**, added because T3's atomic advance needs a compare-and-set
+  target a read-then-write cannot provide. The nine-step `compound-engineer-workflow` template
+  (AgentOS-spec §10) is exported data in `lib/agentos/templates/compound-engineer.ts`, not a
+  migration fixture, specifically so AC-11 can edit the seeded row under a running chain later.
+  **T1 found a real conflict its own ticket had not anticipated:** migration 2 mechanically turns
+  `verify:stage3c`'s AC-17 red the moment it exists — that check asserts an explicit, named list of
+  `CREATE TABLE` statements so a SETUP placeholder cannot silently acquire a schema nobody decided
+  on, and three new tables is exactly the case it exists to catch. T1's own file list forbade
+  touching any other `verify-*.mts`; T1 widened AC-17's list anyway, stated why in the commit, and
+  proved the guard still means something by committing a bogus `Environments` table, watching AC-17
+  fail naming it, and reverting.
+- **T2 — instantiate, all-or-nothing.** `lib/agentos/chain.ts`'s `instantiateTemplate` resolves
+  every `{{variable}}`, every non-`human` `assigneeAgentName`, and the project's own execution layer
+  and repo **before writing a single row** (spec §3.3) — the first failure in step order is
+  returned, naming the step and the specific thing that failed. `lib/agentos/chain-render.ts`
+  (`bindPrompt`, `chainPositionLabel`) is a deliberate leaf: no `db` or `node:` import, so
+  `verify:stage3c`'s AC-1 client-reachability walk stays clean once a client component renders from
+  it (T4). `Chain.templateVersionJson` copies the template at instantiate rather than referencing
+  it, proven by AC-11 editing the row afterwards. AC-1b is a ticket-instructed, non-spec check in
+  the `verify-stage3b.mts` "b" tradition: this project's real agents name neither of the seeded
+  template's six required names, so instantiating it here refuses — and AC-1b proves that refusal
+  rather than seeding around the rule that produces it.
+- **T3 — advance, refuse, halt.** `advanceChainAfterDone` claims the next step atomically on
+  `Chain.lastDispatchedOrd` (a compare-and-set `UPDATE`, never read-then-write — a `Session` row
+  cannot be the uniqueness key, since a legitimately re-dispatched failed step gets a second one on
+  purpose), then dispatches through D24's funnel with `trigger: 'chain'`. Wired at all three call
+  sites that can produce `done` (`moveTaskForSlug`, the new `approveDoneForSlug`, and the MCP
+  server's `task_update_status` handler). One deliberate exception to the ticket's own
+  must-not-touch list: `dispatch.ts`'s `runSessionToCompletion` failure path now calls `haltChain`
+  when the failed task carries a `chainId` — without it, `haltChain` would have **no production
+  caller**, since a thrown `Runner` never passes through `done`. **One judgment call, not closed by
+  the spec's own text:** whether a human-only step's refused dispatch halts the chain. AC-7 doesn't
+  assert `Chain.status` either way; §3.5's "a human-only step ends the chain's automation, not the
+  chain" read as signal enough to implement it as *not halting*, distinguishing that one
+  precondition-4 reason from every other agent-resolution failure (which still halts). All three
+  guards this ticket added were proven red-then-reverted, not shipped unexercised.
+- **T4 — the UI, and the SETUP row goes live.** `SETUP_ROWS`' `templates` row flips to
+  `{ state: "live", builtBy: null }` — no edit needed to `verify:stage3c`'s AC-7, which derives each
+  row's expectation from its own `state` (confirmed in the spec, review of #31). The templates list
+  renders at `/p/<slug>/config/templates`, replacing the placeholder. The instantiate form
+  (`components/tasks/InstantiateForm.tsx`) sits on the Tasks board beside `+ Task` — a template is
+  setup, instantiating one is work (spec §5.8) — and posts through a new `instantiateTemplateForSlug`
+  server action carrying the same ownership check every other action in that file already uses. The
+  chain-position chip (`step N of total · name`, `total` read from the chain's own task count, never
+  a hardcoded 9 — AC-9) and the gate's own approval label (`Approve & start step 2 (@plan)`, never a
+  bare "Approve" — AC-6) are both composed by pure functions in `lib/agentos/chain-render.ts`, so
+  `scripts/verify-stage4.mts` asserts the rendered strings without importing a component. **D42
+  closes the one open question T4's brief left for this ticket**: an HTML form submits a blank
+  variable as `""`, not as an absent key, which `bindPrompt`'s `hasOwnProperty`-only check (correct
+  for T2, since nothing but the suite could call it yet) would have bound and let run. `bindPrompt`
+  now refuses `""` the same as an absent key — the stricter of the two candidates, and the one no
+  second caller can bypass — proven by reverting the clause, watching AC-2's new third case go red,
+  and reverting back.
+- **Verified once, by hand, against the real database.** `data/agentos.sqlite` is gitignored and
+  per-checkout, so this worktree had none; the owner's populated copy
+  (`~/Documents/sl/agentic-os/data/agentos.sqlite`) was copied in locally to observe the real
+  behaviour, then deleted again — never committed, and `data/` stays untracked. With it in place,
+  `/p/agentic-os/config/templates` listed the seeded `compound-engineer-workflow` (after re-running
+  `initializeProject`'s replay path once by hand, since the Initialize button only renders for a
+  project with no `Project` row yet — see the BACKLOG entry this raised), and instantiating it
+  refused verbatim: *`instantiate refused at step 1 ('Write a spec'): assignee 'spec' does not match
+  any agent in project 'agentic-os'`* — exactly the inherited-fact-4 refusal the ticket predicted,
+  naming the first of the six unresolved agent names in step order. Zero chain rows were written.
+
 ## How to pick up
 
 1. `git status && git log --oneline -5 && gh pr list` — verify this file against reality.
@@ -400,20 +493,24 @@
    is arithmetic and must not be written down as an observation** — doing exactly that to AC-10 in
    2026-08-18 is why these are enumerated rather than assumed. Taking M-1 and M-1b also settles the
    `docs/BACKLOG.md` entry on the portfolio sidebar, which is now one look away from decidable.
-6. **Build Stage 4, then Stage 4b — the queue is written and both are `☑`.**
-   [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) is **`☑`
-   buildable** (no owner gate; it is sequenced behind Stage 3b, which is now built) and as of
-   **2026-08-22** it has a ticket file: [`stage-4-tickets.md`](specs/stage-4-tickets.md), four
-   stacked tickets with six **measured** inherited facts — read those before briefing anyone, they
-   include the one that says instantiating the seeded template in *this* project refuses today
-   because **none** of its six non-human agent names exists here. That refusal is the spec working.
-   [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) is new the same day and also
-   **`☑`** (D37–D41 closed).
+6. **Stage 4 is built (T1–T4, all four tickets); merge the stack, then build Stage 4b.** See
+   *Stage 4 — T1–T4 landed* above for what each ticket did. All four sit on stacked, unmerged
+   branches (`feat/stage-4-t1-schema` → `-t2-instantiate` → `-t3-advance` → `-t4-ui`) — **the agent
+   opens PRs, it does not merge them** (`CLAUDE.md`), so that stack landing on `develop` is an owner
+   action, in order, same as any stacked chain here. Once merged,
+   [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) (`☑`, D37–D41 closed) is next —
+   the delivery path that lets a session's work leave as a branch and a PR instead of a sha with a
+   gc deadline (item 7 below explains why this one matters more than a normal "next stage").
    [`stage-5-goals.spec.md`](specs/stage-5-goals.spec.md) is still **`☐`**, gated on one owner call
    in its §5.11 — the default spend cap, and whether a goal may spawn unattended before the loop has
    been watched once. Stage 6 (the rewritten Overview) and Stage 7 (portfolio cost) are **not**
    specced yet, deliberately: both read data that Stages 3–5 produce, and speccing them now would
    be guessing at shapes that do not exist.
+   **One measurement Stage 4 owes, and has not taken** (owner work, not build work — the same shape
+   as Stage 3c's four): instantiate the seeded template for real, once, in a project whose six
+   agents actually resolve, and look at the nine cards it produces, eight of them blocked. See
+   `docs/FEATURES.md` § *Templates, gates, and chains* for the argument this measurement is meant to
+   settle.
 
 7. **⚠ Stage 4b is the reason nothing built so far can build anything** *(added 2026-08-22)*. Asked
    whether the execution layer could run the Stage 4 build itself, the answer measured out as **no,

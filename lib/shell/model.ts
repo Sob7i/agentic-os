@@ -133,12 +133,7 @@ export interface SetupRow {
 
 export const SETUP_ROWS: readonly SetupRow[] = [
   { key: "agents", label: "Agents", state: "live", builtBy: null },
-  {
-    key: "templates",
-    label: "Templates",
-    state: "placeholder",
-    builtBy: "Stage 4 — templates and chains",
-  },
+  { key: "templates", label: "Templates", state: "live", builtBy: null },
   {
     key: "environments",
     label: "Environments",

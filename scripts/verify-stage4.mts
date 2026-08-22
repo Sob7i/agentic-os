@@ -14,6 +14,12 @@
  * `implementation-plan-executioner`, `senior-dev`, `librarian`) except AC-1b's, which omits one on
  * purpose.
  *
+ * AC-6, AC-9 (T4, "the UI, and the SETUP row goes live") append after AC-10 — both asserted on
+ * rendered strings produced by pure functions (`gateApprovalLabel`/`chainPositionLabel` in
+ * `lib/agentos/chain-render.ts`, and `cardModel` in `lib/tasks/model.ts` one layer up), never by
+ * rendering a route or importing a component (`docs/specs/stage-4-tickets.md`'s "standing
+ * constraints" — "no acceptance script imports a component").
+ *
  * Fixture-based; the model is never called. Style, PASS/FAIL format and exit-code behaviour match
  * `scripts/verify-stage3b.mts`. A fresh temp dir per check, one unconditional cleanup sweep at the
  * true end — never `data/agentos.sqlite`.
@@ -40,6 +46,7 @@ import {
   getSession,
   getTask,
   getTemplateBySlug,
+  listAgentsByProject,
   listSessionsByTask,
   listTasksByChain,
   listTasksByProject,
@@ -53,10 +60,12 @@ import type { SessionRow } from "../lib/agentos/types";
 import { seedBuiltInTemplates } from "../lib/agentos/templates/seed";
 import { COMPOUND_ENGINEER_TEMPLATE } from "../lib/agentos/templates/compound-engineer";
 import { instantiateTemplate, advanceChainAfterDone } from "../lib/agentos/chain";
+import { gateApprovalLabel } from "../lib/agentos/chain-render";
 import { dispatch } from "../lib/agentos/dispatch";
 import { FakeRunner } from "../lib/agentos/runner/fake";
 import { createTaskUpdateStatusTool } from "../lib/agentos/mcp/agentos-server";
 import { moveTaskForSlug, approveDoneForSlug } from "../app/p/[slug]/[tab]/actions";
+import { cardModel } from "../lib/tasks/model";
 
 /**
  * `PROJECTS` is reached through `createRequire`, never a top-level import — the same two-registry
@@ -289,7 +298,9 @@ const MIGRATION_1_SQL = `
   CREATE INDEX IF NOT EXISTS idx_inbox_session         ON InboxMessage(sessionId);
 `;
 
-console.log("\nStage 4 acceptance — schema and seed (T1), instantiate all-or-nothing (T2), advance/refuse/halt (T3)\n");
+console.log(
+  "\nStage 4 acceptance — schema and seed (T1), instantiate all-or-nothing (T2), advance/refuse/halt (T3), the UI's own pure functions (T4)\n",
+);
 
 /**
  * Polls `getSession` against a deadline rather than sleeping a fixed amount — `dispatch`'s
@@ -588,6 +599,25 @@ async function runChecks() {
     });
     const afterCount = listTasksByProject(fixtureB.db, fixtureB.projectId).length;
 
+    // Part 3 — a third case, added by T4 (docs/specs/stage-4-tickets.md, Step 3): `branchName`
+    // supplied as the literal `""`, not omitted, must refuse exactly like part 2. T2's own
+    // `bindPrompt` (correctly, per its own brief) only ever checked `hasOwnProperty`, so `""`
+    // bound — unreachable while only the suite could call it, but the instantiate form T4 adds
+    // (`components/tasks/InstantiateForm.tsx`) submits a blank field as `""`, not as an absent
+    // key, which makes this reachable for the first time. Fixed in `bindPrompt` itself (the
+    // stricter of the two candidate fixes in the ticket, "cannot be bypassed by a second caller"),
+    // so this asserts the systemic fix, not a form-level workaround.
+    const fixtureC = makeChainFixture("ac2c");
+    const withBlankBranchName = { ...FULL_VARS, branchName: "" };
+    const beforeCountC = listTasksByProject(fixtureC.db, fixtureC.projectId).length;
+    const refusalC = instantiateTemplate({
+      db: fixtureC.db,
+      projectId: fixtureC.projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: withBlankBranchName,
+    });
+    const afterCountC = listTasksByProject(fixtureC.db, fixtureC.projectId).length;
+
     if (!bound.ok) {
       fail("AC-2", `setup: instantiate with every variable supplied was refused: ${bound.reason}`);
     } else if (survivedBraces.length > 0) {
@@ -600,10 +630,16 @@ async function runChecks() {
       fail("AC-2", `refusal did not name the step: ${JSON.stringify(refusal.reason)}`);
     } else if (beforeCount !== 0 || afterCount !== beforeCount) {
       fail("AC-2", `Task count is not unchanged: ${beforeCount} before, ${afterCount} after the refused attempt`);
+    } else if (refusalC.ok) {
+      fail("AC-2", `instantiate succeeded with 'branchName' supplied as the literal "" — an unbound variable must never bind to an empty string`);
+    } else if (!refusalC.reason.includes("branchName")) {
+      fail("AC-2", `the "" case's refusal did not name the variable: ${JSON.stringify(refusalC.reason)}`);
+    } else if (beforeCountC !== 0 || afterCountC !== beforeCountC) {
+      fail("AC-2", `Task count is not unchanged for the "" case: ${beforeCountC} before, ${afterCountC} after`);
     } else {
       pass(
         "AC-2",
-        `bound total (no "{{" survives) when every variable is supplied; refused omitting 'branchName': "${refusal.reason}" — Task count unchanged (${beforeCount})`,
+        `bound total (no "{{" survives) when every variable is supplied; refused omitting 'branchName': "${refusal.reason}"; refused 'branchName' as "": "${refusalC.reason}" — Task count unchanged in both cases`,
       );
     }
   }
@@ -1162,6 +1198,166 @@ async function runChecks() {
       );
     }
   })();
+
+  // ── AC-6 · the gate states its consequence ────────────────────────────────────────────────
+  // `gateApprovalLabel` in isolation, plus `gateModelFor` (via `cardModel`) end to end against a
+  // real instantiated chain — the isolated check alone would pass even if a call site forgot to
+  // pass `next` at all, silently falling back to the plain label; the end-to-end half is what
+  // actually proves the wiring, not just the string-composing function.
+  {
+    const bareLabel = gateApprovalLabel(null);
+    const chainLabel = gateApprovalLabel({ ord: 2, assigneeLabel: "@plan" });
+    const humanLabel = gateApprovalLabel({ ord: 9, assigneeLabel: "human" });
+
+    const { db, projectId } = makeChainFixture("ac6");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+
+    if (bareLabel !== "Approve & mark done") {
+      fail("AC-6", `gateApprovalLabel(null) is not "Approve & mark done": got ${JSON.stringify(bareLabel)}`);
+    } else if (chainLabel !== "Approve & start step 2 (@plan)") {
+      fail("AC-6", `gateApprovalLabel did not compose the spec's exact wording for a chain step: got ${JSON.stringify(chainLabel)}`);
+    } else if (humanLabel !== "Approve & start step 9 (human)") {
+      fail("AC-6", `gateApprovalLabel for a human-only next step: got ${JSON.stringify(humanLabel)}`);
+    } else if (!result.ok) {
+      fail("AC-6", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const tasks = listTasksByChain(db, result.chainId);
+      const step1 = tasks.find((t) => t.chainOrd === 1)!;
+      const step2 = tasks.find((t) => t.chainOrd === 2)!;
+      const step2Agent = step2.assigneeAgentId ? getAgent(db, step2.assigneeAgentId) : null;
+
+      // Move step 1 into 'review' the way a completed session would (§7.6's legal session
+      // transitions: todo->doing, doing->review) — dispatch itself is not under test here, only
+      // the gate's own rendered label once a task is sitting at its gate.
+      writeTaskTransition(db, { taskId: step1.id, toStatus: "doing", actorType: "session", actorId: "fake-session", reason: "setup" });
+      writeTaskTransition(db, { taskId: step1.id, toStatus: "review", actorType: "session", actorId: "fake-session", reason: "setup" });
+      const step1Reviewing = getTask(db, step1.id)!;
+      const agentsById = new Map(listAgentsByProject(db, projectId).map((a) => [a.id, a]));
+
+      const card = cardModel({
+        task: step1Reviewing,
+        events: [],
+        sessionsById: new Map(),
+        toolCallCountBySession: new Map(),
+        commitShasBySession: new Map(),
+        agentsById,
+        chainTasks: tasks,
+        chainTemplateName: COMPOUND_ENGINEER_TEMPLATE.name,
+      });
+
+      const expected = `Approve & start step 2 (@${step2Agent?.name})`;
+      if (!card.gate) {
+        fail("AC-6", "setup: cardModel returned no gate for a gated task sitting in 'review'");
+      } else if (card.gate.approveLabel !== expected) {
+        fail(
+          "AC-6",
+          `end-to-end: the gate's approveLabel does not name the step and agent it will start — got ${JSON.stringify(card.gate.approveLabel)}, expected ${JSON.stringify(expected)}`,
+        );
+      } else {
+        pass(
+          "AC-6",
+          `the gate reads "${card.gate.approveLabel}" — never a bare "Approve"`,
+        );
+      }
+    }
+  }
+
+  // ── AC-9 · every chained card knows its position ──────────────────────────────────────────
+  // Two chains of different lengths, so a hardcoded `9` cannot pass: the seeded template (9 steps)
+  // and a hand-built 3-step chain, neither sharing a fixture with the other.
+  {
+    const { db, projectId } = makeChainFixture("ac9");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+
+    const smallDbPath = tempDbPath("ac9-small");
+    const smallDb = openDb(smallDbPath);
+    const smallProject = createProject(smallDb, {
+      slug: "ac9-small-project",
+      primaryRepoPath: "/tmp/ac9-small-fixture-does-not-need-to-exist",
+      yamlPath: "/tmp/ac9-small-fixture-does-not-need-to-exist/agentos.yml",
+    });
+    const smallTemplate = createTemplate(smallDb, {
+      projectId: smallProject.id,
+      slug: "three-step",
+      name: "three-step",
+      description: "a deliberately short template, to prove `total` is never a hardcoded 9",
+      variables: [],
+      seeded: false,
+      steps: [],
+    });
+    const smallChain = createChain(smallDb, {
+      projectId: smallProject.id,
+      templateId: smallTemplate.template.id,
+      templateVersion: { template: { id: smallTemplate.template.id }, steps: [] },
+      variables: {},
+    });
+    const smallTasks = [1, 2, 3].map((ord) =>
+      createTask(smallDb, {
+        projectId: smallProject.id,
+        name: `small step ${ord}`,
+        description: "d",
+        approvalGate: false,
+        assigneeAgentId: null,
+        chainId: smallChain.id,
+        chainOrd: ord,
+      }),
+    );
+    const smallCard = cardModel({
+      task: smallTasks[1],
+      events: [],
+      sessionsById: new Map(),
+      toolCallCountBySession: new Map(),
+      commitShasBySession: new Map(),
+      agentsById: new Map(),
+      chainTasks: smallTasks,
+      chainTemplateName: "three-step",
+    });
+    smallDb.close();
+
+    if (!result.ok) {
+      fail("AC-9", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const tasks = listTasksByChain(db, result.chainId);
+      const agentsById = new Map(listAgentsByProject(db, projectId).map((a) => [a.id, a]));
+      const step3 = tasks.find((t) => t.chainOrd === 3)!;
+      const nineCard = cardModel({
+        task: step3,
+        events: [],
+        sessionsById: new Map(),
+        toolCallCountBySession: new Map(),
+        commitShasBySession: new Map(),
+        agentsById,
+        chainTasks: tasks,
+        chainTemplateName: COMPOUND_ENGINEER_TEMPLATE.name,
+      });
+      const expectedNine = `step 3 of 9 · ${COMPOUND_ENGINEER_TEMPLATE.name}`;
+      const expectedSmall = "step 2 of 3 · three-step";
+
+      if (nineCard.chainPosition !== expectedNine) {
+        fail("AC-9", `9-step chain's ord-3 card read ${JSON.stringify(nineCard.chainPosition)}, expected ${JSON.stringify(expectedNine)}`);
+      } else if (smallCard.chainPosition !== expectedSmall) {
+        fail(
+          "AC-9",
+          `a 3-step chain's own card read ${JSON.stringify(smallCard.chainPosition)}, expected ${JSON.stringify(expectedSmall)} — total is not reading from the chain's own size`,
+        );
+      } else {
+        pass(
+          "AC-9",
+          `a 9-step chain reads "${nineCard.chainPosition}"; a 3-step chain reads "${smallCard.chainPosition}" — total is read from the chain's own size, never hardcoded`,
+        );
+      }
+    }
+  }
 }
 
 try {
@@ -1172,5 +1368,5 @@ try {
   for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
 }
 
-console.log(failures === 0 ? "\nAll Stage 4 acceptance criteria pass (T1 + T2 + T3).\n" : `\n${failures} FAILING.\n`);
+console.log(failures === 0 ? "\nAll Stage 4 acceptance criteria pass (T1 + T2 + T3 + T4).\n" : `\n${failures} FAILING.\n`);
 process.exit(failures === 0 ? 0 : 1);
