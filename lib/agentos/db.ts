@@ -445,12 +445,21 @@ export interface CreateProjectInput {
   defaultAgentId?: string | null;
   maxConcurrentSessions?: number;
   /**
-   * D38/Stage 4b §3.1: the PR base `dispatch`'s base-ref chain (`resolveBaseRef`) terminates at.
-   * Optional and defaults to `null` here — every caller written before this stage keeps compiling
-   * and behaving exactly as before, since `resolveBaseRef`'s own last resort for a genuinely
-   * unconfigured project is `'HEAD'` (docs on `resolveBaseRef` in `dispatch.ts`). A project
-   * onboarded through the real `initializeProject` flow (T2) always supplies a real value here —
-   * its own default is `'develop'`, read from `agentos.yml`.
+   * D38/Stage 4b §3.1: the PR base that `dispatch`'s base-ref chain (`resolveBaseRef`) terminates
+   * at. **Omitting it stores the literal `'HEAD'`, and that is the compatibility shim for every
+   * caller written before this stage** — fixture projects across Stage 3/3b/3c/4, whose repos have
+   * no `develop` branch to resolve. Their behaviour is unchanged.
+   *
+   * It is stored rather than resolved to, and the difference is the point: `resolveBaseRef` keeps
+   * D38's three terms exactly, so a project that named a branch can never silently fall through to
+   * the owner's checkout, and a project nobody configured is a **row you can find** —
+   * `SELECT slug FROM Project WHERE integrationBranch = 'HEAD'`. A `??` in a pure function is not
+   * greppable evidence; a column is. D38's own wording is "available, as an explicit opt-in a
+   * project writes down."
+   *
+   * A project onboarded through `initializeProject` (T2) always supplies a real value here — its
+   * own default is `'develop'`, read from `agentos.yml`, which is why this shim never applies to
+   * one.
    */
   integrationBranch?: string | null;
   /** D38: nullable; null means "use the project's integrationBranch." Never defaulted here. */
@@ -465,7 +474,7 @@ export function createProject(db: DatabaseSync, input: CreateProjectInput): Proj
     yamlPath: input.yamlPath,
     defaultAgentId: input.defaultAgentId ?? null,
     maxConcurrentSessions: input.maxConcurrentSessions ?? 1,
-    integrationBranch: input.integrationBranch ?? null,
+    integrationBranch: input.integrationBranch ?? "HEAD",
     defaultBaseRef: input.defaultBaseRef ?? null,
     createdAt: nowISO(),
   };

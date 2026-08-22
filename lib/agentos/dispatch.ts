@@ -161,24 +161,26 @@ export function driftAtSpawnFromReport(report: ProjectReport | undefined, fallba
  * itself without spawning anything; `dispatch` below resolves it with `git rev-parse` at
  * precondition 5, same as it always has.
  *
- * **One term beyond the ticket's literal three, and the reason is compatibility, not a
- * reopening of D38.** If all three columns are unset — every fixture project across Stage
- * 3/3b/3c/4's suites, created by a `createProject` call that predates this stage and supplies
- * none of them — this falls back to `'HEAD'`, reproducing today's behaviour exactly. D38 itself
- * says `HEAD` "stays available as something a project writes down"; this is that same value,
- * written down here as the one safe default for a row nothing has configured, rather than
- * defaulting `project.integrationBranch` itself to `'develop'` at `createProject` — which would
- * break every existing fixture, since none of their repos have a `develop` branch to resolve. A
- * project actually onboarded through `initializeProject` (T2) always has a real
- * `integrationBranch` (its own default is `'develop'`, from `agentos.yml`), so that fallback
- * never fires for a real, configured project — only for a row nothing has touched yet, exactly
- * the case D38 carves out.
+ * **Exactly three terms, and no `?? "HEAD"` at the end.** T1's first pass added a fourth so that
+ * every pre-existing fixture project — whose `createProject` call supplies none of the three —
+ * kept dispatching. The compatibility problem was real; solving it *here* was not, because it put
+ * D38's one forbidden default back as invisible code behaviour: with no task override and no yaml
+ * override the result was byte-identical to the hardcoded `HEAD` this stage exists to remove, and
+ * nothing would have failed if T2 forgot to set `integrationBranch` at all. That is precisely the
+ * shape §3.1 warns about — *"the decision would have shipped as a claim rather than a change."*
+ *
+ * The same compatibility now lives at `createProject`, where an unconfigured project **stores**
+ * `'HEAD'` as its `integrationBranch` instead of resolving to it silently. Same behaviour, but the
+ * fallback becomes a row you can query (`SELECT slug FROM Project WHERE integrationBranch = 'HEAD'`
+ * lists every project nobody has configured) rather than a branch of a pure function nobody reads.
+ * D38 says `HEAD` "stays available, as an explicit opt-in a project writes down"; written down is
+ * exactly what a stored column is, and what a `??` chain is not.
  */
 export function resolveBaseRef(
   task: Pick<TaskRow, "baseRef">,
   project: Pick<ProjectRow, "defaultBaseRef" | "integrationBranch">,
-): string {
-  return task.baseRef ?? project.defaultBaseRef ?? project.integrationBranch ?? "HEAD";
+): string | null {
+  return task.baseRef ?? project.defaultBaseRef ?? project.integrationBranch;
 }
 
 async function computeDriftAtSpawn(project: ProjectRow): Promise<DriftAtSpawn> {
@@ -284,6 +286,20 @@ export async function dispatch(
   // failure CLAUDE.md records from the other direction (four sub-agents starting a worktree from
   // the wrong base). A ref that doesn't resolve refuses here, loudly, same as it always has.
   const baseRef = resolveBaseRef(task, project);
+  /**
+   * All three terms unset. Only reachable for a `Project` row inserted outside `createProject`
+   * (which stores `'HEAD'` when nothing is supplied) and not seen by migration 4's backfill —
+   * so in practice, a hand-written row. It refuses rather than falling back, because the fallback
+   * that would go here is the hardcoded `HEAD` D38 removed: §3.1 is explicit that a project whose
+   * base does not resolve "refuses at `dispatch`'s existing precondition 5, which is loud and
+   * correct."
+   */
+  if (baseRef === null) {
+    return refuse(
+      "baseRef",
+      `project '${project.slug}' declares no base: task.baseRef, defaultBaseRef and integrationBranch are all unset (D38 — the base ref is declared, never inherited from the owner's checkout)`,
+    );
+  }
   const resolvedHead = await run("git", ["rev-parse", baseRef], project.primaryRepoPath);
   if (resolvedHead === null) {
     return refuse(
