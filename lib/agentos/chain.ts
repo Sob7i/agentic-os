@@ -1,9 +1,11 @@
 /**
- * Chain instantiate — Stage 4 §3.2, §3.3. Ticket: docs/specs/stage-4-tickets.md T2.
- *
- * `instantiateTemplate` is the only export here (T3 adds `advanceChainAfterDone` alongside it in
- * this same file). It turns one `TaskTemplate` into one `Chain` row plus N `Task` rows, all in
- * `todo`, linked by `chainId`/`chainOrd` — nothing dispatches yet (spec §3.4 is T3's advance).
+ * Chain instantiate and advance — Stage 4 §3.2, §3.3 (instantiate, T2) and §3.4, §3.5 (advance,
+ * T3). `instantiateTemplate` turns one `TaskTemplate` into one `Chain` row plus N `Task` rows, all
+ * in `todo`, linked by `chainId`/`chainOrd` — nothing dispatches yet. `advanceChainAfterDone` is
+ * what a task reaching `done` calls next, from the three call sites named in
+ * docs/specs/stage-4-tickets.md's inherited fact 2 (`moveTaskForSlug` and `approveDoneForSlug` in
+ * `app/p/[slug]/[tab]/actions.ts`, and the `done` branch of `task_update_status` in
+ * `lib/agentos/mcp/agentos-server.ts`).
  *
  * **All-or-nothing (spec §3.3).** Every check below runs before any row is written: every
  * `{{variable}}` in every step's prompt binds, every non-`human` `assigneeAgentName` resolves to an
@@ -11,19 +13,37 @@
  * `dispatch.ts`'s own precondition 1) and a primary repo on disk. The first failure, in step order,
  * is the one returned — the reason always names the step and the specific thing that failed, never
  * a generic "instantiate failed." A refusal writes zero rows: no `Chain`, no `Task`.
+ *
+ * **Advance goes through the funnel, never around it (spec §3.4).** `advanceChainAfterDone` does
+ * not itself decide whether to start a session — it looks up the next step, claims it atomically
+ * (AC-10), and calls `dispatch(nextTaskId, 'chain')`, exactly the function and the same five
+ * preconditions (Stage 3 §7.3) every other caller goes through. A refusal **halts the chain** with
+ * that reason rather than retrying (`haltChain`) — a chain that retries is a scheduler, and D24
+ * declined to build one. **One exception:** when the next step is deliberately human-only
+ * (`assigneeAgentId === null`), a refusal there is not a failure to halt over — spec §3.5 is
+ * explicit that "a human-only step ends the chain's automation, not the chain," so that refusal is
+ * silent and the chain stays `running`, waiting for a human to close that task by hand (which calls
+ * this same function again, same as any other step).
  */
 import type { DatabaseSync } from "node:sqlite";
 import { existsSync } from "node:fs";
 import {
+  claimChainOrd,
   createChain,
   createTask,
+  getChain,
+  getDb,
   getProject,
+  getTask,
   getTemplateBySlug,
+  haltChain,
   listAgentsByProject,
+  listTasksByChain,
   listTemplateSteps,
   setTaskBlockedReason,
 } from "./db";
 import { bindPrompt } from "./chain-render";
+import { dispatch, type DispatchDeps } from "./dispatch";
 
 export interface InstantiateTemplateInput {
   db: DatabaseSync;
@@ -178,5 +198,73 @@ export function instantiateTemplate(input: InstantiateTemplateInput): Instantiat
   } catch (err) {
     db.exec("ROLLBACK");
     throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// advanceChainAfterDone — T3, spec §3.4 / §3.5
+// ---------------------------------------------------------------------------
+
+/**
+ * Advances a chain after one of its tasks reaches `done`. Called from the three sites that can
+ * produce `done` (docs/specs/stage-4-tickets.md, inherited fact 2) — every caller is expected to
+ * have already checked `task.chainId !== null` before calling this, since a hand-made task has no
+ * chain to advance; this function re-reads the row itself rather than trusting that gate, so an
+ * incorrect call site simply finds nothing to do instead of misbehaving.
+ *
+ * A silent no-op when: the task does not exist, or has no `chainId`/`chainOrd`; its chain is not
+ * `running` (already `halted` or `completed` — a halted chain never resumes on its own, §3.4); there
+ * is no task at the next `chainOrd` (this was the chain's last step — "nothing dispatches after
+ * step 9 because there is no step 10... the absence of a special case, not a special case," spec
+ * §3.5); or another caller already claimed this step (AC-10's atomic guard below).
+ *
+ * `deps` is exactly `dispatch`'s own `DispatchDeps` — this function does not add a seam of its own,
+ * it forwards whatever the caller (production or a fixture) already threads through to `dispatch`.
+ */
+export async function advanceChainAfterDone(taskId: string, deps: DispatchDeps = {}): Promise<void> {
+  const db = deps.db ?? getDb();
+
+  const task = getTask(db, taskId);
+  if (!task || !task.chainId || task.chainOrd === null) return;
+
+  const chain = getChain(db, task.chainId);
+  if (!chain || chain.status !== "running") return;
+
+  const nextOrd = task.chainOrd + 1;
+  const next = listTasksByChain(db, task.chainId).find((t) => t.chainOrd === nextOrd);
+  if (!next) return; // no step past this one — the chain's automation simply ends here (§3.5)
+
+  // AC-10: claim atomically before doing anything else observable. Zero rows affected means a
+  // racing `done` transition (or a re-issued one) already claimed this ord — return without
+  // dispatching. This is a compare-and-set on `Chain.lastDispatchedOrd`, never a "does a Session
+  // row already exist for the next task" check: that would be a read-then-write two racing callers
+  // can both pass, and a Session row cannot be made unique per task anyway (a legitimately
+  // re-dispatched failed step has two).
+  if (!claimChainOrd(db, task.chainId, nextOrd)) return;
+
+  // The next card stops reading "blocked" the moment its predecessor finishes, regardless of
+  // whether the dispatch below succeeds — spec §3.5: a human-only step "becomes an ordinary card
+  // waiting for a person" once unblocked, and an automated step that is about to fail is not
+  // "still waiting on its predecessor" either. What happens to it next is a dispatch outcome, not a
+  // blocked-on-dependency fact.
+  setTaskBlockedReason(db, next.id, null);
+
+  const result = await dispatch(next.id, "chain", deps);
+
+  if (!result.started) {
+    // §3.5: a human-only step's assignee is `null` by construction (never defaulted, §7.1), and
+    // dispatch's precondition 4 refuses it for exactly that reason. That refusal is the chain
+    // working as designed — it "ends the chain's automation, not the chain" — so it must not halt.
+    // Any OTHER precondition 4 refusal (an agent that no longer resolves, or fails to compose) is a
+    // genuine misconfiguration and should halt like any other refused step.
+    const isDeliberateHumanStep = result.refusedBy === "agent" && next.assigneeAgentId === null;
+    if (!isDeliberateHumanStep) {
+      haltChain(
+        db,
+        task.chainId,
+        next.id,
+        `chain halted at step ${next.chainOrd} ('${next.name}'): dispatch refused (${result.refusedBy}) — ${result.reason}`,
+      );
+    }
   }
 }

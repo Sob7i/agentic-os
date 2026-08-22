@@ -1083,3 +1083,22 @@ export function listTasksByChain(db: DatabaseSync, chainId: string): TaskRow[] {
     .all(chainId) as unknown as Record<string, unknown>[];
   return rows.map(hydrateTask);
 }
+
+/**
+ * T3's atomic claim (spec §3.4, ticket AC-10): "the guard must be atomic, not a read-then-write."
+ * Two `done` transitions racing to advance the same predecessor must not both dispatch the same
+ * next step — and a `Session` row cannot be the uniqueness key, because a step that is legitimately
+ * re-dispatched after failing acquires a second one on purpose. `lastDispatchedOrd` is the one value
+ * that can be compared-and-set in a single statement, so this is the only place that decides who
+ * gets to advance.
+ *
+ * Returns `true` only if THIS call moved `lastDispatchedOrd` forward to `ord` — i.e. it was
+ * strictly less than `ord` beforehand. Returns `false` if another caller already claimed `ord` (or
+ * a later one), or the chain does not exist; either way the caller must return without dispatching.
+ */
+export function claimChainOrd(db: DatabaseSync, chainId: string, ord: number): boolean {
+  const result = db
+    .prepare("UPDATE Chain SET lastDispatchedOrd = ? WHERE id = ? AND lastDispatchedOrd < ?")
+    .run(ord, chainId, ord);
+  return Number(result.changes) > 0;
+}

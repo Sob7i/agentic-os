@@ -126,6 +126,23 @@ export function createTaskUpdateStatusTool(ctx: SessionCtx) {
         };
       }
 
+      // T3, spec §3.4: a task that just reached `done` and carries a `chainId` advances its chain
+      // through the same funnel every other dispatch goes through (`dispatch(..., 'chain')`).
+      // `task` was read fresh at the top of this handler, before the transition above — `chainId`
+      // never changes across a transition, so it is still the right value to gate on.
+      //
+      // **Imported dynamically, not at module load.** `dispatch.ts` imports this module to build a
+      // session's MCP surface (`createAgentosServer`), and `chain.ts` imports `dispatch` to reach
+      // the funnel — a static import here would close a three-file cycle (`dispatch.ts` ->
+      // `agentos-server.ts` -> `chain.ts` -> `dispatch.ts`). A dynamic `import()` defers resolution
+      // to this line's own execution, well after the module graph has finished loading, which
+      // sidesteps the cycle instead of depending on function-hoisting order between two different
+      // bundlers (`tsx` for the suites, Next.js's bundler for the app).
+      if (args.status === "done" && task.chainId) {
+        const { advanceChainAfterDone } = await import("../chain");
+        await advanceChainAfterDone(ctx.taskId, { db: ctx.db });
+      }
+
       return {
         content: [
           { type: "text" as const, text: `task ${ctx.taskId} moved to '${args.status}'` },
