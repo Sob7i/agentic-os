@@ -566,6 +566,25 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   and a check record which is which. **Unblock condition:** T4's `docs/FEATURES.md` rows — write the
   distinction into the behaviour table there, and amend §3.4's sentence to name its own exception.
 
+- **A project initialized before Stage 4 cannot get its template seeded through the UI** *(added
+  2026-08-22, found by running Stage 4 T4 by hand)*. `initializeProject` seeds built-in templates on
+  **both** its branches — the row-creating one and the *already initialized* replay — which was T1's
+  judgement call and is correct on its own terms. **The replay branch is unreachable from the
+  shipped interface**: the *Initialize* button only renders when `loadProjectExecutionData` returns
+  `null`, which never happens for a project that already has a `Project` row. So the code path that
+  exists to serve exactly this case can only be reached by calling the server action directly, which
+  is what T4 did to run its by-hand test.
+  **Who this affects: every project that opted in before Stage 4**, which today is this one. A fresh
+  project is fine — it seeds on creation.
+  **Why it is not a one-line fix:** making *Initialize* render for an already-initialized project
+  means a button whose label is a lie, and D30 chose an explicit click precisely so nothing creates
+  records unasked. The honest shapes are a distinct *reseed templates* affordance on
+  `/p/<slug>/config/templates` that says what it will do, or seeding lazily when that page loads and
+  finds none — which quietly writes rows on a GET, and is the kind of thing this project has
+  refused elsewhere. **Unblock condition:** the first person who needs the seeded template on an
+  existing project and cannot get it. That is now, for this repo, so it is the most immediately
+  actionable entry in this file.
+
 ## Done / superseded
 
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than
