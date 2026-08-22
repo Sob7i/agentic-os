@@ -224,6 +224,22 @@ const MIGRATIONS: { version: number; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_task_chain            ON Task(chainId);
     `,
   },
+  {
+    // Raised in review of #34 and #37. Migration 2's comment argued that seeding idempotency was an
+    // application-level guard "proven by AC-0c, not a DB constraint". AC-0c proves it **sequentially**
+    // — and `seedBuiltInTemplates` is a read-then-insert, so two concurrent initialize calls (a
+    // double-clicked button, two server processes) can both read "missing" and both insert. That is
+    // the same class of defect as AC-10's, which this stage already fixed properly with a
+    // compare-and-set; the argument for leaving it to application code does not survive the race.
+    //
+    // The index is the guarantee; `seed.ts` catches the constraint violation and treats it as the
+    // no-op it is, so the loser of a race still returns success rather than throwing at a user.
+    version: 3,
+    sql: `
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tasktemplate_project_slug
+        ON TaskTemplate(projectId, slug);
+    `,
+  },
 ];
 
 /** Applies every migration above `PRAGMA user_version` hasn't seen yet, in order, transactionally. */
@@ -1070,11 +1086,17 @@ export function getChain(db: DatabaseSync, id: string): ChainRow | null {
  * it as-is keeps the halt reason and the claim it raced against both reconstructible.
  */
 export function haltChain(db: DatabaseSync, id: string, haltedAtTaskId: string, haltReason: string): void {
-  db.prepare("UPDATE Chain SET status = 'halted', haltedAtTaskId = ?, haltReason = ? WHERE id = ?").run(
-    haltedAtTaskId,
-    haltReason,
-    id,
-  );
+  /**
+   * **`AND status = 'running'` makes the first halt the one that sticks.** Raised in review of #38.
+   * Failure callbacks are asynchronous and a chain can have more than one step in flight, so a
+   * second failure arriving later would otherwise overwrite `haltedAtTaskId` and `haltReason` — and
+   * the stored attribution would silently move from the step that actually stopped the chain to
+   * whichever failure landed last. AC-8's halt reason is supposed to stay meaningful a week later
+   * (§3.1); an attribution that changes under you is worse than none, because it reads as fact.
+   */
+  db.prepare(
+    "UPDATE Chain SET status = 'halted', haltedAtTaskId = ?, haltReason = ? WHERE id = ? AND status = 'running'",
+  ).run(haltedAtTaskId, haltReason, id);
 }
 
 export function listTasksByChain(db: DatabaseSync, chainId: string): TaskRow[] {
@@ -1097,8 +1119,19 @@ export function listTasksByChain(db: DatabaseSync, chainId: string): TaskRow[] {
  * a later one), or the chain does not exist; either way the caller must return without dispatching.
  */
 export function claimChainOrd(db: DatabaseSync, chainId: string, ord: number): boolean {
+  /**
+   * **`AND status = 'running'` belongs in the statement, not beside it.** Raised in review of #37
+   * and #38. `advanceChainAfterDone` does read `chain.status` first, but that read and this write
+   * are two statements: a halt landing between them left the claim succeeding, the next card
+   * unblocked, and `dispatch` called on a chain that had already stopped — and `dispatch` has no
+   * idea chains exist, so nothing downstream would catch it. Folding the status into the
+   * compare-and-set makes halting and claiming decide against each other in one statement, which is
+   * the same argument that put `lastDispatchedOrd` here in the first place.
+   */
   const result = db
-    .prepare("UPDATE Chain SET lastDispatchedOrd = ? WHERE id = ? AND lastDispatchedOrd < ?")
+    .prepare(
+      "UPDATE Chain SET lastDispatchedOrd = ? WHERE id = ? AND lastDispatchedOrd < ? AND status = 'running'",
+    )
     .run(ord, chainId, ord);
   return Number(result.changes) > 0;
 }

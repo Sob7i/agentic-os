@@ -318,6 +318,12 @@ existing approval gate, sequenced. Nothing here scans, polls, or schedules.
 | Binds template variables | Every `{{var}}` in every step prompt is replaced before any card is written | AC-2 | Stage 4 |
 | Refuses an unbound variable | Instantiate fails, names the variable and the step; no cards are created — an explicit `""` refuses exactly like an omitted key (T4 closed this: `bindPrompt` treats an empty string the same as a missing one) | **AC-2** | Stage 4 |
 | Blocks a step behind its predecessor | Steps 2–9 carry a `blocked` chip naming **its own immediate predecessor** — see the correction below | AC-3, AC-8 | Stage 4 |
+| **Enforces** that chip rather than printing it | A blocked step offers no `Run now`, refuses a drag, and is refused by `dispatch` — three points, no new status (**D43**) | **AC-3b** | Stage 4 |
+| Refuses an approval for a card that is not awaiting one | *"Approve & mark done"* closes a **gated card in `review`** and nothing else; a crafted request naming a blocked `todo` step is refused and the chain does not advance | **AC-6b** | Stage 4 |
+| Refuses a template whose agent name is ambiguous | Two agents sharing a name → instantiate refuses naming the count and the step; no cards written | **AC-1c** | Stage 4 |
+| Keeps a halt attributed to the step that caused it | A later failure cannot rewrite `haltedAtTaskId` or `haltReason` — the first halt wins | **AC-8b** | Stage 4 |
+| Halts a chain whose step a restart interrupted | The boot sweep halts the chain, naming the interruption — later steps stop being eligible with nothing driving them | **AC-8c** | Stage 4 |
+| Lets a halt win a race against an advance | The chain-step claim and the halt decide against each other in one statement | **AC-10b** | Stage 4 |
 | Starts the next step when one is marked done | Step 1 `done` → step 2 dispatches with `trigger: 'chain'` | **AC-4** | Stage 4 |
 | Will not start step 2 from a session token | The gated `done` on step 1 is refused; step 2 never dispatches | **AC-5** | Stage 4 |
 | Says what approving will start | The gate reads *"Approve & start step 2 (@plan)"* — never a bare "Approve" | AC-6 | Stage 4 |

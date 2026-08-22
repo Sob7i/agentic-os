@@ -1181,3 +1181,50 @@ observing AC-2 go red on the new case, and reverting.
 nothing in §3.3 discusses whitespace, and inventing a normalisation rule here would be deciding a
 second, unasked question under cover of the first. If a whitespace-only prompt ever turns out to be
 a real problem, that is its own decision, not a rider on this one.
+
+---
+
+## D43 — A `blocked` chip refuses moves; it is not a label (2026-08-22)
+
+**Raised in review of #38, and it changes a sentence Stage 3 wrote deliberately.**
+
+Stage 3 §7.6 introduced `Task.blockedReason` as *"a label on the card, not a fifth status value"*,
+and [`types.ts`](../lib/agentos/types.ts) still says so. That was **accurate when nothing produced
+one**: through Stage 3 the field was always null, so "label" described its entire behaviour.
+
+Stage 4 produces **eight per chain**. Instantiating the seeded template writes nine cards, eight of
+them blocked, and §3.2 defends that on the grounds that *"nine visible cards, eight of them blocked,
+is a forecast the human can read, argue with, and cancel."* Review of #38 found that the forecast
+was not binding on anything: `showsRunControl` checked only the column and the agent, so every
+blocked step rendered a **Run now** button; `dropVerdict` ignored the field entirely, so step 6 could
+be dragged into `doing` before step 5 had ever started; and `dispatch` refused neither.
+
+**A label that refuses nothing is a claim the interface makes and the system does not honour** —
+invariant 2, on the one surface where the product's own subject matter applies to itself.
+
+**Decision:** `blockedReason` is enforced at three points, none of which adds a status:
+
+1. **`dropVerdict`** returns a new `kind: "blocked"` refusal — so the drag and `moveTaskForSlug`,
+   which calls it, are refused by the same shared decision (D33's rule that a drop is a hand-move
+   evaluated in one place).
+2. **`showsRunControl`** returns false, so the affordance stops contradicting the chip beside it.
+3. **`dispatch`'s `dispatchable` precondition** refuses it, which is what makes the other two an
+   honest surface over a real rule rather than the rule itself. Every start passes through §7.3
+   whatever triggered it, so no other caller can route around the first two.
+
+**It stays a label and not a status**, exactly as §7.6 intended: there is no sixth column, nothing
+queries for "blocked" as a state, and the reason clears itself the moment the predecessor finishes
+(`advanceChainAfterDone` nulls it *before* dispatching, which is why the chain's own advance is
+unaffected by this decision).
+
+**Rejected: leave it advisory and rely on the human reading the chip.** That is the argument for
+every unenforced convention this project has already refused — and it fails worse here than usual,
+because running a step early does not look like a mistake afterwards. It goes through the funnel,
+records a session and a drift snapshot, and produces work that appears entirely legitimate.
+
+**Not a decision, recorded here because it landed in the same review:** `approveDoneForSlug` now
+refuses anything that is not a gated card in `review`. That is not a new rule — §7.6 and D36 are
+both still right that *"the gate exists to stop a session, never a human"* — it is the action
+re-deriving **what it is being asked to approve** instead of trusting that the UI only ever offered
+it a legitimate card. Stage 2 established that shape when the fix-proposal action rebuilt its
+proposal server-side from the claim hash rather than accepting bytes from the browser.

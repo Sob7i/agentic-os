@@ -41,8 +41,10 @@ import {
   createSession,
   createTask,
   createTemplate,
+  claimChainOrd,
   getAgent,
   getChain,
+  haltChain,
   getSession,
   getTask,
   getTemplateBySlug,
@@ -65,7 +67,9 @@ import { dispatch } from "../lib/agentos/dispatch";
 import { FakeRunner } from "../lib/agentos/runner/fake";
 import { createTaskUpdateStatusTool } from "../lib/agentos/mcp/agentos-server";
 import { moveTaskForSlug, approveDoneForSlug } from "../app/p/[slug]/[tab]/actions";
-import { cardModel } from "../lib/tasks/model";
+import { cardModel, showsRunControl } from "../lib/tasks/model";
+import { dropVerdict } from "../lib/tasks/dnd";
+import { runBootSweep } from "../lib/agentos/sweep";
 
 /**
  * `PROJECTS` is reached through `createRequire`, never a top-level import — the same two-registry
@@ -454,12 +458,22 @@ async function runChecks() {
       );
     } else if (after.chainId !== null || after.chainOrd !== null) {
       fail("AC-0a", `new columns are not NULL — chainId=${JSON.stringify(after.chainId)}, chainOrd=${JSON.stringify(after.chainOrd)}`);
-    } else if (versionAfterFirst !== 2) {
-      fail("AC-0a", `user_version did not land on 2 after the first migrate, got ${versionAfterFirst}`);
+    } else if (versionAfterFirst < 2) {
+      // Was pinned at the literal `2`, which made adding migration 3 (review of #34's UNIQUE index)
+      // fail a check about *additivity and idempotency* — neither of which has anything to say
+      // about how many migrations exist. What matters is that the migration that introduces the
+      // chain tables has run, and that replaying is a no-op; the equality below asserts the second.
+      fail("AC-0a", `user_version did not reach at least 2 after the first migrate, got ${versionAfterFirst}`);
     } else if (secondError) {
       fail("AC-0a", `migrating a second time threw instead of no-op'ing: ${secondError}`);
-    } else if (versionAfterSecond !== 2) {
-      fail("AC-0a", `user_version moved on a second migrate — expected 2, got ${versionAfterSecond}`);
+    } else if (versionAfterSecond !== versionAfterFirst) {
+      // Compared against the first run's own answer, not a literal — the assertion is "replaying
+      // changes nothing", and pinning the number instead made it also assert "there are exactly two
+      // migrations", which is not this check's business and broke the moment one was added.
+      fail(
+        "AC-0a",
+        `user_version moved on a second migrate — expected it to stay at ${versionAfterFirst}, got ${versionAfterSecond}`,
+      );
     } else {
       pass(
         "AC-0a",
@@ -477,7 +491,10 @@ async function runChecks() {
     const gatesCorrect = gateOrds.length === 2 && gateOrds[0] === 1 && gateOrds[1] === 9;
     const step9 = steps.find((s) => s.ord === 9);
     const step9Human = step9?.assigneeAgentName === "human";
-    const emptyNames = steps.filter((s) => s.ord !== 9 && s.name.trim().length === 0).map((s) => s.ord);
+    // Every step, step 9 included. The `s.ord !== 9` exemption this line used to carry meant a
+    // blanked step-9 name passed unnoticed — raised in review of #34. Step 9 is the human review
+    // gate; an unnamed card is exactly the one a person would fail to act on.
+    const emptyNames = steps.filter((s) => s.name.trim().length === 0).map((s) => s.ord);
 
     if (steps.length !== 9) {
       fail("AC-0b", `expected 9 steps, got ${steps.length}`);
@@ -492,7 +509,7 @@ async function runChecks() {
     } else {
       pass(
         "AC-0b",
-        `9 steps, ord 1-9 with no gap, approvalGate true only at steps 1 and 9, step 9 assignee is the literal 'human', every other step named`,
+        `9 steps, ord 1-9 with no gap, approvalGate true only at steps 1 and 9, step 9 assignee is the literal 'human', all nine named`,
       );
     }
   }
@@ -740,15 +757,19 @@ async function runChecks() {
       // manipulation AC-0a already uses. There is no production write accessor for editing a
       // TemplateStep (T2 is restricted to read accessors in db.ts, and one should not be added
       // only to serve this test).
+      // Fail loudly if the seeded row is missing rather than running the UPDATE against an empty
+      // templateId — raised in review of #36. With `template?.id ?? ""` the statement matched
+      // nothing, `step3Edited` came back `undefined`, and the "did the edit actually land" guard
+      // below compared `undefined` against a real string, passed, and let the check report a
+      // success it had not demonstrated.
       const template = getTemplateBySlug(db, projectId, COMPOUND_ENGINEER_TEMPLATE.slug);
+      if (!template) throw new Error("AC-11 setup: the seeded template row is missing");
       db.prepare("UPDATE TemplateStep SET promptTemplate = ?, name = ? WHERE templateId = ? AND ord = 3").run(
         "EDITED AFTER INSTANTIATE — must never reach a running chain",
         "Edited step name",
-        template?.id ?? "",
+        template.id,
       );
-      const step3Edited = template
-        ? listTemplateSteps(db, template.id).find((s) => s.ord === 3)?.promptTemplate
-        : undefined;
+      const step3Edited = listTemplateSteps(db, template.id).find((s) => s.ord === 3)?.promptTemplate;
 
       const chainAfter = getChain(db, result.chainId);
       const versionAfter = chainAfter ? parseJsonColumn<StoredVersion>(chainAfter.templateVersionJson) : null;
@@ -886,6 +907,21 @@ async function runChecks() {
       assigneeAgentId: agentRow.id,
       chainId: chain2.id,
       chainOrd: 2,
+    });
+    /**
+     * `approveDoneForSlug` now refuses anything that is not a gated card in `review` (review of
+     * #38 — the action is reachable by a crafted POST and `writeTaskTransition` exempts `human`
+     * from the legal-transition table, so it could close a *blocked* `todo` step and advance the
+     * chain past it). This fixture previously approved straight out of `todo` and passed, which is
+     * precisely the hole. Move the card the way the real flow does — a session leaves it in
+     * `review`, and the human closes it from there.
+     */
+    writeTaskTransition(db, {
+      taskId: approveStep1.id,
+      toStatus: "review",
+      actorType: "human",
+      actorId: "owner",
+      reason: "left in review for the approver (test)",
     });
     const approveResult = await approveDoneForSlug(slug, approveStep1.id, { db, runner });
     const sessionsAfterApprove = listSessionsByTask(db, approveStep2.id);
@@ -1355,6 +1391,253 @@ async function runChecks() {
           "AC-9",
           `a 9-step chain reads "${nineCard.chainPosition}"; a 3-step chain reads "${smallCard.chainPosition}" — total is read from the chain's own size, never hardcoded`,
         );
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // Review of #34/#36/#37/#38 — one check per fix. Numbered "b"/"c" against the AC each defends,
+  // following this repo's existing AC-8b/AC-6b/AC-16b convention for a check added in review.
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+
+  // ── AC-1c · a duplicate agent name refuses, it does not pick one ──────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac1c");
+    // A second agent sharing step 2's name. `Agent` has no uniqueness constraint on
+    // (projectId, name), so before the fix a Map keyed on the name kept whichever row came last —
+    // binding every `plan` step to an arbitrary agent with different grants, model and budget.
+    createAgent(db, {
+      projectId,
+      name: "plan",
+      monogram: "PL",
+      model: "claude-opus-5",
+      rolePrompt: "an impostor with the same name",
+      allowedTools: [],
+      disallowedTools: [],
+      canCommit: false,
+      maxTurns: null,
+      maxBudgetUsd: null,
+    });
+    const before = Number((db.prepare("SELECT count(*) AS n FROM Task").get() as { n: number }).n);
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    const after = Number((db.prepare("SELECT count(*) AS n FROM Task").get() as { n: number }).n);
+
+    if (result.ok) {
+      fail("AC-1c", "instantiate succeeded with two agents named 'plan' — a step bound to an arbitrary one");
+    } else if (!/matches 2 agents/.test(result.reason) || !/plan/.test(result.reason)) {
+      fail("AC-1c", `refused, but the reason names neither the count nor the agent: ${result.reason}`);
+    } else if (after !== before) {
+      fail("AC-1c", `refused but wrote ${after - before} Task row(s) — instantiate is all-or-nothing`);
+    } else {
+      pass("AC-1c", `refused: ${JSON.stringify(result.reason)} — Task count unchanged (${after})`);
+    }
+  }
+
+  // ── AC-3b · a blocked step is blocked, not merely labelled ────────────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac3b");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    if (!result.ok) {
+      fail("AC-3b", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const step5 = listTasksByChain(db, result.chainId).find((t) => t.chainOrd === 5);
+      if (!step5 || !step5.blockedReason) {
+        fail("AC-3b", "setup: step 5 is not blocked, so this check would prove nothing");
+      } else {
+        const problems: string[] = [];
+
+        // 1. The board offers no Run now.
+        if (showsRunControl({ agent: { monogram: "IM", name: "impl" }, blockedReason: step5.blockedReason }, "todo")) {
+          problems.push("showsRunControl returned true for a blocked card");
+        }
+
+        // 2. A drag is refused by the shared decision — so `moveTaskForSlug` is refused too.
+        const verdict = dropVerdict(
+          { taskId: step5.id, from: "todo", gate: null, blockedReason: step5.blockedReason },
+          "doing",
+        );
+        if (verdict.ok) problems.push("dropVerdict allowed a blocked card to be dragged to 'doing'");
+        else if (verdict.kind !== "blocked") problems.push(`dropVerdict refused for the wrong reason: ${verdict.kind}`);
+
+        // 3. And the funnel itself refuses, so no other caller can start it either.
+        const dispatched = await dispatch(step5.id, "manual", { db, runner: new FakeRunner([]) });
+        if (dispatched.started) problems.push("dispatch started a blocked task");
+        else if (dispatched.refusedBy !== "dispatchable") {
+          problems.push(`dispatch refused for the wrong precondition: ${dispatched.refusedBy}`);
+        }
+
+        problems.length === 0
+          ? pass(
+              "AC-3b",
+              "a blocked step 5 offers no Run now, refuses a drag with kind 'blocked', and is refused by dispatch's 'dispatchable' precondition — the chip is enforced, not decorative",
+            )
+          : fail("AC-3b", problems.join("; "));
+      }
+    }
+  }
+
+  // ── AC-6b · the approve button only closes what it claims to ──────────────────────────────
+  {
+    const { db, projectId, slug } = makeChainFixture("ac6b", { registerInBoard: true });
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    if (!result.ok) {
+      fail("AC-6b", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const tasks = listTasksByChain(db, result.chainId);
+      const blockedStep2 = tasks.find((t) => t.chainOrd === 2)!;
+      const runner = new FakeRunner([]);
+
+      // The attack the fix exists to stop: a crafted POST naming a blocked `todo` step. Before the
+      // fix this closed it and advanced the chain — running step 3 before step 1 had ever started.
+      const craftedPost = await approveDoneForSlug(slug, blockedStep2.id, { db, runner });
+      const sessionsForStep3 = listSessionsByTask(db, tasks.find((t) => t.chainOrd === 3)!.id);
+      const step2After = getTask(db, blockedStep2.id);
+
+      if (craftedPost.ok) {
+        fail("AC-6b", "approveDoneForSlug closed a blocked 'todo' chain step");
+      } else if (step2After?.status !== "todo") {
+        fail("AC-6b", `refused, but the task moved anyway: now '${step2After?.status}'`);
+      } else if (sessionsForStep3.length !== 0) {
+        fail("AC-6b", `refused, but the chain advanced: ${sessionsForStep3.length} session(s) for step 3`);
+      } else {
+        pass("AC-6b", `refused a blocked 'todo' step: ${JSON.stringify(craftedPost.reason)} — nothing moved, nothing dispatched`);
+      }
+    }
+  }
+
+  // ── AC-8b · the first halt is the one that sticks ─────────────────────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac8b");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    if (!result.ok) {
+      fail("AC-8b", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const tasks = listTasksByChain(db, result.chainId);
+      const first = tasks.find((t) => t.chainOrd === 3)!;
+      const later = tasks.find((t) => t.chainOrd === 6)!;
+
+      haltChain(db, result.chainId, first.id, "the step that actually stopped the chain");
+      // A second failure callback arriving afterwards — asynchronous, and a chain can have more
+      // than one step in flight. Before the fix this silently rewrote the attribution.
+      haltChain(db, result.chainId, later.id, "a later failure that must not steal the attribution");
+      const chain = getChain(db, result.chainId);
+
+      if (chain?.status !== "halted") {
+        fail("AC-8b", `chain is '${chain?.status}', expected 'halted'`);
+      } else if (chain.haltedAtTaskId !== first.id) {
+        fail("AC-8b", "a later halt overwrote haltedAtTaskId — the stored attribution moved off the step that stopped it");
+      } else if (!/actually stopped/.test(chain.haltReason ?? "")) {
+        fail("AC-8b", `haltReason was overwritten: ${chain.haltReason}`);
+      } else {
+        pass("AC-8b", "a second halt left haltedAtTaskId and haltReason on the first stopping step — attribution does not drift");
+      }
+    }
+  }
+
+  // ── AC-8c · a restart that interrupts a chain step halts the chain ────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac8c");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    if (!result.ok) {
+      fail("AC-8c", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const step1 = listTasksByChain(db, result.chainId).find((t) => t.chainOrd === 1)!;
+      // A session left `running` by a process that no longer exists — exactly what a `pnpm dev`
+      // restart leaves behind, and the state §7.7's boot sweep exists to settle. It never passes
+      // through `runSessionToCompletion`, so T3's failure hook never fires for it.
+      const orphaned = createSession(db, {
+        taskId: step1.id,
+        agentId: listAgentsByProject(db, projectId)[0].id,
+        triggerKind: "chain",
+        worktreePath: null,
+        baseRef: "deadbeef",
+        pid: 999999,
+        bootId: "a-previous-boot",
+        driftAtSpawn: {
+          severity: "unverifiable",
+          claim: "fixture",
+          verified: "fixture",
+          source: "fixture",
+          check: "fixture",
+          checkedAtISO: new Date().toISOString(),
+        },
+      });
+      // `todo -> doing` is a `session` transition in §7.6's table, not a `system` one — the same
+      // write `dispatch` makes when it starts a run. `writeTaskTransition` enforces that table, so
+      // the fixture has to reproduce the real actor rather than assert one.
+      writeTaskTransition(db, {
+        taskId: step1.id,
+        toStatus: "doing",
+        actorType: "session",
+        actorId: orphaned.id,
+        reason: "fixture: mid-run when the process died",
+      });
+
+      await runBootSweep(db, "the-current-boot");
+      const chain = getChain(db, result.chainId);
+
+      if (chain?.status !== "halted") {
+        fail(
+          "AC-8c",
+          `the boot sweep interrupted a chain step and left Chain.status '${chain?.status}' — later steps stay eligible with nothing driving them`,
+        );
+      } else if (chain.haltedAtTaskId !== step1.id) {
+        fail("AC-8c", `halted, but attributed to ${chain.haltedAtTaskId} rather than the interrupted step`);
+      } else {
+        pass("AC-8c", `the boot sweep halted the chain at the interrupted step: ${JSON.stringify(chain.haltReason)}`);
+      }
+    }
+  }
+
+  // ── AC-10b · a halt wins the race against a claim ─────────────────────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac10b");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    if (!result.ok) {
+      fail("AC-10b", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const step1 = listTasksByChain(db, result.chainId).find((t) => t.chainOrd === 1)!;
+      haltChain(db, result.chainId, step1.id, "halted before the claim landed");
+      // `advanceChainAfterDone` reads Chain.status and then claims, two statements — a halt landing
+      // between them used to leave the claim succeeding, the next card unblocked and `dispatch`
+      // called on a stopped chain. `dispatch` knows nothing about chains, so nothing downstream
+      // would have caught it.
+      const claimed = claimChainOrd(db, result.chainId, 2);
+
+      if (claimed) {
+        fail("AC-10b", "claimChainOrd succeeded on a halted chain — a halt does not win the race");
+      } else {
+        pass("AC-10b", "claimChainOrd refused on a halted chain — halting and claiming decide against each other in one statement");
       }
     }
   }

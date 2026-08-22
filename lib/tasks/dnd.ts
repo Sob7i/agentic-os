@@ -39,11 +39,17 @@ export interface DropCandidate {
    * the card is not a session and cannot call that tool.
    */
   gate: { humanRefusalReason: string } | null;
+  /**
+   * `Task.blockedReason` — non-null while a chain step is waiting on its predecessor (Stage 4 §3.2).
+   *
+   * Optional so every pre-Stage-4 caller keeps compiling; absent and `null` both mean "not blocked".
+   */
+  blockedReason?: string | null;
 }
 
 export type DropVerdict =
   | { ok: true; from: TaskRow["status"]; to: TaskRow["status"] }
-  | { ok: false; kind: "gate" | "unknown-column" | "same-column"; reason: string };
+  | { ok: false; kind: "gate" | "unknown-column" | "same-column" | "blocked"; reason: string };
 
 function isColumn(value: string): value is TaskRow["status"] {
   return (COLUMN_ORDER as readonly string[]).includes(value);
@@ -75,6 +81,25 @@ export function dropVerdict(card: DropCandidate, to: string): DropVerdict {
   }
   if (to === "done" && card.gate) {
     return { ok: false, kind: "gate", reason: card.gate.humanRefusalReason };
+  }
+  /**
+   * **A `blocked` chip has to block something.** Raised in review of #38.
+   *
+   * Stage 3 §7.6 called `blockedReason` "a label on the card, not a fifth status value", and that
+   * was accurate when nothing produced one. Stage 4 produces eight of them per chain, and a label
+   * that refuses nothing is a claim the UI makes and the system does not honour — the exact shape
+   * this product exists to catch. Dragging step 6 to `doing` while step 5 has never run reorders a
+   * sequence the human was shown as a forecast (§3.2).
+   *
+   * It stays a label, not a status: this refuses the *move*, and the chip clears by itself the
+   * moment the predecessor finishes (`advanceChainAfterDone`). Nothing here needs a sixth column.
+   */
+  if (card.blockedReason) {
+    return {
+      ok: false,
+      kind: "blocked",
+      reason: `${card.blockedReason} — finish that step first, or delete this card`,
+    };
   }
   return { ok: true, from: card.from, to };
 }

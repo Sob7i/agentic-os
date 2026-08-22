@@ -260,8 +260,18 @@ function chainPositionFor(
  * component** (CLAUDE.md §Conventions). Moved here in review, 2026-08-19, where AC-7b asserts all
  * four cases.
  */
-export function showsRunControl(card: { agent: AgentBadge | null }, columnKey: TaskRow["status"]): boolean {
-  return columnKey === "todo" && card.agent !== null;
+export function showsRunControl(
+  card: { agent: AgentBadge | null; blockedReason?: string | null },
+  columnKey: TaskRow["status"],
+): boolean {
+  /**
+   * **A blocked card offers no Run now.** Raised in review of #38: every chain step 2–9 sits in
+   * `todo` with an agent, so before this the board rendered eight "Run now" buttons for work that
+   * was explicitly waiting on something — an affordance that contradicts the chip printed beside
+   * it. `dispatch` refuses it too (its `dispatchable` precondition), so this is the honest surface
+   * over a real rule rather than the rule itself.
+   */
+  return columnKey === "todo" && card.agent !== null && !card.blockedReason;
 }
 
 // ---------------------------------------------------------------------------

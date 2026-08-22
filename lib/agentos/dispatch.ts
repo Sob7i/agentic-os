@@ -186,6 +186,19 @@ export async function dispatch(
   if (task.status !== "todo") {
     return refuse("dispatchable", `task ${taskId} is '${task.status}', not 'todo'`);
   }
+  /**
+   * **A blocked task is not dispatchable.** Raised in review of #38. Every chain step 2–9 is a
+   * `todo` task with an agent, so without this the `Run now` server path would start step 6 before
+   * step 5 had ever run — reordering the sequence the human was shown as a forecast (Stage 4 §3.2)
+   * and, worse, doing it through the funnel, so the run would look entirely legitimate afterwards.
+   *
+   * This belongs here rather than only in the UI because §7.3's preconditions are the one place
+   * every start passes through, whatever triggered it — and because `advanceChainAfterDone` clears
+   * the reason *before* it dispatches, so the chain's own advance is unaffected by design.
+   */
+  if (task.blockedReason) {
+    return refuse("dispatchable", `task ${taskId} is blocked: ${task.blockedReason}`);
+  }
   const taskSessions = listSessionsByTask(db, taskId);
   const taskLive = taskSessions.find((s) => s.status === "running" || s.status === "waiting-inbox");
   if (taskLive) {

@@ -399,6 +399,9 @@ export async function moveTaskForSlug(
       taskId: owned.task.id,
       from: owned.task.status,
       gate: gate ? { humanRefusalReason: gate.humanRefusalReason } : null,
+      // Read from the owned row, never from the request — the browser does not get to say
+      // whether a card is blocked (review of #38).
+      blockedReason: owned.task.blockedReason,
     },
     to,
   );
@@ -486,8 +489,31 @@ export async function approveDoneForSlug(
   const owned = await resolveOwnedTask(slug, taskId, db);
   if (!owned) return { ok: false, reason: `task ${taskId} is not in project '${slug}'` };
 
-  // §7.6: "any -> any, human, ... recorded as hand-moved." No gate check here — the gate exists
-  // to stop a *session*, never a human; a human clicking this button is the approval itself.
+  /**
+   * **The action re-derives what it is approving; it never trusts that the UI only offered it.**
+   * Raised in review of #38. This is a server action, so it is reachable by a crafted POST naming
+   * any task id in the project — and `writeTaskTransition` deliberately exempts `human` from
+   * `LEGAL_TRANSITIONS` (`db.ts`), so `any -> done` is permitted at the data layer by design. The
+   * combination meant a request could close a **blocked** chain step sitting in `todo` and, through
+   * T3's hook, dispatch its successor — running step 6 before step 5 had ever started.
+   *
+   * The gate check that was absent here is not the session gate. §7.6 and D36 are both right that
+   * "the gate exists to stop a session, never a human" — a human clicking this *is* the approval.
+   * What has to be checked is that there is something to approve: the card is in `review` and
+   * carries `approvalGate`. That is the shape Stage 2 established for the fix-proposal button —
+   * the server rebuilds the proposal from its own state rather than accepting what the browser
+   * sends — and it is the same reasoning one layer up.
+   */
+  if (owned.task.status !== "review" || !owned.task.approvalGate) {
+    return {
+      ok: false,
+      reason:
+        `task ${taskId} is '${owned.task.status}'` +
+        (owned.task.approvalGate ? "" : " and carries no approval gate") +
+        ` — "approve & mark done" closes a gated card awaiting review, and this is not one`,
+    };
+  }
+
   writeTaskTransition(db, {
     taskId,
     toStatus: "done",
