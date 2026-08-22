@@ -405,6 +405,51 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   **Unblocked by:** nothing — it is a contained change to one suite, deliberately not made inside a
   ticket forbidden from touching that file.
 
+### From the Stage 4 and 4b specs (2026-08-22)
+
+- **Sub-agent fan-out for template step 3** *(added 2026-08-22, deferred by
+  [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) §5.4)*.
+  AgentOS-spec §10 step 3 has a `review-coordinator` spawning **four** review agents in parallel —
+  feasibility, scope-guardian, coherence, and a fourth he named but did not specify. The Agent SDK
+  supports sub-agents, so this is possible rather than blocked. Stage 4 ships step 3 as **one
+  session instructed to produce the three named reviews and a consolidated must-fix / should-fix
+  list**, which preserves the output the rest of the template depends on. **Why the topology is
+  deferred:** fan-out is a new axis rather than a longer chain. It multiplies concurrency against
+  Stage 3 §5.14's cap of one, it multiplies cost non-linearly against Stage 5's rails that do not
+  exist yet, and the coordinator's real work — consolidating four reports into one decision — is
+  the part nobody has designed. **Unblock condition:** Stage 5's spend rails existing, plus one
+  observed run of the sequential version showing that the consolidated list is actually worse than
+  four separate ones. Do not build it because it is in the source talk.
+
+- **Delete an `agentos/*` branch once its PR has merged** *(added 2026-08-22, deferred by
+  [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) §1)*. D37 puts every session's
+  commits on a namespaced branch, and D41 opens a PR from it. Nothing ever removes one. Cleanup
+  today is `git branch -D (git branch --list 'agentos/*')` by hand, which the namespace exists to
+  make safe — that is a real answer, not a placeholder, and it is why this is a backlog entry and
+  not a gap in the spec. **What automating it needs:** asking GitHub whether the PR merged, which
+  is a `gh` call on a schedule, and this product has no scheduler and D24 declined to build one.
+  **Unblock condition:** enough branches accumulating that the manual command is annoying — measure
+  it, do not predict it.
+
+- **Cache `node_modules` between sessions** *(added 2026-08-22, deferred by
+  [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) §1)*. D39 runs a declared
+  `prepare:` command in every fresh worktree, so every session pays a full install before the model
+  is called. For this repo that is on the order of a minute; for a nine-step chain it is nine of
+  them. **Rejected as the first shape:** symlinking or copying the owner's tree, because it hands a
+  session a path into the checkout the owner is working in — the one thing the ephemeral worktree
+  exists to prevent. **What a real answer looks like:** a content-addressed store keyed on the
+  lockfile hash, populated once per lockfile and hard-linked in read-only. **Unblock condition:**
+  measured install time across a real chain being a material fraction of the run. It almost
+  certainly is not next to a five-hour build, which is why this is deferred rather than specced.
+
+- **A supervisor so a session survives a dev-server restart — mitigated, not solved, by D37**
+  *(added 2026-08-22; the entry from the Stage 3 build above still owns the fix)*. Stage 4b
+  deliberately does not solve this and does make it cheaper: with the work on a branch from the
+  first commit, an interrupted session's output is a ref rather than a dangling object, so the boot
+  sweep's honest *"interrupted"* becomes actionable — *"interrupted at `<sha>` on `<branch>`"*.
+  Recorded here so nobody reads D37 as having closed the older entry. **Unblocked by:** the same
+  thing as before — D20's cloud runner, or a detached child process.
+
 ## Done / superseded
 
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than
