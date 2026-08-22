@@ -29,17 +29,25 @@ Six measured facts, carried here so a ticket brief does not have to re-derive th
    other two `writeTaskTransition` callers — `sweep.ts:85` and `dispatch.ts:268`/`:430` — write
    `todo` and `doing` only and are **not** advance sites. Verified by
    `grep -rn writeTaskTransition lib app`.
-3. **`data/agentos.sqlite` on the owner's machine is populated, not empty.** One `Project`
-   (`agentic-os`), two `Agent` rows, one `Task`, **zero `Session` rows**. So Stage 4's migration runs
-   against a live database with real rows in it, and a migration that drops or recreates `Task`
-   destroys the owner's data. `migrate()` ([`db.ts:169`](../../lib/agentos/db.ts#L169)) applies only
-   migrations above `PRAGMA user_version`. **Add migration 2. Never edit migration 1.**
-4. **The seeded template names five agents this project does not have.** AgentOS-spec §10's steps
-   name `spec`, `plan`, `review-coordinator`, `implementation-plan-executioner`, `senior-dev`,
-   `librarian` and the literal `human`. The two `Agent` rows that exist are `ux-ui-designer` and
-   `frontend developer`. So **instantiating the seeded template in `agentic-os` today refuses at
-   §3.3's rule 2**, naming the first unresolved step. That is the spec working, not a defect — but
-   T2's fixtures must seed the agents explicitly and must **not** relax rule 2 to make a test pass.
+3. **`data/agentos.sqlite` on the owner's machine is populated, not empty** — it holds a `Project`
+   row for `agentic-os`, `Agent` rows, and at least one `Task`. **The exact counts are deliberately
+   not written here**: they are volatile, `CLAUDE.md`'s convention keeps such values in
+   `docs/HANDOFF.md`'s *Verified state* block alone, and a ticket brief that states them ages
+   silently. Reproduce with `sqlite3 data/agentos.sqlite ".tables"` and a `count(*)` per table.
+   What matters and does not rot: **Stage 4's migration runs against a live database with real rows
+   in it**, so a migration that drops or recreates `Task` destroys the owner's data. `migrate()`
+   ([`db.ts:169`](../../lib/agentos/db.ts#L169)) applies only migrations above `PRAGMA user_version`.
+   **Add migration 2. Never edit migration 1.**
+4. **The seeded template names six non-human agents, and *none* of them exists in this project.**
+   AgentOS-spec §10's steps name `spec`, `plan`, `review-coordinator`,
+   `implementation-plan-executioner`, `senior-dev`, `librarian` — six distinct names — plus the
+   literal `human` at step 9. The `Agent` rows that exist here are named `ux-ui-designer` and
+   `frontend developer`, and neither matches any of the six. So **instantiating the seeded template
+   in `agentic-os` today refuses at §3.3's rule 2**, naming the first unresolved step. That is the
+   spec working, not a defect — but T2's fixtures must seed the agents explicitly and must **not**
+   relax rule 2 to make a test pass. *(An earlier draft of this line said "five", which was
+   arithmetic done while writing rather than counting: it is six, and the count is the whole point
+   of the fact.)*
 5. **The `templates` flip is already safe.** `SETUP_ROWS`
    ([`lib/shell/model.ts:134`](../../lib/shell/model.ts#L134)) carries
    `{ key: "templates", state: "placeholder", builtBy: "Stage 4 — templates and chains" }`.
@@ -98,8 +106,17 @@ range so a later reader can see they are ticket-level.
   `ALTER TABLE Task ADD COLUMN chainId` / `chainOrd` (both nullable, no default). Row accessors:
   `createTemplate`, `getTemplateBySlug`, `listTemplatesByProject`, `listTemplateSteps`,
   `createChain`, `getChain`, `haltChain`, `listTasksByChain`.
+  **`Chain` also carries `lastDispatchedOrd` (integer, default 0)**, which is *not* in spec §3.1's
+  schema block — it is a build-level addition, not a decision, and it exists solely so T3's advance
+  can claim a step atomically instead of reading then writing. See T3's AC-10 note for why the
+  obvious rule fails. Raised in review of #33.
 - `lib/agentos/types.ts` — `TaskTemplateRow`, `TemplateStepRow`, `ChainRow`; `TaskRow` gains the two
   nullable fields.
+- `lib/agentos/db.ts` — **and `CreateTaskInput` / `createTask` gain optional `chainId` and
+  `chainOrd`.** Easy to miss and it blocks T2 outright: T2 is restricted to *read* accessors in
+  `db.ts`, so if the existing write path cannot persist the two columns, `instantiateTemplate` has
+  no permitted way to link the nine tasks it creates and T1's hand-off is unbuildable. Raised in
+  review of #33.
 - `lib/agentos/templates/compound-engineer.ts` (new) — the nine steps **as exported data, not as a
   migration fixture**, so AC-11 can edit the template row underneath a running chain and prove the
   chain ignores it. Slug `compound-engineer-workflow`, display name `compound-engineer` (spec §3.1's
@@ -196,8 +213,18 @@ advances yet — T3 makes `done` move the chain.
   the card does not move; this proves nothing downstream started.
 - `scripts/verify-stage4.mts` — adds AC-4, AC-5, AC-7, AC-8, AC-10.
 
-**Must not touch:** `lib/agentos/dispatch.ts`. If advancing seems to need a change inside `dispatch`,
-that is inherited fact 6 leaking in, or a precondition that should have refused. Say so and stop.
+- `lib/agentos/dispatch.ts` — **one hook inside `runSessionToCompletion`'s failure path, and
+  nothing else.** This is a deliberate exception to the "must not touch" rule below, and it exists
+  because **AC-8 is otherwise unreachable.** A `Runner` that throws is handled entirely inside
+  `runSessionToCompletion` ([`dispatch.ts:426-437`](../../lib/agentos/dispatch.ts#L426)), which marks
+  the session `failed` and transitions the task `doing -> todo`. It never passes through `done`, so a
+  hook that only fires after `done` would leave `haltChain` with **no production caller** — the
+  chain would silently stall instead of halting, and AC-8 would be asserting behaviour no code path
+  can produce. Raised in review of #33; the ticket previously forbade this file outright.
+
+**Must not touch:** anything else in `lib/agentos/dispatch.ts` — not the five preconditions, not the
+worktree lifecycle, not the resume path. If advancing seems to need more than the failure hook, that
+is inherited fact 6 leaking in, or a precondition that should have refused. Say so and stop.
 
 **The five that are easy to get subtly wrong:**
 - **AC-4 asserts the trigger kind**, not merely that a session appeared. A second dispatch path
@@ -206,12 +233,25 @@ that is inherited fact 6 leaking in, or a precondition that should have refused.
   silently executed by the project's default agent; a test with no default configured would pass
   while the bug was present. `dispatch` precondition 4 already refuses a null assignee — this proves
   it is not defaulted first.
-- **AC-8 asserts four facts and one absence:** step 5 `failed`, `Chain.status = 'halted'`,
-  `haltedAtTaskId` = step 5, steps 6–9 still blocked naming step 5, and **no session for step 6.**
-- **AC-10 is asserted by count.** Re-issuing `done` on step 1 must not produce a second session for
-  step 2. The clean rule: **advance refuses if the next task already has any `Session` row** —
-  cheaper and stricter than reasoning about status, and it survives a step that failed back to
-  `todo`.
+- **AC-8 asserts four facts and one absence, and the first one is not a task status.**
+  `TaskStatus` is `todo | doing | review | done` — [`types.ts:20`](../../lib/agentos/types.ts#L20) —
+  so *"step 5 failed"* names **the `Session` row** (`SessionStatus` does have `failed`), while step
+  5's own **task** is back in `todo`, which is what `runSessionToCompletion` writes. Assert both
+  explicitly, plus `Chain.status = 'halted'`, `haltedAtTaskId` = step 5's task, steps 6–9 still
+  blocked with a reason naming step 5, and **no session for step 6.** Raised in review of #33: the
+  earlier wording would have sent someone looking for a task status that cannot exist.
+- **AC-10 is asserted by count, and the guard must be *atomic*, not a read-then-write.** Re-issuing
+  `done` on step 1 must not produce a second session for step 2. **The rule an earlier draft gave —
+  "refuse if the next task already has any `Session` row" — is wrong**, and review of #33 caught it:
+  two `done` transitions can both read "no session", both clear `dispatch`'s async preconditions, and
+  both insert, because nothing serialises them and no unique constraint exists. A `Session` row also
+  cannot be made unique per task — a failed step that is re-dispatched legitimately has two.
+  **Use an atomic claim on the `Chain` row instead:** `Chain` carries `lastDispatchedOrd`, and
+  advance does `UPDATE Chain SET lastDispatchedOrd = :ord WHERE id = :id AND lastDispatchedOrd <
+  :ord`. SQLite applies that as one statement; if it affects zero rows, another caller already
+  claimed the step and this one returns without dispatching. **T1 adds the column** (it is in
+  `Chain`'s definition for this reason). Assert both the sequential re-issue *and* two advances
+  raced against one another.
 - **A human step ends the automation, not the chain** (§3.5). Nothing dispatches after step 9
   because there is no step 10. That is not a special case in the code; it is the absence of one.
 

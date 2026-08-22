@@ -49,7 +49,9 @@ Behaviour today: `docs/FEATURES.md`; in plain language, `docs/HUMAN-TEST.md`.
 commits land on a **detached HEAD** in a worktree that is then force-removed — so a successful run's
 output is a sha with a garbage collector's deadline on it, there is no branch, no push and no PR,
 and the worktree has no `node_modules`, so the agent cannot run `pnpm verify` on its own work.
-**Nothing has ever run: the `Session` table is empty.** Until 4b lands, no stage of this product can
+**Whether any session has ever run is a volatile fact and lives in `docs/HANDOFF.md`'s *Verified
+state* block, not here** — reproduce it with
+`sqlite3 data/agentos.sqlite "select count(*) from Session"`. Until 4b lands, no stage of this product can
 be built *by* this product, which is the whole reason 4b is sequenced before Stage 6 —
 `docs/specs/stage-4b-delivery.spec.md`.
 

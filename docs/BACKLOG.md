@@ -410,7 +410,8 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
 - **Sub-agent fan-out for template step 3** *(added 2026-08-22, deferred by
   [`stage-4-templates-chains.spec.md`](specs/stage-4-templates-chains.spec.md) §5.4)*.
   AgentOS-spec §10 step 3 has a `review-coordinator` spawning **four** review agents in parallel —
-  feasibility, scope-guardian, coherence, and a fourth he named but did not specify. The Agent SDK
+  and he **named only three of them**: feasibility, scope-guardian, coherence. The unnamed fourth is
+  itself part of why this is deferred — the source cannot say what it was. The Agent SDK
   supports sub-agents, so this is possible rather than blocked. Stage 4 ships step 3 as **one
   session instructed to produce the three named reviews and a consolidated must-fix / should-fix
   list**, which preserves the output the rest of the template depends on. **Why the topology is

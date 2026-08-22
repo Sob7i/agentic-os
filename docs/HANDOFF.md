@@ -1,7 +1,8 @@
 # Agentic OS — Session Handoff
 
-> Continuation notes for the next working session (human or agent). Updated **2026-08-18**
-> (round-3 design closed; Stages 3a/4/5 specced; **Stage 3a built**).
+> Continuation notes for the next working session (human or agent). Updated **2026-08-22**
+> (Stage 4's ticket queue written; **Stage 4b specced** — the delivery path, D37–D41). Previous
+> update 2026-08-18 (round-3 design closed; Stages 3a/4/5 specced; **Stage 3a built**).
 > Read `CLAUDE.md` first (session ritual, conventions, doc map); this file is only "where we
 > are and what's next."
 >
@@ -405,7 +406,7 @@
    **2026-08-22** it has a ticket file: [`stage-4-tickets.md`](specs/stage-4-tickets.md), four
    stacked tickets with six **measured** inherited facts — read those before briefing anyone, they
    include the one that says instantiating the seeded template in *this* project refuses today
-   because five of its six agent names do not exist here. That refusal is the spec working.
+   because **none** of its six non-human agent names exists here. That refusal is the spec working.
    [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) is new the same day and also
    **`☑`** (D37–D41 closed).
    [`stage-5-goals.spec.md`](specs/stage-5-goals.spec.md) is still **`☐`**, gated on one owner call
@@ -422,9 +423,12 @@
    `node_modules`, so the agent cannot run `pnpm verify` on its own work; `dispatch` branches from
    whatever `HEAD` the owner's checkout happens to be on; and the prompt a session receives is
    literally `Task: <name>\n\n<description>` and nothing else. **Every one of those is closed by
-   Stage 4b** (D37–D41). **Also measured, and it is the flat fact under all of this: the `Session`
-   table is empty — no session has ever run.** So the first Stage 4b acceptance run is *also* the
-   first proof that `LocalRunner` works end-to-end, which is two unknowns at once and is why D27
+   Stage 4b** (D37–D41). **And the flat fact under all of this is how many sessions have ever run —
+   a volatile value, so it is not restated here:** reproduce it with
+   `sqlite3 data/agentos.sqlite "select count(*) from Session"`, and read the *Verified state*
+   block above for what it was when last checked. If the answer is still zero, the first Stage 4b
+   acceptance run is *also* the first proof that `LocalRunner` works end-to-end — two unknowns at
+   once, and why D27
    chose `fractal-code` for first real runs rather than this repo. Sequenced **before Stage 6**,
    because Stage 6 is the first stage that could plausibly be built by this product instead of by
    hand — and it cannot be while finished work is recoverable only by reading a sha out of SQLite.
@@ -573,8 +577,10 @@ None.
   the agent cannot run `pnpm verify` on its own work; `dispatch` hardcodes `BASE_REF = "HEAD"`, which
   means *wherever the owner's checkout happens to be standing*, so stacked tickets are inexpressible;
   and the prompt is `Task: <name>\n\n<description>` and nothing more. **And the flat fact underneath
-  it: `SELECT count(*) FROM Session` is 0** — nothing has ever run, so the first real dispatch would
-  also be the first proof `LocalRunner` works, which is two unknowns at once.
+  it, as measured on 2026-08-22:** `select count(*) from Session` returned **0** — nothing had ever
+  run, so the first real dispatch would also be the first proof `LocalRunner` works, two unknowns at
+  once. *Written as a dated past measurement, not a present-tense claim, because the value moves the
+  first time anyone dispatches anything; the live one lives in* **Verified state** *and nowhere else.*
   Two documents written, no code: **[`stage-4-tickets.md`](specs/stage-4-tickets.md)** (four stacked
   tickets, six measured inherited facts, and the note that the advance hook **cannot** go inside
   `writeTaskTransition` — it is sync, and `db.ts` importing `dispatch.ts` is a cycle) and
@@ -585,6 +591,6 @@ None.
   is the boundary between running work and shipping it, and it only becomes urgent once chains exist
   to produce more than one commit worth handing back. It is sequenced **before Stage 6**, because
   Stage 6 is the first stage that could plausibly be built by this product rather than by hand.
-  **Stage 4b carries its own owner gate (AC-14)** and it is the same shape as Stage 2's and Stage
+  **Stage 4b carries its own owner gate (AC-17)** and it is the same shape as Stage 2's and Stage
   3b's: every fixture check runs against a bare repo in `/tmp`, so until one real PR exists on
   GitHub that this product opened, the last mile is code nobody has run.

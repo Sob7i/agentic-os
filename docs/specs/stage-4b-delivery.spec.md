@@ -1,9 +1,11 @@
 # Spec — Stage 4b: the delivery path
 
 status: ☑ decisions closed (**D37–D41**) — buildable. **One owner gate remains and it is an
-acceptance criterion, not a decision:** no branch this product created has ever been pushed, and
-until one is, this stage is code that has never left the machine. Sequenced **after Stage 4** and
-**before Stage 6**, for the reason in the box below.
+acceptance criterion, not a decision (AC-17):** a branch this product created, pushed, with a real
+PR opened and merged. Whether that has happened yet is a volatile fact and lives in
+`docs/HANDOFF.md`'s *Verified state* block alone — reproduce it with `gh pr list --state all
+--search "head:agentos/"`. Until it has, this stage is code that has never left the machine.
+Sequenced **after Stage 4** and **before Stage 6**, for the reason in the box below.
 
 > **The stage that lets the product build itself.**
 >
@@ -47,7 +49,11 @@ until one is, this stage is code that has never left the machine. Sequenced **af
    name T1's branch.
 3. **Workspace preparation** (D39) — a `prepare:` command in `agentos.yml`, run inside the worktree
    **before** the model call, whose failure refuses the dispatch instead of handing the agent a
-   workspace it will spend budget discovering is broken.
+   workspace it will spend budget discovering is broken. **On every turn that gets a worktree, which
+   includes an inbox resume** — `resumeSession` builds a fresh worktree of its own
+   ([`dispatch.ts:494`](../../lib/agentos/dispatch.ts#L494)) and never passes through `dispatch`'s
+   preconditions, so a resumed turn would otherwise reach the model with no dependencies at all.
+   Raised in review of #33.
 4. **Session self-verification** (D40) — a `verify:` command in `agentos.yml`, run inside the
    worktree **after** the model call and **before** teardown, with exit code and output tail
    recorded on the `Session` as evidence.
@@ -56,7 +62,13 @@ until one is, this stage is code that has never left the machine. Sequenced **af
    system already knows, not retyped into every task description.
 6. **Push & open PR** (D41) — **one explicit human click** per session, producing a pushed branch
    and a PR against the project's integration branch, whose body is that session's evidence.
-7. **`pnpm verify:stage4b`**, fixture-based. **The remote is a real bare repo in a temp dir**, never
+7. **One new command runner** (§3.5) — `lib/agentos/command.ts`, returning exit code, stdout and
+   stderr with a caller-supplied timeout. **`lib/collectors/exec.ts`'s `run()` cannot be reused for
+   this and the earlier draft of this spec was wrong to mandate it:** it returns `string | null`,
+   discards the exit code and stderr entirely, and defaults to a **15-second** timeout — so it can
+   record neither *"prepare exited 3"* nor a verify tail, and it would abort a cold `pnpm install`
+   partway. Raised in review of #33. `run()` stays exactly as it is for every git call.
+8. **`pnpm verify:stage4b`**, fixture-based. **The remote is a real bare repo in a temp dir**, never
    a network host (§7).
 
 **Out** — each is a later stage, an invariant, or a backlog entry:
@@ -74,8 +86,8 @@ until one is, this stage is code that has never left the machine. Sequenced **af
 - **Rebasing, conflict resolution, or updating a branch that has fallen behind.** A branch that no
   longer merges cleanly is a human's problem, and a product that resolves conflicts unattended is
   making judgement calls nobody reviewed.
-- **Deleting a branch after its PR merges.** Cleanup is `git branch --list 'agentos/*'`, by hand,
-  and the namespace exists so that command is safe (§3.3) → `docs/BACKLOG.md`.
+- **Deleting a branch after its PR merges.** Cleanup is by hand, listing `agentos/*` and checking
+  each name against the `Session` rows that own it (§3.3) → `docs/BACKLOG.md`.
 - **Non-primary repos.** D21 allows a project to mount several; this stage branches, prepares,
   verifies and pushes **the primary one only**. A per-session repo manifest is the unspecced
   `Repos` setup row.
@@ -107,10 +119,10 @@ until one is, this stage is code that has never left the machine. Sequenced **af
 ### 3.1 Schema (extends Stage 3 §3.7 and Stage 4 §3.1)
 
 ```
-Project  gains  defaultBaseRef        -- 'HEAD' unless agentos.yml says otherwise
-                integrationBranch     -- PR base; 'develop' unless agentos.yml says otherwise
+Project  gains  integrationBranch     -- PR base; 'develop' unless agentos.yml says otherwise
+                defaultBaseRef        -- defaults to integrationBranch, NOT to HEAD (see below)
 Task     gains  baseRef               -- nullable; null means the project's default
-Session  gains  branchName            -- 'agentos/<task-slug>-<short>'; null only pre-migration
+Session  gains  branchName            -- 'agentos/<slug>-<short>'; null only pre-migration
                 prepareExitCode, prepareMs
                 verifyExitCode, verifyTail
                 pushedAtISO, prUrl
@@ -119,6 +131,21 @@ Session  gains  branchName            -- 'agentos/<task-slug>-<short>'; null onl
 Every added column is **nullable with no default**, and migration 3 is additive for the same reason
 Stage 4's migration 2 is: `data/agentos.sqlite` on the owner's machine already holds real rows
 (`stage-4-tickets.md`, inherited fact 3). **Never edit an applied migration.**
+
+**`defaultBaseRef` falls back to `integrationBranch`, not to `HEAD`, and that correction is the
+whole of D38.** The first draft of this spec defaulted it to `HEAD` while D38's own title said *"never
+inherited from the owner's checkout"* — so with no task override and no yaml override the behaviour
+was byte-identical to today's, and the decision would have shipped as a claim rather than a change.
+Raised in review of #33. `HEAD` remains **available**, as an explicit opt-in a project writes down;
+what it stops being is what happens when nobody chose. A project whose integration branch does not
+resolve refuses at `dispatch`'s existing precondition 5, which is loud and correct.
+
+**Where `Task.baseRef` is actually set**, because a column nothing writes is not a feature: the task
+form gains an optional field (blank → null → the project default), `CreateTaskInput` and `createTask`
+carry it, and **Stage 4's `TemplateStep` gains an optional `baseRefFromStep`** so a chain's step N+1
+can declare *"branch from step N's branch"* — which is the stacked-ticket case D38 exists for and
+the one place a human should not be typing branch names by hand. If Stage 4 has not landed when this
+is built, ship the form field and the column, and leave the chain half to whichever lands second.
 
 ### 3.2 The branch is created at spawn, not derived afterwards
 
@@ -138,19 +165,46 @@ value line in this stage, because of what the current behaviour costs:
 `readWorktreeCommits` keeps reading `<baseSha>..HEAD` — the base is still pinned to a resolved sha
 (worktree.ts's own trap note), and the branch name is bookkeeping on top of it, not a replacement.
 
+**A resume attaches to the existing branch; it must never create one.** `resumeSession`
+([`dispatch.ts:494`](../../lib/agentos/dispatch.ts#L494)) builds a **fresh worktree reusing the same
+session id**, from the same stored `baseRef`. With an unconditional `-b` that call fails outright —
+the branch was created at first dispatch and is still there — and "recreate it from the base"
+would be worse, silently discarding whatever the paused turn committed, which is precisely the work
+the `inbox_ask` tool's own description told the agent to commit before asking. So `createWorktree`
+takes the branch as a parameter and a flag: **create it on a first dispatch, check it out on a
+resume.** AC-14 asserts a resumed turn lands on the same branch with the earlier commit still
+reachable. Raised in review of #33 — an interaction between D37 and Stage 3 §3.5 that the first
+draft missed entirely.
+
 ### 3.3 The branch name is namespaced, and that is the cleanup story
 
-`agentos/<task-slug>-<first 8 of sessionId>`. Three properties, each load-bearing:
+`agentos/<slug>-<first 8 of sessionId>`, where `<slug>` is **derived, not stored** — `Task` has no
+slug column, only a free-form `name` ([`types.ts:74`](../../lib/agentos/types.ts#L74)), and a name
+like `Fix: the ~thing~ (again)` is not a legal git ref. Raised in review of #33, which is also why
+the derivation is specified here rather than left to the implementer:
 
-- **It can never collide with hand-made work.** This repo's branches are `feat/…`, `fix/…`,
-  `chore/…`, `docs/…` (`CLAUDE.md`). The `agentos/` prefix is unclaimed, so a human can run
-  `git branch -D $(git branch --list 'agentos/*')` without reading any of them first.
+**`slugify(name)`** — lowercase, every run of characters outside `[a-z0-9]` collapsed to a single
+`-`, leading and trailing `-` stripped, truncated to **40 characters** at a `-` boundary. **If the
+result is empty** — a name that is entirely punctuation or non-Latin script — the slug is the
+literal `task`. The slug is decoration; **the session id is what makes the name unique**, so an
+empty or colliding slug costs readability and nothing else. AC-15 asserts a hostile name produces a
+ref `git check-ref-format` accepts.
+
+Three properties, each load-bearing:
+
+- **It will not collide with hand-made work here.** This repo's branches are `feat/…`, `fix/…`,
+  `chore/…`, `docs/…` (`CLAUDE.md`), so `agentos/` is unclaimed **by convention**. It is *not*
+  reserved by git, and nothing stops a human or another tool from creating a branch under it — so
+  **the cleanup command is not a blind wildcard delete.** List `agentos/*`, look each name's session
+  id up in the `Session` table, and delete only the ones the product owns. The earlier draft
+  recommended `git branch -D $(git branch --list 'agentos/*')` and that recommendation was wrong.
 - **The session id is in the name.** Given a branch, one query returns the session, its cost, its
   tool calls and its drift at spawn. Given a session, the branch is computable. Neither direction
-  needs a lookup table, which is the second source of truth D11 forbids.
-- **The task slug is in the name** so the branch list is readable by a human at a glance. It is
-  display, not a key — **nothing is keyed on the task slug** (Stage 4 §3.1's one-identifier rule,
-  one level down).
+  needs a lookup table, which is the second source of truth D11 forbids — and it is what makes the
+  ownership check above a lookup rather than a guess.
+- **The task name is in the name** so the branch list is readable by a human at a glance. It is
+  display, not a key — **nothing is keyed on the slug** (Stage 4 §3.1's one-identifier rule, one
+  level down), which is exactly why truncating and mangling it is safe.
 
 ### 3.4 A session that wrote nothing leaves nothing
 
@@ -163,14 +217,37 @@ the delete decision uses that already-read list — never a second `git log` aft
 
 ### 3.5 `prepare:` and `verify:` are declared, never inferred
 
-`agentos.yml` gains two optional keys, both absent by default:
+`agentos.yml` gains **four** optional keys. The parser today accepts only `slug` and
+`maxConcurrentSessions` ([`config.ts`](../../lib/agentos/config.ts)), so all four are new work and
+T2 owns the parsing — an omission in the first draft, which specified `defaultBaseRef` and
+`integrationBranch` in the schema and then never said where they came from. Raised in review of #33.
 
 ```yaml
-prepare: pnpm install --frozen-lockfile
-verify:  pnpm verify:stage4
+integrationBranch: develop            # PR base. 'main' is refused — §3.8
+defaultBaseRef:    develop            # optional; defaults to integrationBranch
+prepare:
+  command: ["pnpm", "install", "--frozen-lockfile"]
+  timeoutMs: 600000                   # optional; default 300000
+verify:
+  command: ["pnpm", "verify:stage4"]
+  timeoutMs: 900000                   # optional; default 300000
 ```
 
-**Neither is guessed from the repo's contents.** A lockfile is not consent to run a package manager,
+**A command is argv, not a shell string, and the timeout is part of the declaration.** Both
+corrections come from review of #33 and both would have been found by the first person to run this:
+the project's child-process helper uses `execFile`, which takes an executable plus arguments and
+**does not tokenize or invoke a shell** — so a single string `pnpm install --frozen-lockfile` would
+be looked up as an executable with that entire name and fail. Argv also means **no quoting rules and
+no shell injection surface**, which is the right trade for a field that names a program to run. The
+consequence to hold on to: `sh -c` is available only by writing it out — `["sh", "-c", "…"]` — which
+is explicit, greppable, and the owner's choice rather than an accident of parsing.
+
+**The default timeout is five minutes, not fifteen seconds.** `run()`'s 15s default is tuned for
+`git rev-parse`; a cold `pnpm install` in a fresh worktree runs for about a minute here and a full
+verify suite for longer. A preparation step killed at 15 seconds would refuse every dispatch with a
+timeout that looks exactly like a broken repo.
+
+**None of the four is guessed from the repo's contents.** A lockfile is not consent to run a package manager,
 and inferring `pnpm install` from a `pnpm-lock.yaml` would mean any repo that grows one starts
 executing an install the owner never authorised. Absent key → step skipped, and the session's
 `prepareExitCode` stays `null` — *"not configured"*, never `0`, because `0` is a claim that
@@ -228,9 +305,15 @@ one gate with worse copy — the reasoning Stage 2 closed for the fix-proposal b
 reuses for the chain gate. The honesty lives in the **label** (AC-12), which names the branch and the
 base: *"Push `agentos/stage-6-t1-a1b2c3d4` & open PR → develop"*.
 
-**Never `main`.** `integrationBranch` defaults to `develop`, and `CLAUDE.md`'s workflow is explicit
-that `main` receives only `develop` and only from the owner. AC-11 asserts no merge call exists at
-all; the base default is what keeps an honest mistake from targeting the wrong branch.
+**Never `main` — refused, not merely defaulted away from.** `CLAUDE.md`'s workflow is explicit that
+`main` receives only `develop` and only from the owner. A default of `develop` does not deliver that:
+`integrationBranch` is configurable, so an `agentos.yml` reading `integrationBranch: main` would have
+the product opening PRs straight at `main`, which is the workflow's one prohibition. Raised in review
+of #33. **So the config parser refuses the literal `main` and `master` for this key**, naming the
+workflow rule, and the project fails to initialize rather than initializing into a state that
+violates it. A project that genuinely has no `develop` sets some other branch; what it may not do is
+name the one branch the owner alone is allowed to move. AC-16 asserts the refusal, and AC-11
+separately asserts no merge call exists at all.
 
 ## §4 — Acceptance
 
@@ -250,9 +333,13 @@ push is genuinely exercised without touching a network host.
 - **AC-5 — prepare runs first.** A `prepare:` of `touch prepared.txt` leaves that file present in
   the worktree **at the moment the runner is invoked** — asserted from inside the `FakeRunner`'s own
   callback, not afterwards, because afterwards cannot distinguish "before the model" from "after".
-- **AC-6 — a failed prepare refuses the dispatch.** `prepare: exit 3` → `dispatch` returns
-  `started: false` naming the command and exit code, **and** `SELECT count(*) FROM Session` is
-  unchanged, **and** the worktree is gone. Nothing spent, nothing stranded.
+- **AC-6 — a failed prepare refuses the dispatch and leaves nothing behind.** A `prepare:` of
+  `["sh","-c","exit 3"]` → `dispatch` returns `started: false` naming the command and exit code,
+  **and** `SELECT count(*) FROM Session` is unchanged, **and** the worktree is gone, **and the
+  branch is gone too.** The last clause was missing from the first draft and review of #33 caught
+  it: D37 creates the branch *before* prepare runs, so a refusal on this path would otherwise strand
+  an empty `agentos/*` ref on every failed preparation — defeating AC-2 and the cleanup story in one
+  move. Same rule as §3.4, reached from a different direction.
 - **AC-7 — verification is measured, not reported.** `verify: exit 1` with a `FakeRunner` scripted
   to announce success: `verifyExitCode = 1`, `verifyTail` non-empty, and `Session.status` is
   `completed` — the run succeeded and the code is red, both recorded, neither hiding the other.
@@ -273,8 +360,20 @@ push is genuinely exercised without touching a network host.
   branch. Asserted on the rendered string from a pure function.
 - **AC-13 — the migration is additive.** Migration 3 against a database holding Stage 3 and Stage 4
   rows leaves every existing row byte-identical, with new columns `NULL`; migrating twice is a no-op.
+- **AC-14 — a resume attaches, and keeps what the paused turn committed.** Script a `FakeRunner` to
+  commit and then pause via `inbox_ask`; answer it; the resumed turn's worktree is on **the same
+  branch**, `git worktree add` did not fail, and the first turn's commit is still reachable from it.
+  **`[G]`** make the resume path pass the create flag, observe red, revert. This is the check that
+  the whole of §3.2's second half exists for.
+- **AC-15 — a hostile task name still produces a legal ref.** A task named
+  `  ~~Fix: the *thing* (again)!!  ` yields a branch `git check-ref-format --branch` accepts, and a
+  task whose name contains no `[a-z0-9]` at all yields `agentos/task-<short>` rather than a name
+  with an empty segment. Asserted against the pure `slugify`, and once end-to-end against real git.
+- **AC-16 — `main` is refused as an integration branch.** `integrationBranch: main` in a fixture's
+  `agentos.yml` fails to parse, the error names the workflow rule, and **no `Project` row is
+  created** — the all-or-nothing shape Stage 3b's initialize already uses. Same for `master`.
 
-**The owner gate — AC-14, and no fixture can close it.** *One real branch, pushed, with a real PR
+**The owner gate — AC-17, and no fixture can close it.** *One real branch, pushed, with a real PR
 opened, reviewed by a human, and merged by the owner.* Every check above runs against a bare repo in
 `/tmp`. Until a PR exists on GitHub that this product opened, the last mile is unproven code — the
 same shape as Stage 2's *"one real drift corrected"*, which is still open, and Stage 3b's *"no human
@@ -290,7 +389,9 @@ are the contract.
    invented at push. §3.2.
 2. **D38 — the base ref is declared, never inherited from the owner's checkout.** `dispatch`'s
    hardcoded `HEAD` means "wherever the owner happens to be standing", which is the exact failure
-   `CLAUDE.md` records four sub-agents hitting from the other direction. §3.1, §3.3.
+   `CLAUDE.md` records four sub-agents hitting from the other direction. **The fallback chain ends
+   at `integrationBranch`, not at `HEAD`** — otherwise the decision changes nothing in the default
+   case, which is what the first draft shipped. §3.1.
 3. **D39 — the workspace is prepared by a command the owner declared, and that command may reach the
    network.** Inside D19's existing allow-list carve-out, not a new one, **because the owner wrote
    it by hand in their own repo's file.** The product may never suggest, default, or infer it. §3.5.
@@ -304,24 +405,33 @@ are the contract.
 
 ## §6 — Build notes
 
-Four tickets, stacked, in this order. Ticket file: `docs/specs/stage-4b-tickets.md`, written before
-T1 starts.
+Four tickets, stacked, in this order. **The ticket file does not exist yet** —
+`docs/specs/stage-4b-tickets.md` is written before T1 starts and is not part of this spec's PR, so
+do not follow that link expecting to find it. The sketch below is the input to writing it, not a
+substitute for it. (The first draft linked it as though it existed; raised in review of #33.)
 
-1. **T1 — D37/D38, migration 3, and the branch.** `worktree.ts` (`-b`, and the empty-branch delete),
-   `dispatch.ts` (base ref resolution from task → project → `HEAD`), `db.ts` migration 3, the suite.
-   Closes AC-1, AC-2, AC-3, AC-4, AC-13.
-2. **T2 — prepare and verify.** `config.ts` (two keys), `dispatch.ts` (the pre-run gate), the
-   post-run child process. Closes AC-5, AC-6, AC-7.
+1. **T1 — D37/D38, migration 3, and the branch.** `worktree.ts` (the branch parameter and its
+   create/attach flag, and the empty-branch delete), `dispatch.ts` (base ref resolution: task →
+   project `defaultBaseRef` → `integrationBranch`) **and `resumeSession`, which attaches**, `db.ts`
+   migration 3, the task form's optional `baseRef` field, the suite. Closes AC-1, AC-2, AC-3, AC-4,
+   AC-13, AC-14, AC-15.
+2. **T2 — prepare and verify.** `lib/agentos/command.ts` (the new runner — exit code, stdout,
+   stderr, caller-supplied timeout), `config.ts` (**all four keys**, including the `main` refusal),
+   `dispatch.ts` and `resumeSession` (the pre-run gate on **both** paths), the post-run child
+   process. Closes AC-5, AC-6, AC-7, AC-16.
 3. **T3 — the preamble and the PR body.** Both pure composers in a leaf module so the suite asserts
    strings without spawning anything. Closes AC-8, AC-10, AC-12.
 4. **T4 — push, the PR, and the UI.** The server action, the session-card control, and the
-   `verifyExitCode` refusal. Closes AC-9, AC-11. Ships the stage and writes AC-14 into `HANDOFF.md`
+   `verifyExitCode` refusal. Closes AC-9, AC-11. Ships the stage and writes AC-17 into `HANDOFF.md`
    as an open owner gate.
 
-**Reuse rather than re-derive:** `run()` from `lib/collectors/exec.ts` for every child process (it is
-already the project's one command runner and it already returns `null` on failure rather than
-throwing); `FakeRunner` unchanged; the fixture-repo harness from `verify-stage2.mts`; and
-`resolveOwnedTask` for the push action's ownership check.
+**Reuse rather than re-derive:** `run()` from [`lib/collectors/exec.ts`](../../lib/collectors/exec.ts)
+for **every git call** — it is already the project's one git runner, it already returns `null` on
+failure rather than throwing, and its 15-second default is correct for `rev-parse` and `worktree
+add`. **Do not reuse it for `prepare:` or `verify:`**, which need an exit code, stderr and a minutes-
+long timeout that `run()` structurally cannot provide (§1 item 7). `FakeRunner` unchanged; the
+fixture-repo harness from `verify-stage2.mts`; and `resolveOwnedTask` for the push action's
+ownership check.
 
 ## §7 — Test seams
 
@@ -331,8 +441,10 @@ throwing); `FakeRunner` unchanged; the fixture-repo harness from `verify-stage2.
 | **the fixture repo** | a real watched project | all |
 | **a bare repo in a temp dir, as `origin`** | GitHub, for `git push` | AC-9 |
 | **an injected `gh` invoker** | GitHub's API, for `pr create` | AC-9 |
+| **`command.ts`'s runner, injected** | the `prepare:` / `verify:` child processes | AC-5, 6, 7 |
 
-**Two new seams, and the stage argues for both.** Stage 3 §9 and Stage 4 §7 both push to keep the
+**Three new seams, and the stage argues for each.** *(The first draft said two and then mandated a
+helper that cannot report an exit code; the third seam is that correction, not scope creep.)* Stage 3 §9 and Stage 4 §7 both push to keep the
 count near one, and this stage is the exception those arguments anticipated: it is the first that
 acts on something outside the machine, so it is the first that needs the outside substituted.
 

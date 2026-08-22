@@ -983,6 +983,13 @@ sweep already reports a killed session honestly; with a branch, the honest repor
 — *"interrupted at `<sha>` on `<branch>`"*. It does not make sessions survive a restart, and D20
 still owns that.
 
+**One interaction, found in review of #33 and worth stating inside the decision** because it is the
+only place `-b` is not simply correct: `resumeSession` builds a fresh worktree **reusing the same
+session id** after an inbox pause, so the branch already exists by then. An unconditional `-b` fails
+there, and recreating from the base would silently discard whatever the paused turn committed — the
+work the `inbox_ask` tool's own description instructed the agent to commit before asking. **A resume
+attaches to the branch; only a first dispatch creates it.** The spec's §3.2 and AC-15 carry it.
+
 **Rejected: create the branch at push time from the recorded sha.** It works right up until gc runs,
 a crash happens before the record is written, or the worktree read fails — and every one of those is
 the moment the work was most worth keeping.
@@ -1003,9 +1010,17 @@ mirror image of this failure from the other direction — *"never provision a su
 the default base"*, after four agents in a row started at a commit predating the entire build. The
 lesson was that a base has to be **stated and checked**, and the execution layer does neither.
 
-**Decision:** `Project.defaultBaseRef` (from `agentos.yml`, defaulting to `HEAD`) and a nullable
-`Task.baseRef` that overrides it. `dispatch` resolves task → project → `HEAD`, and precondition 5
+**Decision:** `Project.integrationBranch` (from `agentos.yml`, default `develop`),
+`Project.defaultBaseRef` (**defaulting to `integrationBranch`**), and a nullable `Task.baseRef` that
+overrides both. `dispatch` resolves task → project default → integration branch, and precondition 5
 already verifies the result with `git rev-parse`, so a bad ref refuses at the gate it already has.
+
+**The fallback must not end at `HEAD`, and the first draft of this decision said it did.** Raised in
+review of #33: with `HEAD` as the default, a project that sets nothing behaves exactly as it does
+today, so the decision would have been a claim about configurability rather than a change in
+behaviour — and the failure mode it exists to prevent would survive untouched in the common case.
+`HEAD` stays available as something a project **writes down**; what it stops being is what happens
+when nobody chose.
 
 **The second reason, which is the one that matters for Stage 4:** stacked work becomes expressible.
 Every ticket file in this project says the same thing — *T2 branches off T1, never off `develop`* —
@@ -1029,8 +1044,18 @@ installs anything — verified 2026-08-22 by grep: no `pnpm install` exists anyw
 the path"* — the automated path skips the step the manual path requires.
 
 **Decision:** `agentos.yml` gains an optional `prepare:` key, run as a child process inside the
-worktree **before** the model call. A non-zero exit **refuses the dispatch** — no session row, no
-cost, worktree removed. Absent key → skipped, and `prepareExitCode` stays `null`, never `0`.
+worktree **before** the model call — on a first dispatch **and on an inbox resume**, which builds its
+own fresh worktree and would otherwise reach the model with no dependencies. A non-zero exit
+**refuses the dispatch** — no session row, no cost, worktree removed, **and the branch D37 created
+deleted**. Absent key → skipped, and `prepareExitCode` stays `null`, never `0`.
+
+**The command is argv with a declared timeout, not a shell string.** Two corrections from review of
+#33, both of which the first person to run this would have hit: the project's child-process helper
+uses `execFile`, which does not tokenize or invoke a shell, so `pnpm install --frozen-lockfile` as
+one string is looked up as an executable with that whole name; and its 15-second default — right for
+`git rev-parse` — would kill a cold install partway and report it as a broken repo. Argv also
+removes quoting rules and any injection surface, and leaves `["sh","-c","…"]` available as something
+the owner writes out on purpose rather than gets by accident.
 
 **Refusing rather than warning, because of what proceeding costs.** A workspace with no dependencies
 is one where the first command the agent runs fails for a reason that has nothing to do with the
@@ -1083,10 +1108,14 @@ specimen-not-behaviour trap `docs/LEARNINGS.md` records from Stage 1's AC-2.
 
 **Spec:** [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) §3.8.
 
-Pushing a branch is the first thing this product does that **leaves the machine**. Invariant 1 keeps
-everything on-machine bar `gh` and the model API; Invariant 4 gates writes. D19 moved the execution
-layer's gate from per-write to **per-session, authorised at spawn** — and a push is not a write
-inside the granted manifest. It is publication into a shared remote that other people read.
+Pushing a branch is the first thing this product does that **publishes** — that puts bytes somewhere
+other people read. It is *not* the first thing that touches the network, and the first draft of this
+decision said it was: D39 one entry earlier permits an owner-declared `prepare:` command to reach a
+package registry, and `gh` and the model API were always permitted. Raised in review of #33, and the
+distinction is the load-bearing part — **egress is not the boundary here, publication is.** Invariant
+4 gates writes; D19 moved the execution layer's gate from per-write to **per-session, authorised at
+spawn** — and a push is not a write inside the granted manifest. It is a shared remote that
+teammates, CI, and anyone watching the repo will see.
 
 **Decision, three parts:**
 
