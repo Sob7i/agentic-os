@@ -93,6 +93,11 @@ export function TaskForm({
         </select>
       </label>
 
+      <label className={s.field}>
+        Base ref
+        <input name="baseRef" placeholder="blank uses the project default" />
+      </label>
+
       <label className={s.checkboxField}>
         <input type="checkbox" name="approvalGate" />
         Require approval before done

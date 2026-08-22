@@ -31,13 +31,15 @@ import {
   updateSession,
   writeTaskTransition,
 } from "./db";
-import type { AgentRow, DriftAtSpawn, ProjectRow, SessionRow, TriggerKind } from "./types";
+import type { AgentRow, DriftAtSpawn, ProjectRow, SessionRow, TaskRow, TriggerKind } from "./types";
 import {
   createWorktree,
+  deleteBranch,
   readWorktreeCommits,
   removeWorktree,
   type Worktree,
 } from "./worktree";
+import { sessionBranchName } from "./slug";
 import { LocalRunner, composeOptions } from "./runner/local";
 import type { Runner } from "./runner/runner";
 import { createAgentosServer } from "./mcp/agentos-server";
@@ -149,6 +151,36 @@ export function driftAtSpawnFromReport(report: ProjectReport | undefined, fallba
   };
 }
 
+// ---------------------------------------------------------------------------
+// D38/Stage 4b §3.1 — the base ref is declared, never inherited from the owner's checkout
+// ---------------------------------------------------------------------------
+
+/**
+ * `task.baseRef ?? project.defaultBaseRef ?? project.integrationBranch` — spec §3.1,
+ * docs/specs/stage-4b-tickets.md T1. A pure function, exported so AC-3 asserts the resolution
+ * itself without spawning anything; `dispatch` below resolves it with `git rev-parse` at
+ * precondition 5, same as it always has.
+ *
+ * **One term beyond the ticket's literal three, and the reason is compatibility, not a
+ * reopening of D38.** If all three columns are unset — every fixture project across Stage
+ * 3/3b/3c/4's suites, created by a `createProject` call that predates this stage and supplies
+ * none of them — this falls back to `'HEAD'`, reproducing today's behaviour exactly. D38 itself
+ * says `HEAD` "stays available as something a project writes down"; this is that same value,
+ * written down here as the one safe default for a row nothing has configured, rather than
+ * defaulting `project.integrationBranch` itself to `'develop'` at `createProject` — which would
+ * break every existing fixture, since none of their repos have a `develop` branch to resolve. A
+ * project actually onboarded through `initializeProject` (T2) always has a real
+ * `integrationBranch` (its own default is `'develop'`, from `agentos.yml`), so that fallback
+ * never fires for a real, configured project — only for a row nothing has touched yet, exactly
+ * the case D38 carves out.
+ */
+export function resolveBaseRef(
+  task: Pick<TaskRow, "baseRef">,
+  project: Pick<ProjectRow, "defaultBaseRef" | "integrationBranch">,
+): string {
+  return task.baseRef ?? project.defaultBaseRef ?? project.integrationBranch ?? "HEAD";
+}
+
 async function computeDriftAtSpawn(project: ProjectRow): Promise<DriftAtSpawn> {
   const board = await boardOnce();
   const report = board.projects.find((p) => p.path === project.primaryRepoPath);
@@ -247,14 +279,16 @@ export async function dispatch(
   }
 
   // ── Precondition 5 — the base ref resolves ────────────────────────────────────────────────
-  // Always the primary repo's current HEAD — the schema has no per-project or per-task branch
-  // column (§3.7), and "the primary repo" (§7.3) is the only ref a dispatch can mean without one.
-  const BASE_REF = "HEAD";
-  const resolvedHead = await run("git", ["rev-parse", BASE_REF], project.primaryRepoPath);
+  // D38: task → project.defaultBaseRef → project.integrationBranch (resolveBaseRef above),
+  // never the owner's checkout — "wherever the owner happens to be standing" is exactly the
+  // failure CLAUDE.md records from the other direction (four sub-agents starting a worktree from
+  // the wrong base). A ref that doesn't resolve refuses here, loudly, same as it always has.
+  const baseRef = resolveBaseRef(task, project);
+  const resolvedHead = await run("git", ["rev-parse", baseRef], project.primaryRepoPath);
   if (resolvedHead === null) {
     return refuse(
       "baseRef",
-      `git rev-parse ${BASE_REF} failed in ${project.primaryRepoPath} — no base to branch the worktree from`,
+      `git rev-parse ${baseRef} failed in ${project.primaryRepoPath} — no base to branch the worktree from`,
     );
   }
 
@@ -265,7 +299,13 @@ export async function dispatch(
   // "The session id is the caller's identity to assign" (worktree.ts's own docstring on
   // createWorktree) — minted here so the worktree's directory name and the Session row's
   // primary key are the same value, readable end-to-end from a session id alone.
-  const wt = await createWorktree(project.primaryRepoPath, BASE_REF, sessionId);
+  // D37: the branch is created NOW, before the model is called, so every commit lands on a ref
+  // from the first one — never derived later from a recorded sha (§3.2).
+  const branchName = sessionBranchName(task.name, sessionId);
+  const wt = await createWorktree(project.primaryRepoPath, baseRef, sessionId, {
+    name: branchName,
+    mode: "create",
+  });
 
   const session = createSession(db, {
     id: sessionId,
@@ -273,7 +313,8 @@ export async function dispatch(
     agentId: agent.id,
     triggerKind: trigger,
     worktreePath: wt.path,
-    baseRef: wt.baseRef, // the resolved sha, never "HEAD" verbatim — see worktree.ts's own trap note
+    baseRef: wt.baseRef, // the resolved sha, never the ref verbatim — see worktree.ts's own trap note
+    branchName,
     pid: process.pid,
     bootId,
     driftAtSpawn,
@@ -418,6 +459,16 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
   if (commitShas.length) recordCommitShas(db, session.id, commitShas);
   const teardownError = await tearDownBestEffort(worktree, removeWt);
 
+  // §3.4: a run that committed nothing leaves nothing. Decided from the LIST ALREADY READ ABOVE
+  // — never a second `git log` after the worktree is gone (§3.4's ordering trap, §3.2's from a
+  // different direction). Runs regardless of `runError`: a session that failed and a session
+  // that completed cleanly are equally "wrote nothing" if the list is empty, and the
+  // `waiting-inbox` path above already returned before this line — that session is paused and
+  // `resumeSession` will attach to exactly this branch, so it must never be deleted here.
+  if (commitShas.length === 0 && session.branchName) {
+    await deleteBranch(worktree, session.branchName);
+  }
+
   // Both facts are recorded, and neither is allowed to hide the other: `status` reports what the
   // *run* did, and a teardown failure is appended to the reason rather than reclassifying a
   // completed run as failed.
@@ -526,7 +577,23 @@ export async function resumeSession(
   // A fresh worktree from the SAME base ref (§3.5) — the conversation resumes, the filesystem
   // does not. Uncommitted work from the paused turn is gone; the inbox tool's own description is
   // what told the agent to commit first.
-  const wt = await createWorktree(project.primaryRepoPath, session.baseRef, sessionId);
+  //
+  // D37/§3.2's second half: this ATTACHES to the branch the first dispatch already created — it
+  // must never pass `mode: 'create'` here, which would fail outright (the branch already exists)
+  // or, if `createWorktree` were changed to tolerate that by recreating it, would silently
+  // discard whatever the paused turn committed before asking. `session.branchName` is null only
+  // for a session this migration cannot see (created before Stage 4b, when a worktree still used
+  // `--detach`) — such a session has no branch to attach to, so it is thrown rather than guessed.
+  if (session.branchName === null) {
+    throw new Error(
+      `resumeSession: session ${sessionId} has no branchName — it was dispatched before Stage 4b ` +
+        `and cannot be resumed onto a branch`,
+    );
+  }
+  const wt = await createWorktree(project.primaryRepoPath, session.baseRef, sessionId, {
+    name: session.branchName,
+    mode: "attach",
+  });
   updateSession(db, sessionId, { status: "running", worktreePath: wt.path });
 
   const resumed: SessionRow = { ...session, status: "running", worktreePath: wt.path };

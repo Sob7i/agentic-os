@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { revalidatePath } from "next/cache";
 import { dropVerdict, handMoveReason } from "@/lib/tasks/dnd";
+import { normalizeBaseRefInput } from "@/lib/tasks/baseref";
 import { gateModelFor } from "@/lib/tasks/model";
 import {
   answerInboxMessage,
@@ -264,12 +265,18 @@ export async function createTaskForSlug(
     assigneeAgentId = rawAssignee;
   }
 
+  // D38/Stage 4b §3.1: blank or whitespace-only means "use the project's default" — null, never
+  // "". The normalisation is a pure function in lib/ (`normalizeBaseRefInput`) rather than an
+  // inline ternary here, so the suite asserts it directly.
+  const baseRef = normalizeBaseRefInput(String(formData.get("baseRef") ?? ""));
+
   const task = createTask(db, {
     projectId: data.project.id,
     name,
     description,
     approvalGate,
     assigneeAgentId,
+    baseRef,
   });
 
   return { ok: true, reason: null, taskId: task.id };
