@@ -454,18 +454,22 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
 ### From measuring the suite (2026-08-22)
 
 - **`pnpm verify` re-runs the same suites up to three times in one invocation** *(added 2026-08-22)*.
-  Measured on `feat/stage-4-t1-schema`, one run each: stage1 **3.1s**, stage2 **2.8s**, stage3
-  **11.6s**, stage3a **5.5s**, stage3b **6.2s**, stage3c **59.3s**, stage4 **0.4s** — full run
-  **~89s**. *(A dated measurement, recorded as history the way `CLAUDE.md`'s convention allows for a
-  decision's evidence; it is not a live value and nothing should read it as one. Reproduce with
-  `pnpm verify:<suite>` and a stopwatch.)*
-  **stage3c is two-thirds of the total, and it is nesting, not slowness.** Its AC-20 spawns
-  `verify:stage3` and `verify:stage3a` as a regression oracle
-  ([`scripts/verify-stage3c.mts:1072`](../scripts/verify-stage3c.mts#L1072)), and `verify:stage3a`
-  in turn spawns `verify:stage1` and `verify:stage2`
-  ([`scripts/verify-stage3a.mts:77`](../scripts/verify-stage3a.mts#L77)). So one `pnpm verify`
-  executes **stage1 and stage2 three times each, stage3 and stage3a twice** — roughly a quarter of
-  the wall time is re-running suites that already ran in the same invocation.
+  **No timings are written here.** They are volatile, and `CLAUDE.md`'s exception for a dated
+  measurement is scoped to **a decision record citing its own evidence** — this is a backlog entry,
+  not one, so the numbers would simply rot. *(Raised in review of #35; the first draft recorded
+  seven of them.)* Reproduce with `pnpm verify:<suite>` and a stopwatch; what the shape looks like
+  is that **`verify:stage3c` dominates the run**, by a wide margin, and it is **nesting rather than
+  slowness**.
+  Its AC-20 spawns `verify:stage3` and `verify:stage3a` as a regression oracle — the
+  `children = ["verify:stage3", "verify:stage3a"]` block in
+  [`scripts/verify-stage3c.mts`](../scripts/verify-stage3c.mts) — and `verify:stage3a` in turn
+  spawns `verify:stage1` and `verify:stage2` (its `spawnSync` pair in
+  [`scripts/verify-stage3a.mts`](../scripts/verify-stage3a.mts)). **Cited by symbol, not by line:**
+  the first draft pinned `#L1072`, which was already pointing a few lines off the block it claimed
+  by the time it was reviewed, because these files are being edited by the very stage that
+  discovered this. So one `pnpm verify` executes **stage1 and stage2 three times each, stage3 and
+  stage3a twice** — a meaningful fraction of the run is re-running suites that already ran in the
+  same invocation.
   **Why this is not simply a bug to fix:** the oracle is the point. AC-20 and AC-1 exist to catch a
   change that breaks an earlier stage, and they must run the *real* suite rather than trust a
   recorded result — that is `verify-before-claim` applied to the verifier itself. Deleting the
@@ -484,10 +488,16 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   **Unblock condition:** the full run crossing roughly three minutes, or a fourth suite acquiring an
   oracle. Measure it; do not predict it.
 
-- **Sub-agent build turns stop early when they background a long command** *(added 2026-08-22)*.
-  Observed three times while building Stage 4 T1: the agent launched `pnpm verify` as a background
-  job and ended its turn to wait for the result, which surfaces to the lead as *"agent completed"*
-  with a result reading *"Waiting for the background verify run to complete."* No work was lost —
+- **A sub-agent ends its turn early when a long command gets backgrounded** *(added 2026-08-22)*.
+  Not a malfunction — the agent ends its turn deliberately, expecting to be woken when the job
+  finishes, and the wake never comes. *(Wording corrected in review of #35; "turns stop early" read
+  like something breaking.)* Observed three times while building Stage 4 T1: `pnpm verify` went to
+  the background and the turn ended waiting for it, which surfaces to the lead as *"agent
+  completed"* with a result reading *"Waiting for the background verify run to complete."*
+  **The mechanism turned out to be the harness, not the instruction:** the Bash tool's default
+  timeout is 120 seconds and a full `pnpm verify` runs longer, so it was auto-backgrounded — which
+  is why repeating "run in the foreground" in a later brief did not help, and passing an explicit
+  timeout did. No work was lost —
   each resume continued correctly — but one ticket took three notify/resume cycles instead of one,
   and on the third the lead had already done the same work in parallel, so it was done twice.
   **The fix is a line in the brief, not code:** tell the agent to run verify in the **foreground**,
