@@ -19,6 +19,8 @@ import {
   writeTaskTransition,
 } from "@/lib/agentos/db";
 import { dispatch, resumeSession } from "@/lib/agentos/dispatch";
+import type { Runner } from "@/lib/agentos/runner/runner";
+import { advanceChainAfterDone } from "@/lib/agentos/chain";
 import { parseAgentosYml } from "@/lib/agentos/config";
 import { boardOnce } from "@/lib/reconcile/cached";
 import { projectNav } from "@/lib/shell/model";
@@ -312,7 +314,7 @@ export async function moveTaskForSlug(
   slug: string,
   taskId: string,
   to: string,
-  deps: { db?: DatabaseSync } = {},
+  deps: { db?: DatabaseSync; runner?: Runner } = {},
 ): Promise<MoveTaskResult> {
   const owned = await resolveOwnedTask(slug, taskId, deps.db);
   if (!owned) return { ok: false, reason: `task ${taskId} is not in project '${slug}'` };
@@ -328,13 +330,22 @@ export async function moveTaskForSlug(
   );
   if (!verdict.ok) return { ok: false, reason: verdict.reason };
 
-  writeTaskTransition(deps.db ?? getDb(), {
+  const db = deps.db ?? getDb();
+  writeTaskTransition(db, {
     taskId: owned.task.id,
     toStatus: verdict.to,
     actorType: "human",
     actorId: HUMAN_ACTOR_ID,
     reason: handMoveReason(verdict.from, verdict.to),
   });
+
+  // T3, spec §3.4: a hand-dragged card that lands on 'done' advances its chain exactly like any
+  // other route to 'done' — only ungated chain steps ever reach this branch, since `dropVerdict`
+  // already refuses a gated card's drop onto 'done' above (§3.4's gate is layer 2 there too).
+  if (verdict.to === "done" && owned.task.chainId) {
+    await advanceChainAfterDone(owned.task.id, { db, runner: deps.runner });
+  }
+
   return { ok: true, reason: null };
 }
 
@@ -382,16 +393,25 @@ export async function runNowAction(formData: FormData): Promise<void> {
   revalidatePath(`/p/${slug}/tasks`);
 }
 
-export async function approveDoneAction(formData: FormData): Promise<void> {
-  const taskId = String(formData.get("taskId") ?? "");
-  const slug = String(formData.get("slug") ?? "");
-  if (!taskId || !slug) return;
-  const owned = await resolveOwnedTask(slug, taskId);
-  if (!owned) {
-    console.error(`approveDoneAction: refused — task ${taskId} does not belong to project '${slug}'`);
-    return;
-  }
-  const db = getDb();
+/**
+ * The approve button's testable core (T3, docs/specs/stage-4-tickets.md), split out from
+ * `approveDoneAction` the same way `moveTaskForSlug`/`moveTaskAction` already split — an injectable
+ * `db` and `runner` for `scripts/verify-stage4.mts`, never reachable from the form itself.
+ */
+export interface ApproveDoneResult {
+  ok: boolean;
+  reason: string | null;
+}
+
+export async function approveDoneForSlug(
+  slug: string,
+  taskId: string,
+  deps: { db?: DatabaseSync; runner?: Runner } = {},
+): Promise<ApproveDoneResult> {
+  const db = deps.db ?? getDb();
+  const owned = await resolveOwnedTask(slug, taskId, db);
+  if (!owned) return { ok: false, reason: `task ${taskId} is not in project '${slug}'` };
+
   // §7.6: "any -> any, human, ... recorded as hand-moved." No gate check here — the gate exists
   // to stop a *session*, never a human; a human clicking this button is the approval itself.
   writeTaskTransition(db, {
@@ -401,6 +421,25 @@ export async function approveDoneAction(formData: FormData): Promise<void> {
     actorId: HUMAN_ACTOR_ID,
     reason: "approved by owner",
   });
+
+  // T3, spec §3.4: this is the button a human uses to close a *gated* chain step (a drag straight
+  // to 'done' is refused for one — `moveTaskForSlug` above), so it is the primary path by which a
+  // gated step's chain actually advances.
+  if (owned.task.chainId) {
+    await advanceChainAfterDone(taskId, { db, runner: deps.runner });
+  }
+
+  return { ok: true, reason: null };
+}
+
+export async function approveDoneAction(formData: FormData): Promise<void> {
+  const taskId = String(formData.get("taskId") ?? "");
+  const slug = String(formData.get("slug") ?? "");
+  if (!taskId || !slug) return;
+  const result = await approveDoneForSlug(slug, taskId);
+  if (!result.ok) {
+    console.error(`approveDoneAction: refused — ${result.reason}`);
+  }
   revalidatePath(`/p/${slug}/tasks`);
 }
 

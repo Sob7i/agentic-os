@@ -24,6 +24,7 @@ import {
   getProject,
   getSession,
   getTask,
+  haltChain,
   listSessionsByProject,
   listSessionsByTask,
   recordCommitShas,
@@ -434,6 +435,24 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
         actorId: null,
         reason: `session ${session.id} failed: ${runError.message}`,
       });
+    }
+
+    // T3, spec §3.4: a chain step's failure halts the chain rather than retrying — "a chain that
+    // retries is a scheduler, and D24 declined to build one." This is the ONE hook this ticket adds
+    // to this file, and it lives here rather than beside `advanceChainAfterDone` in `chain.ts`
+    // because a `Runner` that throws is handled entirely inside this function (it marks the session
+    // `failed` and writes `doing -> todo` above); the failure never passes through `done`, so a hook
+    // that only fired after `done` would leave `haltChain` with no production caller at all — the
+    // chain would silently stall instead of halting. Read from `currentTask` (fetched above,
+    // independent of whatever `Task.status` ends up being) because `chainId` is the only fact this
+    // halt needs, and it does not change across a transition.
+    if (currentTask?.chainId) {
+      haltChain(
+        db,
+        currentTask.chainId,
+        taskId,
+        `session ${session.id} failed at step ${currentTask.chainOrd ?? "?"}: ${runError.message}`,
+      );
     }
   }
 }
