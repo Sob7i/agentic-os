@@ -12,8 +12,8 @@ it in `docs/DECISIONS.md` first**. The next free number is **D42** — D37–D41
 
 ## What this stage inherits that is not in the spec
 
-Six measured facts, carried here so a ticket brief does not have to re-derive them. All measured
-**2026-08-22** by reading the named files.
+Seven measured facts, carried here so a ticket brief does not have to re-derive them. All measured
+**2026-08-22** by reading the named files; fact 6 was found by building T1 rather than by reading.
 
 1. **The advance hook cannot live inside `writeTaskTransition`.** The obvious home for §3.4's
    *"when a task with a `chainId` reaches `done`, the transition handler calls `dispatch`"* is
@@ -54,7 +54,22 @@ Six measured facts, carried here so a ticket brief does not have to re-derive th
    `verify:stage3c` AC-7 derives each row's expectation from that row's own `state`, so flipping to
    `{ state: "live", builtBy: null }` passes with **no edit to that suite** — confirmed in spec §5.8,
    which also records that the first version of this paragraph was wrong about it.
-6. **Nothing in this stage makes a chain's output reachable.** A completed chain leaves nine tasks
+6. **Adding a table turns `verify:stage3c` AC-17 red, and T1 is the ticket that fixes it.**
+   AC-17 ([`scripts/verify-stage3c.mts:728`](../../scripts/verify-stage3c.mts#L728)) reads the
+   `CREATE TABLE IF NOT EXISTS` names out of `db.ts` and compares them against an **explicit
+   eight-name list** — it is a named set, not a bare count, which is why the fix is safe and why
+   it is small. Its purpose (D32, and the `Environments`/`Repos` entry in `docs/BACKLOG.md`) is
+   that **a SETUP placeholder must not quietly acquire a schema nobody decided on.** Stage 4's
+   three tables are decided on — spec §3.1 defines them — so **T1 adds `Chain`, `TaskTemplate` and
+   `TemplateStep` to that list and the guard keeps working unchanged**: any table not in the list
+   still fails it.
+   **This is a correction to this ticket, found while building it (2026-08-22).** The first version
+   said *"must not touch any other `verify-*.mts`"* with no exception, which collides head-on with
+   T1's own done criterion of no new red — the two could not both hold. **Do not defer this to T4.**
+   Deferring means T1, T2 and T3 each ship with a red suite, and a suite that is red across three
+   tickets is exactly how a real regression hides in the noise. T2 and T3 add no tables and will
+   not touch AC-17 again.
+7. **Nothing in this stage makes a chain's output reachable.** A completed chain leaves nine tasks
    and up to nine sessions, each with commits on a **detached HEAD in a destroyed worktree**. Step 9
    of the seeded template reads *"Human checks out the PR, reviews, merges"* — and there is no PR,
    because nothing in the product creates one. That is
@@ -129,11 +144,18 @@ range so a later reader can see they are ticket-level.
   already-initialised project must not create a second copy.**
 - `scripts/verify-stage4.mts` (new), `package.json` (the `verify:stage4` key).
 
-**May touch:** `app/p/[slug]/[tab]/actions.ts` — **the one call to seed inside `initializeProject`,
-nothing else.**
+**May touch:**
+- `app/p/[slug]/[tab]/actions.ts` — **the seeding call inside `initializeProject`, nothing else.**
+  Note it needs to fire on **both** branches, not only the row-creating one: a project initialized
+  before Stage 4 shipped takes the *already initialized* path on every later click and would
+  otherwise never receive a template.
+- `scripts/verify-stage3c.mts` — **the `expected` array inside AC-17, and nothing else in that
+  file.** Add `Chain`, `TaskTemplate` and `TemplateStep`, keep the list sorted, and update the
+  check's pass message from *"eight tables"* to the new count. Inherited fact 6 has the reasoning;
+  do not touch AC-20's oracle or any other check there.
 
 **Must not touch:** migration 1; `lib/agentos/dispatch.ts`; `lib/shell/model.ts`; any component; any
-other `verify-*.mts`.
+other `verify-*.mts`, and nothing in `verify-stage3c.mts` outside AC-17's `expected` array.
 
 **The three checks:**
 - **AC-0a — the migration is additive and idempotent.** Open a fixture db seeded with a Project, an
@@ -224,7 +246,7 @@ advances yet — T3 makes `done` move the chain.
 
 **Must not touch:** anything else in `lib/agentos/dispatch.ts` — not the five preconditions, not the
 worktree lifecycle, not the resume path. If advancing seems to need more than the failure hook, that
-is inherited fact 6 leaking in, or a precondition that should have refused. Say so and stop.
+is inherited fact 7 leaking in, or a precondition that should have refused. Say so and stop.
 
 **The five that are easy to get subtly wrong:**
 - **AC-4 asserts the trigger kind**, not merely that a session appeared. A second dispatch path
