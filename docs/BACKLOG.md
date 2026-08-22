@@ -595,6 +595,30 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   existing project and cannot get it. That is now, for this repo, so it is the most immediately
   actionable entry in this file.
 
+- **`pnpm type-check` has never seen a single acceptance suite** *(added 2026-08-22, found in the
+  second review round on #38)*. `tsconfig.json`'s `include` is `["next-env.d.ts", "**/*.ts",
+  "**/*.tsx", ".next/types/**/*.ts"]`, and **every suite is `.mts`** — `verify-acceptance.mts`,
+  `verify-all.mts`, and `verify-stage{2,3,3a,3b,3c,4}.mts`. `**/*.ts` does not match `.mts`, so
+  `tsc --noEmit` type-checks the app and the whole of `lib/` and skips all eight scripts. Confirmed
+  with `npx tsc --noEmit --listFiles | grep -c scripts/` → **0**.
+  **Demonstrated by accident while finding it:** a suite was edited to call `fileURLToPath` without
+  importing it, `pnpm type-check` reported clean, and the file crashed at run time with
+  `ReferenceError: fileURLToPath is not defined`. A reviewer in the same round asserted that a
+  `new FakeRunner([])` call "fails the repository's TypeScript check" — it does not, and that is the
+  problem: the call really is wrong, and nothing was going to say so.
+  **What this costs:** the suites are where this project puts the logic that must not be wrong, and
+  they are the only code in the repo with no static check at all. Their errors surface as a run-time
+  crash mid-suite, which reports as `FAIL suite — a check threw instead of reporting` and takes a
+  reading of the stack to diagnose.
+  **Why it is not a one-line fix:** adding `**/*.mts` to `include` surfaces **roughly 128
+  diagnostics** across the eight files (measured 2026-08-22 with an ad-hoc invocation, so treat the
+  number as an order of magnitude, not a count). Most are likely the loose fixture typing these
+  scripts have always used — raw sqlite rows cast through `Record<string, unknown>`, and similar —
+  so the work is a genuine cleanup pass, possibly with a separate looser `tsconfig` for `scripts/`
+  rather than one shared strictness setting.
+  **Unblock condition:** none, and this is the entry in this file most likely to be worth doing
+  next. Every suite added from here inherits the blind spot, and Stage 4 alone added 25 checks to it.
+
 ## Done / superseded
 
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than
