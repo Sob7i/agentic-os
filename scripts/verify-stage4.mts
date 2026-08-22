@@ -26,11 +26,12 @@
  *
  * Run: pnpm verify:stage4
  */
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import {
@@ -68,7 +69,7 @@ import { FakeRunner } from "../lib/agentos/runner/fake";
 import { createTaskUpdateStatusTool } from "../lib/agentos/mcp/agentos-server";
 import { moveTaskForSlug, approveDoneForSlug } from "../app/p/[slug]/[tab]/actions";
 import { cardModel, showsRunControl } from "../lib/tasks/model";
-import { dropVerdict } from "../lib/tasks/dnd";
+import { dropVerdict, dropCandidateFor } from "../lib/tasks/dnd";
 import { runBootSweep } from "../lib/agentos/sweep";
 
 /**
@@ -197,6 +198,9 @@ function makeChainFixture(
  * "pre-Stage-4" database by running this text directly, rather than importing anything from
  * `db.ts` that already assumes migration 2 has landed.
  */
+/** Repo root, for the one check that asserts source structure (AC-8d). */
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const MIGRATION_1_SQL = `
   CREATE TABLE IF NOT EXISTS Project (
     id                     TEXT PRIMARY KEY,
@@ -477,7 +481,7 @@ async function runChecks() {
     } else {
       pass(
         "AC-0a",
-        `migration 2 is additive (every pre-existing Task column unchanged, chainId/chainOrd NULL) and idempotent (user_version 1→2 then stays 2, no error on replay)`,
+        `migration is additive (every pre-existing Task column unchanged, chainId/chainOrd NULL) and idempotent (user_version 1→${versionAfterFirst}, unchanged on replay, no error)`,
       );
     }
   }
@@ -1470,7 +1474,7 @@ async function runChecks() {
         else if (verdict.kind !== "blocked") problems.push(`dropVerdict refused for the wrong reason: ${verdict.kind}`);
 
         // 3. And the funnel itself refuses, so no other caller can start it either.
-        const dispatched = await dispatch(step5.id, "manual", { db, runner: new FakeRunner([]) });
+        const dispatched = await dispatch(step5.id, "manual", { db, runner: new FakeRunner({ messages: [] }) });
         if (dispatched.started) problems.push("dispatch started a blocked task");
         else if (dispatched.refusedBy !== "dispatchable") {
           problems.push(`dispatch refused for the wrong precondition: ${dispatched.refusedBy}`);
@@ -1500,7 +1504,7 @@ async function runChecks() {
     } else {
       const tasks = listTasksByChain(db, result.chainId);
       const blockedStep2 = tasks.find((t) => t.chainOrd === 2)!;
-      const runner = new FakeRunner([]);
+      const runner = new FakeRunner({ messages: [] });
 
       // The attack the fix exists to stop: a crafted POST naming a blocked `todo` step. Before the
       // fix this closed it and advanced the chain — running step 3 before step 1 had ever started.
@@ -1639,6 +1643,146 @@ async function runChecks() {
       } else {
         pass("AC-10b", "claimChainOrd refused on a halted chain — halting and claiming decide against each other in one statement");
       }
+    }
+  }
+
+  // ── AC-0d · migration 3 reconciles duplicates before it constrains ────────────────────────
+  {
+    /**
+     * A database that already lost the seed race: two `(projectId, slug)` rows, one of them
+     * referenced by a `Chain`. Before this fix `CREATE UNIQUE INDEX` failed on it — inside
+     * `migrate()`, inside `openDb()` — so the app refused to start, on exactly the machines the
+     * race had already hit. Raised in review of #38.
+     *
+     * Built by opening normally, then *undoing* migration 3 (drop the index, rewind
+     * `user_version`) and planting the duplicate. That is less code than a verbatim copy of
+     * migration 2's DDL and, more usefully, it cannot drift from the real schema the way a copy can.
+     */
+    const path = tempDbPath("ac0d");
+    const seeded = openDb(path);
+    const projectId = randomUUID();
+    const project = createProject(seeded, {
+      slug: "dup-fixture",
+      primaryRepoPath: join(tmpdir(), "dup-fixture"),
+      yamlPath: join(tmpdir(), "dup-fixture", "agentos.yml"),
+      maxConcurrentSessions: 1,
+    });
+    seedBuiltInTemplates(seeded, project.id);
+    const keeper = getTemplateBySlug(seeded, project.id, COMPOUND_ENGINEER_TEMPLATE.slug)!;
+
+    seeded.exec("DROP INDEX IF EXISTS idx_tasktemplate_project_slug");
+    const loserId = randomUUID();
+    seeded
+      .prepare(
+        "INSERT INTO TaskTemplate (id, projectId, slug, name, description, variablesJson, seeded, createdAt) VALUES (?,?,?,?,?,?,?,?)",
+      )
+      .run(loserId, project.id, keeper.slug, keeper.name, keeper.description, keeper.variablesJson, 1, new Date().toISOString());
+    seeded
+      .prepare(
+        "INSERT INTO TemplateStep (id, templateId, ord, name, promptTemplate, assigneeAgentName, approvalGate, notes) VALUES (?,?,?,?,?,?,?,?)",
+      )
+      .run(randomUUID(), loserId, 1, "s", "p", "human", 1, null);
+    // A Chain on the row that is about to lose — the case a naive DELETE orphans.
+    const chain = createChain(seeded, {
+      projectId: project.id,
+      templateId: loserId,
+      templateVersion: { steps: [] },
+      variables: {},
+    });
+    seeded.exec("PRAGMA user_version = 2");
+    seeded.close();
+
+    let openError: string | null = null;
+    let templatesAfter = -1;
+    let chainTemplateId: string | null = null;
+    let orphanSteps = -1;
+    try {
+      const db = openDb(path);
+      templatesAfter = Number(
+        (db.prepare("SELECT count(*) AS n FROM TaskTemplate WHERE projectId = ?").get(project.id) as { n: number }).n,
+      );
+      chainTemplateId = (db.prepare("SELECT templateId AS t FROM Chain WHERE id = ?").get(chain.id) as { t: string }).t;
+      orphanSteps = Number(
+        (
+          db
+            .prepare("SELECT count(*) AS n FROM TemplateStep WHERE templateId NOT IN (SELECT id FROM TaskTemplate)")
+            .get() as { n: number }
+        ).n,
+      );
+      db.close();
+    } catch (err) {
+      openError = err instanceof Error ? err.message : String(err);
+    }
+
+    if (openError) {
+      fail("AC-0d", `openDb() threw on a database holding a duplicate — the app would not start: ${openError}`);
+    } else if (templatesAfter !== 1) {
+      fail("AC-0d", `expected the duplicate reconciled to 1 TaskTemplate row, got ${templatesAfter}`);
+    } else if (chainTemplateId !== keeper.id) {
+      fail("AC-0d", "the Chain was left pointing at the deleted row rather than re-pointed at the keeper");
+    } else if (orphanSteps !== 0) {
+      fail("AC-0d", `${orphanSteps} TemplateStep row(s) were orphaned by the reconciliation`);
+    } else {
+      pass(
+        "AC-0d",
+        "a database carrying a duplicate (projectId, slug) migrates cleanly: one row survives, its Chain is re-pointed at the keeper, no orphaned steps, openDb() does not throw",
+      );
+    }
+  }
+
+  // ── AC-3c · the board's own adapter carries the blocked reason ────────────────────────────
+  {
+    // AC-3b proves `dropVerdict` refuses a blocked card. That is the *function*. This proves the
+    // board actually hands it one — the adapter omitted `blockedReason` entirely, so every blocked
+    // card dragged cleanly and was caught only by the server: a real guard, tested, and unreachable.
+    // Raised in review of #38. The adapter now lives in `lib/tasks/dnd.ts` so this check can see it.
+    const candidate = dropCandidateFor(
+      { id: "T1", gate: null, blockedReason: "waiting on step 1 ('Write a spec')" },
+      "todo",
+    );
+    const verdict = dropVerdict(candidate, "doing");
+
+    if (candidate.blockedReason !== "waiting on step 1 ('Write a spec')") {
+      fail("AC-3c", `the adapter dropped blockedReason: ${JSON.stringify(candidate.blockedReason)}`);
+    } else if (verdict.ok || verdict.kind !== "blocked") {
+      fail("AC-3c", `a candidate built by the adapter was not refused as blocked: ${JSON.stringify(verdict)}`);
+    } else {
+      pass("AC-3c", "the candidate the board builds carries blockedReason, so the drag is refused client-side and never becomes a request");
+    }
+  }
+
+  // ── AC-8d · the late halt is scoped to the session that still owns the task ───────────────
+  {
+    /**
+     * **A structural check, and deliberately labelled as one.** The behaviour — a human closing a
+     * card *while* its session is still settling, then the failure callback landing late — needs
+     * the runner to be suspended mid-flight and released on cue, and `FakeRunner` has no such seam.
+     * Adding one would be this stage's third seam, which spec §7 argues against by name.
+     *
+     * So this asserts the shape instead: `haltChain` must appear inside `runSessionToCompletion`'s
+     * `status === "doing"` branch, not beside it. That branch is exactly "this run is still what
+     * happened to this task"; keying the halt on `chainId` alone — true forever once set — let a
+     * late failure stop a chain that a human had already advanced past. Raised in review of #38.
+     *
+     * The precedent for asserting source structure is `verify-stage3a` AC-3, which counts
+     * `boardOnce` call sites the same way and for the same reason: the property is real, and no
+     * amount of fixture drives it.
+     */
+    const src = readFileSync(join(ROOT, "lib/agentos/dispatch.ts"), "utf8");
+    const guardIdx = src.indexOf('currentTask.status === "doing"');
+    const haltIdx = src.indexOf("haltChain(", guardIdx);
+    // The branch runs from the guard to the closing of the `if (runError)` block that contains it.
+    const branchEnd = src.indexOf("\n  }\n}", guardIdx);
+    const unconditional = /if \(currentTask\?\.chainId\)/.test(src);
+
+    if (guardIdx === -1) {
+      fail("AC-8d", 'could not find the `currentTask.status === "doing"` guard in dispatch.ts');
+    } else if (haltIdx === -1 || haltIdx > branchEnd) {
+      fail("AC-8d", "haltChain is not inside the status === 'doing' branch — a late failure can halt a chain the session no longer owns");
+    } else if (unconditional) {
+      fail("AC-8d", "dispatch.ts still contains an `if (currentTask?.chainId)` halt outside the ownership guard");
+    } else {
+      pass("AC-8d", "the chain halt sits inside runSessionToCompletion's status === 'doing' branch — a late failure cannot stop a chain a human already advanced past");
     }
   }
 }

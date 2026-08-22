@@ -104,6 +104,33 @@ export function dropVerdict(card: DropCandidate, to: string): DropVerdict {
   return { ok: true, from: card.from, to };
 }
 
+/**
+ * Build the `DropCandidate` a card hands to the drag layer.
+ *
+ * **This lives in `lib/` because it is a decision that can be wrong, and it was.** It sat in
+ * `components/tasks/Board.tsx` and silently omitted `blockedReason`, so D43's refusal — real,
+ * tested, and asserted by AC-3b — never fired on the actual board: every blocked card dragged
+ * cleanly and was caught only by the server. A suite that cannot see this function cannot catch
+ * that, which is exactly what `CLAUDE.md`'s "every decision that can be wrong goes in `lib/`" rule
+ * exists to prevent. Raised in review of #38; AC-3c asserts it here.
+ *
+ * Structurally typed rather than importing `CardModel`, which would pull `lib/tasks/model.ts` —
+ * and through it `db` — into this leaf.
+ */
+export function dropCandidateFor(
+  card: { id: string; gate: { humanRefusalReason: string } | null; blockedReason: string | null },
+  columnKey: TaskRow["status"],
+): DropCandidate {
+  return {
+    taskId: card.id,
+    from: columnKey,
+    // The gate's **human** rendering is what crosses the boundary (D36) — never the session string,
+    // which tells the reader a session may not do this and points at a tool they cannot call.
+    gate: card.gate ? { humanRefusalReason: card.gate.humanRefusalReason } : null,
+    blockedReason: card.blockedReason,
+  };
+}
+
 export interface DropTarget {
   key: TaskRow["status"];
   accepts: boolean;

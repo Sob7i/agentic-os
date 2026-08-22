@@ -234,8 +234,47 @@ const MIGRATIONS: { version: number; sql: string }[] = [
     //
     // The index is the guarantee; `seed.ts` catches the constraint violation and treats it as the
     // no-op it is, so the loser of a race still returns success rather than throwing at a user.
+    // **Reconcile before constraining.** Raised in review of #38, and it was a startup bug, not a
+    // style point: migration 2 permitted duplicate `(projectId, slug)` rows and the seed code's own
+    // comment admitted its read-then-insert could create them. Creating the index on a database
+    // that already has a pair makes `CREATE UNIQUE INDEX` fail — inside `migrate()`, inside
+    // `openDb()` — so the app would refuse to start, on exactly the machines the race had already
+    // hit. The fix must therefore be part of the same migration, not a note in the entry.
+    //
+    // Duplicates are re-pointed rather than orphaned: any `Chain` on a losing row is moved to the
+    // keeper first, which is safe because `Chain.templateVersionJson` already holds the template as
+    // it was at instantiate (§3.1) — a running chain executes its own copy, so re-pointing changes
+    // its provenance pointer and never what it runs.
     version: 3,
     sql: `
+      -- The keeper's **id**, not its rowid. Selecting MIN(rowid) here wrote an integer into a
+      -- TEXT foreign key, so the DELETE below then failed the constraint and openDb() threw — the
+      -- very failure this migration exists to prevent. Caught by AC-0d before it left the branch.
+      UPDATE Chain SET templateId = (
+        SELECT keep.id FROM TaskTemplate keep
+        WHERE keep.projectId = (SELECT d.projectId FROM TaskTemplate d WHERE d.id = Chain.templateId)
+          AND keep.slug      = (SELECT d.slug      FROM TaskTemplate d WHERE d.id = Chain.templateId)
+        ORDER BY keep.rowid LIMIT 1
+      )
+      WHERE templateId IN (
+        SELECT t.id FROM TaskTemplate t
+        WHERE t.rowid > (
+          SELECT MIN(k.rowid) FROM TaskTemplate k WHERE k.projectId = t.projectId AND k.slug = t.slug
+        )
+      );
+
+      DELETE FROM TemplateStep WHERE templateId IN (
+        SELECT t.id FROM TaskTemplate t
+        WHERE t.rowid > (
+          SELECT MIN(k.rowid) FROM TaskTemplate k WHERE k.projectId = t.projectId AND k.slug = t.slug
+        )
+      );
+
+      DELETE FROM TaskTemplate WHERE rowid > (
+        SELECT MIN(k.rowid) FROM TaskTemplate k
+        WHERE k.projectId = TaskTemplate.projectId AND k.slug = TaskTemplate.slug
+      );
+
       CREATE UNIQUE INDEX IF NOT EXISTS idx_tasktemplate_project_slug
         ON TaskTemplate(projectId, slug);
     `,
