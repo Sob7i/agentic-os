@@ -498,6 +498,27 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   brief this project eventually keeps, and it will be re-learned once per person otherwise. **Unblock
   condition:** none — fold it into the ticket-brief template the first time one is written down.
 
+- **An explicitly empty template variable binds, and produces the prompt §3.3 exists to prevent**
+  *(added 2026-08-22, found building Stage 4 T2)*. `bindPrompt`
+  ([`lib/agentos/chain-render.ts`](../lib/agentos/chain-render.ts)) decides "missing" with
+  `hasOwnProperty`, not truthiness — so an absent key refuses, and `{ branchName: "" }` binds. That
+  is the **correct** reading of the spec's AC-2, whose wording is *"with `branchName` **omitted**"*,
+  and T2 documented the choice rather than making it silently.
+  **But the spec's actual argument is about the rendered result**, not the shape of the input:
+  §3.3 says *"a prompt reading 'create a branch named  and implement' would be executed, cost money,
+  and produce something plausible."* An empty string arrives at that outcome by a different route,
+  and the refusal never fires. It is the same class as the JSX-newline defect this project has
+  shipped twice — a hole where a value was supposed to be, rendered as though nothing were missing.
+  **Not reachable today**: nothing calls `instantiateTemplate` but its own suite. **T4 makes it
+  reachable** — it adds the instantiate form, and a blank field submits `""`.
+  **The fix is one of two, and it is a decision, not a detail.** Either the *form* refuses to submit
+  a blank variable (validation at the edge, and the model stays literal about "omitted"), or
+  `bindPrompt` refuses an empty value as well as an absent key (the rule moves into the pure
+  function, and AC-2 grows a third case). The second is stricter and harder to bypass; the first
+  leaves a caller free to pass `""` deliberately, which nothing today wants to do.
+  **Unblock condition:** T4 starting. Close it before that form ships, not after — this is the one
+  entry here whose cost is measured in model spend rather than time.
+
 ## Done / superseded
 
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than
