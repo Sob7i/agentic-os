@@ -451,6 +451,174 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   Recorded here so nobody reads D37 as having closed the older entry. **Unblocked by:** the same
   thing as before — D20's cloud runner, or a detached child process.
 
+### From measuring the suite (2026-08-22)
+
+- **`pnpm verify` re-runs the same suites up to three times in one invocation** *(added 2026-08-22)*.
+  **No timings are written here.** They are volatile, and `CLAUDE.md`'s exception for a dated
+  measurement is scoped to **a decision record citing its own evidence** — this is a backlog entry,
+  not one, so the numbers would simply rot. *(Raised in review of #35; the first draft recorded
+  seven of them.)* Reproduce with `pnpm verify:<suite>` and a stopwatch; what the shape looks like
+  is that **`verify:stage3c` dominates the run**, by a wide margin, and it is **nesting rather than
+  slowness**.
+  Its AC-20 spawns `verify:stage3` and `verify:stage3a` as a regression oracle — the
+  `children = ["verify:stage3", "verify:stage3a"]` block in
+  [`scripts/verify-stage3c.mts`](../scripts/verify-stage3c.mts) — and `verify:stage3a` in turn
+  spawns `verify:stage1` and `verify:stage2` (its `spawnSync` pair in
+  [`scripts/verify-stage3a.mts`](../scripts/verify-stage3a.mts)). **Cited by symbol, not by line:**
+  the first draft pinned `#L1072`, which was already pointing a few lines off the block it claimed
+  by the time it was reviewed, because these files are being edited by the very stage that
+  discovered this. So one `pnpm verify` executes **stage1 and stage2 three times each, stage3 and
+  stage3a twice** — a meaningful fraction of the run is re-running suites that already ran in the
+  same invocation.
+  **Why this is not simply a bug to fix:** the oracle is the point. AC-20 and AC-1 exist to catch a
+  change that breaks an earlier stage, and they must run the *real* suite rather than trust a
+  recorded result — that is `verify-before-claim` applied to the verifier itself. Deleting the
+  nesting would delete the guarantee.
+  **What a fix looks like:** `verify-all.mts` already discovers and runs every suite, so it is the
+  one place that knows a suite's result *this invocation*. Let it publish results to a run-scoped
+  cache (a temp file keyed on a run id it passes down), and let an oracle consume that cache **only
+  when the child was already run in the same invocation** — falling back to spawning when it was
+  not, so `pnpm verify:stage3c` on its own keeps working exactly as it does today. The saving is
+  ~23s now and grows with every stage added, because each new suite that oracles an earlier one
+  multiplies the same re-runs.
+  **Why it is deferred:** 89 seconds is annoying, not blocking, and the cache is a second source of
+  truth about test results — the thing this project is most careful about. It needs the run id to be
+  genuinely per-invocation and the fallback to be exercised, or a stale cache file makes a suite
+  report a pass it never ran, which is worse than any amount of waiting.
+  **Unblock condition:** the full run crossing roughly three minutes, or a fourth suite acquiring an
+  oracle. Measure it; do not predict it.
+
+- **A sub-agent ends its turn early when a long command gets backgrounded** *(added 2026-08-22)*.
+  Not a malfunction — the agent ends its turn deliberately, expecting to be woken when the job
+  finishes, and the wake never comes. *(Wording corrected in review of #35; "turns stop early" read
+  like something breaking.)* Observed three times while building Stage 4 T1: `pnpm verify` went to
+  the background and the turn ended waiting for it, which surfaces to the lead as *"agent
+  completed"* with a result reading *"Waiting for the background verify run to complete."*
+  **The mechanism turned out to be the harness, not the instruction:** the Bash tool's default
+  timeout is 120 seconds and a full `pnpm verify` runs longer, so it was auto-backgrounded — which
+  is why repeating "run in the foreground" in a later brief did not help, and passing an explicit
+  timeout did. No work was lost —
+  each resume continued correctly — but one ticket took three notify/resume cycles instead of one,
+  and on the third the lead had already done the same work in parallel, so it was done twice.
+  **The fix is a line in the brief, not code:** tell the agent to run verify in the **foreground**,
+  and to run the full suite **once at the end** rather than as a before/after pair — the per-suite
+  baseline is already recorded in `docs/HANDOFF.md` §Verified state, and stage3/stage3a's red is
+  known and logged, so re-deriving it costs ~90s and answers nothing. Applied to T2's brief onward.
+  **Why it is a backlog entry rather than only a habit:** it belongs in whatever standing agent
+  brief this project eventually keeps, and it will be re-learned once per person otherwise. **Unblock
+  condition:** none — fold it into the ticket-brief template the first time one is written down.
+
+- **An explicitly empty template variable binds, and produces the prompt §3.3 exists to prevent**
+  *(added 2026-08-22, found building Stage 4 T2)*. `bindPrompt`
+  ([`lib/agentos/chain-render.ts`](../lib/agentos/chain-render.ts)) decides "missing" with
+  `hasOwnProperty`, not truthiness — so an absent key refuses, and `{ branchName: "" }` binds. That
+  is the **correct** reading of the spec's AC-2, whose wording is *"with `branchName` **omitted**"*,
+  and T2 documented the choice rather than making it silently.
+  **But the spec's actual argument is about the rendered result**, not the shape of the input:
+  §3.3 says *"a prompt reading 'create a branch named  and implement' would be executed, cost money,
+  and produce something plausible."* An empty string arrives at that outcome by a different route,
+  and the refusal never fires. It is the same class as the JSX-newline defect this project has
+  shipped twice — a hole where a value was supposed to be, rendered as though nothing were missing.
+  **Not reachable today**: nothing calls `instantiateTemplate` but its own suite. **T4 makes it
+  reachable** — it adds the instantiate form, and a blank field submits `""`.
+  **The fix is one of two, and it is a decision, not a detail.** Either the *form* refuses to submit
+  a blank variable (validation at the edge, and the model stays literal about "omitted"), or
+  `bindPrompt` refuses an empty value as well as an absent key (the rule moves into the pure
+  function, and AC-2 grows a third case). The second is stricter and harder to bypass; the first
+  leaves a caller free to pass `""` deliberately, which nothing today wants to do.
+  **Unblock condition:** T4 starting. Close it before that form ships, not after — this is the one
+  entry here whose cost is measured in model spend rather than time.
+
+- **`Chain.status` never becomes `'completed'`** *(added 2026-08-22, found building Stage 4 T3)*.
+  A chain is created `running` and T3 moves it to `halted` on a failure, but nothing marks it done
+  when its last step closes. **No acceptance criterion in the Stage 4 spec requires it** — AC-1…AC-11
+  never mention `completed` — and T3's Owns list does not cover it, so T3 left it alone rather than
+  inventing behaviour, which was the right call. **Why it still matters:** `ChainStatus` declares the
+  value, so the type promises a state the code cannot reach, and T4's UI has to render a finished
+  chain somehow — most likely identically to a running one, which is the wrong answer on a board
+  whose whole job is showing what is in flight. **The decision hiding in it:** *what closes a chain?*
+  The last step reaching `done` is the obvious answer and it is wrong for the seeded template, whose
+  step 9 is a human review that may sit for days — the chain's automation ended at step 8. **Unblock
+  condition:** T4 needing to render a completed chain differently, which it probably does. Answer it
+  there rather than here.
+
+- **Nothing tests that a chain halts when it hits the concurrency cap** *(added 2026-08-22, found in
+  review of Stage 4 T3)*. Spec §3.4 lists *"a chain cannot exceed the project's concurrency cap"*
+  as one of three payoffs for advancing through `dispatch` rather than around it, and §3.4 also says
+  a refused dispatch halts the chain with that reason. **Precondition 3 is real and the halt path is
+  real; no check joins them.** The chain fixture in `scripts/verify-stage4.mts` sets
+  `maxConcurrentSessions: 20` so that multi-step chains are not blocked by their own predecessors'
+  still-settling fake sessions — a reasonable fixture choice, and the cost is that the cap refusal is
+  never exercised. **Why this is not urgent:** in the real flow the cap is not reached, because a
+  step's session has already completed by the time a human marks that step `done`. **Why it is worth
+  closing anyway:** `agentos.yml` in this repo sets `maxConcurrentSessions: 1` deliberately, so the
+  one project most likely to run a chain first is the one running closest to the cap, and the
+  untested branch is the one that would fire. **Unblock condition:** none — it is one fixture with a
+  cap of 1 and a still-live predecessor session, and it belongs with T4 or the first real chain run.
+
+- **`stage-4-tickets.md` AC-8 describes a `blockedReason` shape T2 did not build** *(added
+  2026-08-22, found building Stage 4 T3)*. The ticket says AC-8 asserts *"steps 6–9 still blocked
+  with a reason naming step 5"*. `instantiateTemplate` gives each step a reason naming its
+  **immediate** predecessor — step 7 names step 6, not the halted step 5 — which is the more useful
+  rendering and is what AC-3 already asserts. T3 resolved it by asserting step 6 names step 5 and
+  steps 7–9 remain blocked, rather than rewriting working logic to match a sentence. **The ticket
+  text is what is wrong**, and it is left uncorrected only because that ticket is merged and its T3
+  section is now history. **Fix it if `docs/FEATURES.md` inherits the wording** — T4 writes those
+  rows, and copying *"a reason naming step 5"* into the behaviour table would publish the error
+  rather than retire it.
+
+- **A refused dispatch on a human-only step leaves the chain `running`, and the spec does not say so**
+  *(added 2026-08-22, found building Stage 4 T3)*. T3 implemented it that way and flagged it rather
+  than deciding silently. Spec §3.5 — *"a human step ends the chain's automation, not the chain"* —
+  supports it, and AC-7 now asserts `Chain.status` stays `running`; every other precondition-4
+  refusal still halts. **What is missing is the spec sentence, not the behaviour.** §3.4 says flatly
+  that a refused dispatch halts the chain, §3.5 implies one refusal that must not, and only the code
+  and a check record which is which. **Unblock condition:** T4's `docs/FEATURES.md` rows — write the
+  distinction into the behaviour table there, and amend §3.4's sentence to name its own exception.
+
+- **A project initialized before Stage 4 cannot get its template seeded through the UI** *(added
+  2026-08-22, found by running Stage 4 T4 by hand)*. `initializeProject` seeds built-in templates on
+  **both** its branches — the row-creating one and the *already initialized* replay — which was T1's
+  judgement call and is correct on its own terms. **The replay branch is unreachable from the
+  shipped interface**: the *Initialize* button only renders when `loadProjectExecutionData` returns
+  `null`, which never happens for a project that already has a `Project` row. So the code path that
+  exists to serve exactly this case can only be reached by calling the server action directly, which
+  is what T4 did to run its by-hand test.
+  **Who this affects: every project that opted in before Stage 4**, which today is this one. A fresh
+  project is fine — it seeds on creation.
+  **Why it is not a one-line fix:** making *Initialize* render for an already-initialized project
+  means a button whose label is a lie, and D30 chose an explicit click precisely so nothing creates
+  records unasked. The honest shapes are a distinct *reseed templates* affordance on
+  `/p/<slug>/config/templates` that says what it will do, or seeding lazily when that page loads and
+  finds none — which quietly writes rows on a GET, and is the kind of thing this project has
+  refused elsewhere. **Unblock condition:** the first person who needs the seeded template on an
+  existing project and cannot get it. That is now, for this repo, so it is the most immediately
+  actionable entry in this file.
+
+- **`pnpm type-check` has never seen a single acceptance suite** *(added 2026-08-22, found in the
+  second review round on #38)*. `tsconfig.json`'s `include` is `["next-env.d.ts", "**/*.ts",
+  "**/*.tsx", ".next/types/**/*.ts"]`, and **every suite is `.mts`** — `verify-acceptance.mts`,
+  `verify-all.mts`, and `verify-stage{2,3,3a,3b,3c,4}.mts`. `**/*.ts` does not match `.mts`, so
+  `tsc --noEmit` type-checks the app and the whole of `lib/` and skips all eight scripts. Confirmed
+  with `npx tsc --noEmit --listFiles | grep -c scripts/` → **0**.
+  **Demonstrated by accident while finding it:** a suite was edited to call `fileURLToPath` without
+  importing it, `pnpm type-check` reported clean, and the file crashed at run time with
+  `ReferenceError: fileURLToPath is not defined`. A reviewer in the same round asserted that a
+  `new FakeRunner([])` call "fails the repository's TypeScript check" — it does not, and that is the
+  problem: the call really is wrong, and nothing was going to say so.
+  **What this costs:** the suites are where this project puts the logic that must not be wrong, and
+  they are the only code in the repo with no static check at all. Their errors surface as a run-time
+  crash mid-suite, which reports as `FAIL suite — a check threw instead of reporting` and takes a
+  reading of the stack to diagnose.
+  **Why it is not a one-line fix:** adding `**/*.mts` to `include` surfaces **roughly 128
+  diagnostics** across the eight files (measured 2026-08-22 with an ad-hoc invocation, so treat the
+  number as an order of magnitude, not a count). Most are likely the loose fixture typing these
+  scripts have always used — raw sqlite rows cast through `Record<string, unknown>`, and similar —
+  so the work is a genuine cleanup pass, possibly with a separate looser `tsconfig` for `scripts/`
+  rather than one shared strictness setting.
+  **Unblock condition:** none, and this is the entry in this file most likely to be worth doing
+  next. Every suite added from here inherits the blind spot, and Stage 4 alone added 25 checks to it.
+
 ## Done / superseded
 
 <!-- Move items here when resolved (with the resolution) or dropped (with why), rather than
