@@ -4,25 +4,44 @@
  * that these are ticket-level structural checks, not spec-numbered behaviour (T1 closes no spec AC
  * — every one of AC-1…AC-11 needs `lib/agentos/chain.ts`, which T2 creates).
  *
+ * AC-1, AC-2, AC-3, AC-11 (T2, "instantiate, all-or-nothing") append below AC-0c, plus AC-1b — a
+ * ticket-instructed addition, not spec-numbered, in the same "b" spirit as `verify-stage3b.mts`'s
+ * own AC-8b/AC-6b: `docs/specs/stage-4-tickets.md`'s inherited fact 4 states that this project's
+ * real `Agent` rows name neither of the seeded template's six agents, so instantiating it here
+ * today refuses at §3.3 rule 2 — and the ticket brief is explicit that a fixture must prove that
+ * refusal rather than seed around it ("do not relax that rule to make a test pass"). Every T2
+ * fixture below seeds all six named agents (`spec`, `plan`, `review-coordinator`,
+ * `implementation-plan-executioner`, `senior-dev`, `librarian`) except AC-1b's, which omits one on
+ * purpose.
+ *
  * Fixture-based; the model is never called. Style, PASS/FAIL format and exit-code behaviour match
  * `scripts/verify-stage3b.mts`. A fresh temp dir per check, one unconditional cleanup sweep at the
  * true end — never `data/agentos.sqlite`.
  *
  * Run: pnpm verify:stage4
  */
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   openDb,
   createProject,
+  createAgent,
+  getAgent,
+  getChain,
   getTask,
+  getTemplateBySlug,
+  listTasksByChain,
+  listTasksByProject,
+  listTemplateSteps,
   listTemplatesByProject,
+  parseJsonColumn,
 } from "../lib/agentos/db";
 import { seedBuiltInTemplates } from "../lib/agentos/templates/seed";
 import { COMPOUND_ENGINEER_TEMPLATE } from "../lib/agentos/templates/compound-engineer";
+import { instantiateTemplate } from "../lib/agentos/chain";
 
 let failures = 0;
 const pass = (id: string, msg: string) => console.log(`  PASS  ${id} — ${msg}`);
@@ -37,6 +56,63 @@ function tempDbPath(name: string): string {
   const dir = mkdtempSync(join(tmpdir(), `agentic-os-stage4-${name}-`));
   TEMPS.push(dir);
   return join(dir, "agentos.sqlite");
+}
+
+/** The six non-human names the seeded template's steps name (AgentOS-spec §10, inherited fact 4). */
+const TEMPLATE_AGENT_NAMES = [
+  "spec",
+  "plan",
+  "review-coordinator",
+  "implementation-plan-executioner",
+  "senior-dev",
+  "librarian",
+] as const;
+
+/** Every `{{var}}` the seeded template's steps reference (spec §3.3's rule 1). */
+const FULL_VARS: Record<string, string> = {
+  branchName: "feat/widget",
+  featureTitle: "Widget support",
+  featureSpec: "Add widget support end to end.",
+};
+
+/**
+ * A fixture project for T2's checks: a real directory on disk with an `agentos.yml` (§3.3 rule 3),
+ * every one of the seeded template's six named agents (unless excluded via `missingAgentName`), and
+ * the built-in template seeded into it. `dir` is a real path — `existsSync` on `primaryRepoPath`
+ * has to find something, and `instantiateTemplate` refuses otherwise.
+ */
+function makeChainFixture(
+  name: string,
+  opts: { missingAgentName?: string } = {},
+): { db: DatabaseSync; dir: string; projectId: string } {
+  const dir = mkdtempSync(join(tmpdir(), `agentic-os-stage4-chain-${name}-`));
+  TEMPS.push(dir);
+  writeFileSync(join(dir, "agentos.yml"), "");
+
+  const db = openDb(tempDbPath(`chain-${name}`));
+  const project = createProject(db, {
+    slug: `t2-${name}`,
+    primaryRepoPath: dir,
+    yamlPath: join(dir, "agentos.yml"),
+    maxConcurrentSessions: 1,
+  });
+
+  for (const agentName of TEMPLATE_AGENT_NAMES) {
+    if (agentName === opts.missingAgentName) continue;
+    createAgent(db, {
+      projectId: project.id,
+      name: agentName,
+      monogram: agentName.slice(0, 2).toUpperCase(),
+      model: "claude-opus-5",
+      rolePrompt: `You are ${agentName}.`,
+      allowedTools: [],
+      disallowedTools: [],
+      canCommit: false,
+    });
+  }
+
+  seedBuiltInTemplates(db, project.id);
+  return { db, dir, projectId: project.id };
 }
 
 /**
@@ -151,7 +227,7 @@ const MIGRATION_1_SQL = `
   CREATE INDEX IF NOT EXISTS idx_inbox_session         ON InboxMessage(sessionId);
 `;
 
-console.log("\nStage 4 acceptance — schema, the seeded template, and this suite (T1)\n");
+console.log("\nStage 4 acceptance — schema and seed (T1), instantiate all-or-nothing (T2)\n");
 
 function runChecks() {
   // ── AC-0a · the migration is additive and idempotent ──────────────────────────────────────
@@ -297,6 +373,228 @@ function runChecks() {
       pass("AC-0c", `seeding the same project twice left exactly 1 TaskTemplate row for '${COMPOUND_ENGINEER_TEMPLATE.slug}'`);
     }
   }
+
+  // ── AC-1 · nine cards, in order ────────────────────────────────────────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac1");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+
+    if (!result.ok) {
+      fail("AC-1", `instantiate refused against a fixture with all six agents seeded: ${result.reason}`);
+    } else {
+      const tasks = listTasksByChain(db, result.chainId);
+      const ords = tasks.map((t) => t.chainOrd);
+      const expectedOrds = COMPOUND_ENGINEER_TEMPLATE.steps.map((s) => s.ord);
+      const allTodo = tasks.every((t) => t.status === "todo");
+      const gatesMatch = tasks.every(
+        (t, i) => t.approvalGate === COMPOUND_ENGINEER_TEMPLATE.steps[i].approvalGate,
+      );
+      const agentsMatch = tasks.every((t, i) => {
+        const step = COMPOUND_ENGINEER_TEMPLATE.steps[i];
+        if (step.assigneeAgentName === "human") return t.assigneeAgentId === null;
+        const agent = t.assigneeAgentId ? getAgent(db, t.assigneeAgentId) : null;
+        return agent?.name === step.assigneeAgentName;
+      });
+
+      if (result.taskIds.length !== 9) {
+        fail("AC-1", `expected 9 taskIds back, got ${result.taskIds.length}`);
+      } else if (tasks.length !== 9) {
+        fail("AC-1", `expected 9 Task rows linked to the chain, got ${tasks.length}`);
+      } else if (JSON.stringify(ords) !== JSON.stringify(expectedOrds)) {
+        fail("AC-1", `chainOrd sequence is ${JSON.stringify(ords)}, expected ${JSON.stringify(expectedOrds)}`);
+      } else if (!allTodo) {
+        fail("AC-1", `not every task is 'todo': ${tasks.map((t) => t.status).join(", ")}`);
+      } else if (!gatesMatch) {
+        fail("AC-1", "at least one task's approvalGate does not match its step's");
+      } else if (!agentsMatch) {
+        fail("AC-1", "at least one task's resolved agent does not match its step's assigneeAgentName");
+      } else {
+        pass(
+          "AC-1",
+          "9 tasks created in order (chainOrd 1..9), all 'todo', each naming the right agent (null for the human step) and gate flag",
+        );
+      }
+    }
+  }
+
+  // ── AC-2 · binding is total or nothing ─────────────────────────────────────────────────────
+  {
+    // Part 1 — every variable supplied: no "{{" survives in any stored prompt.
+    const fixtureA = makeChainFixture("ac2a");
+    const bound = instantiateTemplate({
+      db: fixtureA.db,
+      projectId: fixtureA.projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    const survivedBraces = bound.ok
+      ? listTasksByChain(fixtureA.db, bound.chainId).filter((t) => t.description.includes("{{"))
+      : [];
+
+    // Part 2 — `branchName` omitted: refuses naming the variable and the step; a fresh project
+    // that had zero Task rows before the attempt still has zero after it.
+    const fixtureB = makeChainFixture("ac2b");
+    const { branchName: _omitted, ...withoutBranchName } = FULL_VARS;
+    const beforeCount = listTasksByProject(fixtureB.db, fixtureB.projectId).length;
+    const refusal = instantiateTemplate({
+      db: fixtureB.db,
+      projectId: fixtureB.projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: withoutBranchName,
+    });
+    const afterCount = listTasksByProject(fixtureB.db, fixtureB.projectId).length;
+
+    if (!bound.ok) {
+      fail("AC-2", `setup: instantiate with every variable supplied was refused: ${bound.reason}`);
+    } else if (survivedBraces.length > 0) {
+      fail("AC-2", `unbound "{{" survived in ${survivedBraces.length} stored prompt(s) despite every variable being supplied`);
+    } else if (refusal.ok) {
+      fail("AC-2", "instantiate succeeded with 'branchName' omitted");
+    } else if (!refusal.reason.includes("branchName")) {
+      fail("AC-2", `refusal did not name the missing variable: ${JSON.stringify(refusal.reason)}`);
+    } else if (!refusal.reason.includes("step 1")) {
+      fail("AC-2", `refusal did not name the step: ${JSON.stringify(refusal.reason)}`);
+    } else if (beforeCount !== 0 || afterCount !== beforeCount) {
+      fail("AC-2", `Task count is not unchanged: ${beforeCount} before, ${afterCount} after the refused attempt`);
+    } else {
+      pass(
+        "AC-2",
+        `bound total (no "{{" survives) when every variable is supplied; refused omitting 'branchName': "${refusal.reason}" — Task count unchanged (${beforeCount})`,
+      );
+    }
+  }
+
+  // ── AC-1b · a missing agent refuses, naming the step ───────────────────────────────────────
+  // Not spec-numbered — a ticket-instructed addition (docs/specs/stage-4-tickets.md T2, inherited
+  // fact 4): this project's real agents name neither `ux-ui-designer` nor `frontend developer` as
+  // any of the six the seeded template needs, so instantiate refusing here is the spec working,
+  // not a defect, and this check proves the refusal rather than seeding around the rule that
+  // produces it. `senior-dev` (step 7) is left out of the fixture on purpose.
+  {
+    const { db, projectId } = makeChainFixture("ac1b", { missingAgentName: "senior-dev" });
+    const beforeCount = listTasksByProject(db, projectId).length;
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+    const afterCount = listTasksByProject(db, projectId).length;
+
+    if (result.ok) {
+      fail("AC-1b", "instantiate succeeded with 'senior-dev' missing from the project's agents");
+    } else if (!result.reason.includes("senior-dev")) {
+      fail("AC-1b", `refusal did not name the missing agent: ${JSON.stringify(result.reason)}`);
+    } else if (!result.reason.includes("step 7")) {
+      fail("AC-1b", `refusal did not name the step: ${JSON.stringify(result.reason)}`);
+    } else if (afterCount !== beforeCount) {
+      fail("AC-1b", `Task count changed on a refused instantiate: ${beforeCount} -> ${afterCount}`);
+    } else {
+      pass(
+        "AC-1b",
+        `refused: "${result.reason}" — Task count unchanged (${beforeCount}). Rule 2 held rather than being relaxed to pass.`,
+      );
+    }
+  }
+
+  // ── AC-3 · steps 2–9 are blocked, and say by what ──────────────────────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac3");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+
+    if (!result.ok) {
+      fail("AC-3", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      const tasks = listTasksByChain(db, result.chainId); // ordered by chainOrd
+      const step1 = tasks.find((t) => t.chainOrd === 1);
+      const laterSteps = tasks.filter((t) => (t.chainOrd ?? 0) >= 2);
+      const allNamePredecessor = laterSteps.every(
+        (t) =>
+          typeof t.blockedReason === "string" &&
+          t.blockedReason.includes(`step ${(t.chainOrd ?? 0) - 1}`),
+      );
+
+      if (step1 && step1.blockedReason !== null) {
+        fail("AC-3", `step 1 carries a blockedReason: ${JSON.stringify(step1.blockedReason)}`);
+      } else if (laterSteps.length !== 8) {
+        fail("AC-3", `expected 8 steps at chainOrd >= 2, got ${laterSteps.length}`);
+      } else if (!allNamePredecessor) {
+        fail(
+          "AC-3",
+          `at least one step's blockedReason does not name its predecessor: ${laterSteps.map((t) => `ord ${t.chainOrd}: ${JSON.stringify(t.blockedReason)}`).join("; ")}`,
+        );
+      } else {
+        pass(
+          "AC-3",
+          `step 1 carries no blockedReason; steps 2..9 each name their predecessor (e.g. ord 2: "${laterSteps[0].blockedReason}")`,
+        );
+      }
+    }
+  }
+
+  // ── AC-11 · a running chain ignores template edits ─────────────────────────────────────────
+  {
+    const { db, projectId } = makeChainFixture("ac11");
+    const result = instantiateTemplate({
+      db,
+      projectId,
+      templateSlug: COMPOUND_ENGINEER_TEMPLATE.slug,
+      variables: FULL_VARS,
+    });
+
+    if (!result.ok) {
+      fail("AC-11", `setup: instantiate was refused: ${result.reason}`);
+    } else {
+      type StoredVersion = { steps: { ord: number; promptTemplate: string }[] };
+
+      const chainBefore = getChain(db, result.chainId);
+      const versionBefore = chainBefore ? parseJsonColumn<StoredVersion>(chainBefore.templateVersionJson) : null;
+      const step3Original = versionBefore?.steps.find((s) => s.ord === 3)?.promptTemplate;
+
+      // Edit the seeded TemplateStep row directly — the same class of raw-SQL fixture
+      // manipulation AC-0a already uses. There is no production write accessor for editing a
+      // TemplateStep (T2 is restricted to read accessors in db.ts, and one should not be added
+      // only to serve this test).
+      const template = getTemplateBySlug(db, projectId, COMPOUND_ENGINEER_TEMPLATE.slug);
+      db.prepare("UPDATE TemplateStep SET promptTemplate = ?, name = ? WHERE templateId = ? AND ord = 3").run(
+        "EDITED AFTER INSTANTIATE — must never reach a running chain",
+        "Edited step name",
+        template?.id ?? "",
+      );
+      const step3Edited = template
+        ? listTemplateSteps(db, template.id).find((s) => s.ord === 3)?.promptTemplate
+        : undefined;
+
+      const chainAfter = getChain(db, result.chainId);
+      const versionAfter = chainAfter ? parseJsonColumn<StoredVersion>(chainAfter.templateVersionJson) : null;
+      const step3AfterEdit = versionAfter?.steps.find((s) => s.ord === 3)?.promptTemplate;
+
+      if (!versionBefore) {
+        fail("AC-11", "setup: could not read the chain's templateVersionJson after instantiate");
+      } else if (step3Edited === step3Original) {
+        fail("AC-11", "setup: the direct SQL edit did not change the TemplateStep row — this check would prove nothing");
+      } else if (versionAfter?.steps.length !== 9) {
+        fail("AC-11", `chain's stored step count changed after editing the template: expected 9, got ${versionAfter?.steps.length}`);
+      } else if (step3AfterEdit !== step3Original) {
+        fail("AC-11", `the chain's stored step 3 prompt changed after the template was edited: ${JSON.stringify(step3AfterEdit)}`);
+      } else {
+        pass(
+          "AC-11",
+          "editing the seeded template's step 3 after instantiate left the chain's stored prompts and step count unchanged",
+        );
+      }
+    }
+  }
 }
 
 try {
@@ -307,5 +605,5 @@ try {
   for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
 }
 
-console.log(failures === 0 ? "\nAll Stage 4 T1 acceptance criteria pass.\n" : `\n${failures} FAILING.\n`);
+console.log(failures === 0 ? "\nAll Stage 4 acceptance criteria pass (T1 + T2).\n" : `\n${failures} FAILING.\n`);
 process.exit(failures === 0 ? 0 : 1);
