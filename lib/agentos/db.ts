@@ -36,6 +36,9 @@ import type {
   ActorType,
   TriggerKind,
   DriftAtSpawn,
+  TaskTemplateRow,
+  TemplateStepRow,
+  ChainRow,
 } from "./types";
 
 /** Gitignored — see `.gitignore`'s `data/` entry. Losing this file loses session evidence. */
@@ -161,6 +164,64 @@ const MIGRATIONS: { version: number; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_session_status        ON Session(status);
       CREATE INDEX IF NOT EXISTS idx_toolcall_session_seq  ON ToolCall(sessionId, seq);
       CREATE INDEX IF NOT EXISTS idx_inbox_session         ON InboxMessage(sessionId);
+    `,
+  },
+  {
+    // Stage 4 §3.1 / docs/specs/stage-4-tickets.md T1. Additive only — never edit migration 1.
+    // `data/agentos.sqlite` on the owner's machine already holds real `Project`, `Agent` and `Task`
+    // rows (T1's own inherited fact 3); this migration must not drop or recreate any of them.
+    //
+    // `TaskTemplate` carries no UNIQUE(projectId, slug) constraint — idempotent seeding is an
+    // application-level guard (`lib/agentos/templates/seed.ts`), proven by AC-0c, not a DB
+    // constraint, because the DB constraint would turn a re-seed into a thrown error rather than
+    // the harmless no-op §5.1's "re-initialising must not create a second copy" calls for.
+    //
+    // `Chain.lastDispatchedOrd` is not in spec §3.1's schema block — see its doc comment in
+    // `types.ts` for why T1 adds it anyway (T3's atomic claim, raised in review of #33).
+    version: 2,
+    sql: `
+      CREATE TABLE IF NOT EXISTS TaskTemplate (
+        id            TEXT PRIMARY KEY,
+        projectId     TEXT NOT NULL REFERENCES Project(id),
+        slug          TEXT NOT NULL,
+        name          TEXT NOT NULL,
+        description   TEXT NOT NULL,
+        variablesJson TEXT NOT NULL,
+        seeded        INTEGER NOT NULL DEFAULT 0,
+        createdAt     TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS TemplateStep (
+        id                TEXT PRIMARY KEY,
+        templateId        TEXT NOT NULL REFERENCES TaskTemplate(id),
+        ord               INTEGER NOT NULL,
+        name              TEXT NOT NULL,
+        promptTemplate    TEXT NOT NULL,
+        assigneeAgentName TEXT NOT NULL,
+        approvalGate      INTEGER NOT NULL DEFAULT 0,
+        notes             TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS Chain (
+        id                  TEXT PRIMARY KEY,
+        projectId           TEXT NOT NULL REFERENCES Project(id),
+        templateId          TEXT NOT NULL REFERENCES TaskTemplate(id),
+        templateVersionJson TEXT NOT NULL,
+        variablesJson       TEXT NOT NULL,
+        status              TEXT NOT NULL CHECK (status IN ('running', 'halted', 'completed')),
+        haltedAtTaskId      TEXT REFERENCES Task(id),
+        haltReason          TEXT,
+        lastDispatchedOrd   INTEGER NOT NULL DEFAULT 0,
+        createdAt           TEXT NOT NULL
+      );
+
+      ALTER TABLE Task ADD COLUMN chainId TEXT REFERENCES Chain(id);
+      ALTER TABLE Task ADD COLUMN chainOrd INTEGER;
+
+      CREATE INDEX IF NOT EXISTS idx_templatestep_template ON TemplateStep(templateId);
+      CREATE INDEX IF NOT EXISTS idx_tasktemplate_project  ON TaskTemplate(projectId);
+      CREATE INDEX IF NOT EXISTS idx_chain_project         ON Chain(projectId);
+      CREATE INDEX IF NOT EXISTS idx_task_chain            ON Task(chainId);
     `,
   },
 ];
@@ -420,6 +481,12 @@ export interface CreateTaskInput {
   /** Null means human-only (§7.1) — this function does not default it from the project. */
   assigneeAgentId: string | null;
   scheduleKind?: string;
+  /**
+   * Stage 4 §3.1: set together by `instantiateTemplate` (T2), never independently. Both null for a
+   * hand-made task — the default for every caller that predates Stage 4.
+   */
+  chainId?: string | null;
+  chainOrd?: number | null;
 }
 
 /** Every task starts in `todo` with no `blockedReason` — both are set by later transitions. */
@@ -434,11 +501,13 @@ export function createTask(db: DatabaseSync, input: CreateTaskInput): TaskRow {
     approvalGate: input.approvalGate,
     assigneeAgentId: input.assigneeAgentId,
     scheduleKind: input.scheduleKind ?? "manual",
+    chainId: input.chainId ?? null,
+    chainOrd: input.chainOrd ?? null,
     createdAt: nowISO(),
   };
   db.prepare(
-    `INSERT INTO Task (id, projectId, name, description, status, blockedReason, approvalGate, assigneeAgentId, scheduleKind, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO Task (id, projectId, name, description, status, blockedReason, approvalGate, assigneeAgentId, scheduleKind, chainId, chainOrd, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     row.id,
     row.projectId,
@@ -449,6 +518,8 @@ export function createTask(db: DatabaseSync, input: CreateTaskInput): TaskRow {
     toSqliteBool(row.approvalGate),
     row.assigneeAgentId,
     row.scheduleKind,
+    row.chainId,
+    row.chainOrd,
     row.createdAt,
   );
   return row;
@@ -810,4 +881,205 @@ export function listCommitShas(db: DatabaseSync, sessionId: string): CommitShaRo
   return db
     .prepare("SELECT * FROM CommitSha WHERE sessionId = ?")
     .all(sessionId) as unknown as CommitShaRow[];
+}
+
+// ---------------------------------------------------------------------------
+// TaskTemplate + TemplateStep — Stage 4 §3.1. A template's steps are always written with their
+// template in one transaction: a `TaskTemplate` row with no steps is not a state either half of
+// this stage can use, so there is no separate "add a step" accessor.
+// ---------------------------------------------------------------------------
+
+export interface CreateTemplateStepInput {
+  ord: number;
+  name: string;
+  /** Raw `{{var}}` text — bound later, at instantiate (§3.3). Never store it bound here. */
+  promptTemplate: string;
+  /** A name, or the reserved literal `human` — resolved to an id at instantiate, never here. */
+  assigneeAgentName: string;
+  approvalGate: boolean;
+  notes?: string | null;
+}
+
+export interface CreateTemplateInput {
+  projectId: string;
+  /** Stable key ('compound-engineer-workflow'). Never rendered — §3.1's one-identifier rule. */
+  slug: string;
+  /** Display name ('compound-engineer'). What a card renders. */
+  name: string;
+  description: string;
+  /** Parsed array in, JSON text out — the variable names this template's prompts bind. */
+  variables: string[];
+  seeded: boolean;
+  steps: CreateTemplateStepInput[];
+}
+
+export interface TemplateWithSteps {
+  template: TaskTemplateRow;
+  steps: TemplateStepRow[];
+}
+
+function hydrateTemplate(raw: Record<string, unknown>): TaskTemplateRow {
+  return { ...(raw as unknown as TaskTemplateRow), seeded: fromSqliteBool(raw.seeded as number) };
+}
+
+function hydrateTemplateStep(raw: Record<string, unknown>): TemplateStepRow {
+  return { ...(raw as unknown as TemplateStepRow), approvalGate: fromSqliteBool(raw.approvalGate as number) };
+}
+
+/**
+ * Writes a `TaskTemplate` row and every one of its `TemplateStep` rows in one transaction.
+ * Idempotency on `(projectId, slug)` is the caller's job (`lib/agentos/templates/seed.ts`'s guard,
+ * AC-0c) — this function always inserts and never checks first, the same division of labour
+ * `createProject` / `initializeProject` already use.
+ */
+export function createTemplate(db: DatabaseSync, input: CreateTemplateInput): TemplateWithSteps {
+  const template: TaskTemplateRow = {
+    id: randomUUID(),
+    projectId: input.projectId,
+    slug: input.slug,
+    name: input.name,
+    description: input.description,
+    variablesJson: JSON.stringify(input.variables),
+    seeded: input.seeded,
+    createdAt: nowISO(),
+  };
+  const steps: TemplateStepRow[] = input.steps.map((s) => ({
+    id: randomUUID(),
+    templateId: template.id,
+    ord: s.ord,
+    name: s.name,
+    promptTemplate: s.promptTemplate,
+    assigneeAgentName: s.assigneeAgentName,
+    approvalGate: s.approvalGate,
+    notes: s.notes ?? null,
+  }));
+
+  db.exec("BEGIN");
+  try {
+    db.prepare(
+      `INSERT INTO TaskTemplate (id, projectId, slug, name, description, variablesJson, seeded, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      template.id,
+      template.projectId,
+      template.slug,
+      template.name,
+      template.description,
+      template.variablesJson,
+      toSqliteBool(template.seeded),
+      template.createdAt,
+    );
+    const stepStmt = db.prepare(
+      `INSERT INTO TemplateStep (id, templateId, ord, name, promptTemplate, assigneeAgentName, approvalGate, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const step of steps) {
+      stepStmt.run(
+        step.id,
+        step.templateId,
+        step.ord,
+        step.name,
+        step.promptTemplate,
+        step.assigneeAgentName,
+        toSqliteBool(step.approvalGate),
+        step.notes,
+      );
+    }
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+  return { template, steps };
+}
+
+export function getTemplateBySlug(db: DatabaseSync, projectId: string, slug: string): TaskTemplateRow | null {
+  const raw = db
+    .prepare("SELECT * FROM TaskTemplate WHERE projectId = ? AND slug = ?")
+    .get(projectId, slug) as Record<string, unknown> | undefined;
+  return raw ? hydrateTemplate(raw) : null;
+}
+
+export function listTemplatesByProject(db: DatabaseSync, projectId: string): TaskTemplateRow[] {
+  const rows = db
+    .prepare("SELECT * FROM TaskTemplate WHERE projectId = ? ORDER BY createdAt")
+    .all(projectId) as unknown as Record<string, unknown>[];
+  return rows.map(hydrateTemplate);
+}
+
+export function listTemplateSteps(db: DatabaseSync, templateId: string): TemplateStepRow[] {
+  const rows = db
+    .prepare("SELECT * FROM TemplateStep WHERE templateId = ? ORDER BY ord")
+    .all(templateId) as unknown as Record<string, unknown>[];
+  return rows.map(hydrateTemplateStep);
+}
+
+// ---------------------------------------------------------------------------
+// Chain — Stage 4 §3.1. Instantiate (T2) and advance (T3) both live in lib/agentos/chain.ts, not
+// here; this section is the row-level read/write those functions call, nothing more.
+// ---------------------------------------------------------------------------
+
+export interface CreateChainInput {
+  projectId: string;
+  templateId: string;
+  /** Parsed value in, JSON text out — the template + its steps, copied at instantiate (§3.1). */
+  templateVersion: unknown;
+  /** Parsed object in, JSON text out — the variables this chain was instantiated with. */
+  variables: Record<string, string>;
+}
+
+/** Every chain starts `running`, with no halt recorded and `lastDispatchedOrd` at 0 — nothing dispatched yet. */
+export function createChain(db: DatabaseSync, input: CreateChainInput): ChainRow {
+  const row: ChainRow = {
+    id: randomUUID(),
+    projectId: input.projectId,
+    templateId: input.templateId,
+    templateVersionJson: JSON.stringify(input.templateVersion),
+    variablesJson: JSON.stringify(input.variables),
+    status: "running",
+    haltedAtTaskId: null,
+    haltReason: null,
+    lastDispatchedOrd: 0,
+    createdAt: nowISO(),
+  };
+  db.prepare(
+    `INSERT INTO Chain (id, projectId, templateId, templateVersionJson, variablesJson, status, haltedAtTaskId, haltReason, lastDispatchedOrd, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    row.id,
+    row.projectId,
+    row.templateId,
+    row.templateVersionJson,
+    row.variablesJson,
+    row.status,
+    row.haltedAtTaskId,
+    row.haltReason,
+    row.lastDispatchedOrd,
+    row.createdAt,
+  );
+  return row;
+}
+
+export function getChain(db: DatabaseSync, id: string): ChainRow | null {
+  return (db.prepare("SELECT * FROM Chain WHERE id = ?").get(id) as ChainRow | undefined) ?? null;
+}
+
+/**
+ * T3's failure path (§3.4): stops the chain and names the step that stopped it. Does not touch
+ * `lastDispatchedOrd` — a halted chain never advances again regardless of that value, and leaving
+ * it as-is keeps the halt reason and the claim it raced against both reconstructible.
+ */
+export function haltChain(db: DatabaseSync, id: string, haltedAtTaskId: string, haltReason: string): void {
+  db.prepare("UPDATE Chain SET status = 'halted', haltedAtTaskId = ?, haltReason = ? WHERE id = ?").run(
+    haltedAtTaskId,
+    haltReason,
+    id,
+  );
+}
+
+export function listTasksByChain(db: DatabaseSync, chainId: string): TaskRow[] {
+  const rows = db
+    .prepare("SELECT * FROM Task WHERE chainId = ? ORDER BY chainOrd")
+    .all(chainId) as unknown as Record<string, unknown>[];
+  return rows.map(hydrateTask);
 }

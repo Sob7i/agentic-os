@@ -23,6 +23,7 @@ import { parseAgentosYml } from "@/lib/agentos/config";
 import { boardOnce } from "@/lib/reconcile/cached";
 import { projectNav } from "@/lib/shell/model";
 import { loadProjectExecutionData } from "@/lib/tasks/data";
+import { seedBuiltInTemplates } from "@/lib/agentos/templates/seed";
 
 /**
  * Server actions for the Tasks board and the Inbox — the thin, non-pure edge that calls the real
@@ -123,9 +124,13 @@ export async function initializeProject(
   const db = deps.db ?? getDb();
 
   // Idempotent (AC-3): a second click reports the existing row rather than colliding with
-  // `Project.slug`'s UNIQUE constraint or minting a duplicate for the same repo.
+  // `Project.slug`'s UNIQUE constraint or minting a duplicate for the same repo. Stage 4: also
+  // seed here, on the replay path — a project that opted in before Stage 4 shipped only ever hits
+  // this branch, and it still needs the built-in template seeded exactly once
+  // (`lib/agentos/templates/seed.ts`'s own idempotency guard).
   const existing = listProjects(db).find((p) => p.primaryRepoPath === nav.project.path);
   if (existing) {
+    seedBuiltInTemplates(db, existing.id);
     return { ok: true, alreadyInitialized: true, reason: "already initialized" };
   }
 
@@ -136,12 +141,14 @@ export async function initializeProject(
   // uncaught that is a 500, which bypasses the whole point of D30's button — that a refusal is
   // stated on the screen. Review of #20.
   try {
-    createProject(db, {
+    const project = createProject(db, {
       slug: parsed.slug ?? slug,
       primaryRepoPath: nav.project.path,
       yamlPath,
       maxConcurrentSessions: parsed.maxConcurrentSessions,
     });
+    // Stage 4: the built-in template ships with every project from the moment it exists.
+    seedBuiltInTemplates(db, project.id);
   } catch (err) {
     return {
       ok: false,

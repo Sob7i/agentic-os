@@ -84,6 +84,81 @@ export interface TaskRow {
   assigneeAgentId: string | null;
   /** `'manual'` is the only reachable value in Stage 3. */
   scheduleKind: string;
+  /**
+   * Stage 4 §3.1: both nullable, set together only by `instantiateTemplate` (T2). A hand-made task
+   * has neither — `chainId` names the `Chain` it belongs to, `chainOrd` its 1-based position in it.
+   */
+  chainId: string | null;
+  chainOrd: number | null;
+  createdAt: string;
+}
+
+/**
+ * Stage 4 §3.1: a named, ordered list of steps. `slug` is the stable key ('compound-engineer-
+ * workflow'); `name` is display only ('compound-engineer') — a card renders the name, never the
+ * slug, and nothing is keyed on the name (§3.1's "one template, one identifier on screen" rule).
+ * `seeded` distinguishes the built-in template from one a project defines later; both live in the
+ * same table.
+ */
+export interface TaskTemplateRow {
+  id: string;
+  projectId: string;
+  slug: string;
+  name: string;
+  description: string;
+  /** Raw JSON text of the variable names this template's prompts bind (e.g. `["branchName"]`); parse at the edge. */
+  variablesJson: string;
+  seeded: boolean;
+  createdAt: string;
+}
+
+/**
+ * Stage 4 §3.1: one step of a `TaskTemplate`. `assigneeAgentName` is a **name**, not an id — either
+ * an agent's name or the reserved literal `human` — because a template is portable across projects
+ * and an agent id is not; resolution to `Task.assigneeAgentId` happens at instantiate (T2), never
+ * here.
+ */
+export interface TemplateStepRow {
+  id: string;
+  templateId: string;
+  /** 1-based position in the chain; §3.2 materialises all N steps as cards up front. */
+  ord: number;
+  name: string;
+  /** Raw `{{var}}` text, unbound. Binding happens at instantiate (§3.3), never stored bound here. */
+  promptTemplate: string;
+  assigneeAgentName: string;
+  approvalGate: boolean;
+  notes: string | null;
+}
+
+/** Stage 4 §3.1: what a `Chain` becomes once every step has run, or the point past which it will not. */
+export type ChainStatus = "running" | "halted" | "completed";
+
+/**
+ * Stage 4 §3.1: a running instance of a `TaskTemplate`. `templateVersionJson` is the template and
+ * its steps **as they were at instantiate**, copied rather than referenced, so a running chain
+ * cannot change because someone edited the template underneath it (AC-11) and a halt reason stays
+ * meaningful after the template moves on.
+ */
+export interface ChainRow {
+  id: string;
+  projectId: string;
+  templateId: string;
+  /** Raw JSON text: the template + its steps, copied at instantiate. Parse at the edge. */
+  templateVersionJson: string;
+  /** Raw JSON text: the variables this chain was instantiated with. Parse at the edge. */
+  variablesJson: string;
+  status: ChainStatus;
+  haltedAtTaskId: string | null;
+  haltReason: string | null;
+  /**
+   * Not in spec §3.1's schema block — a T1 build-level addition (`docs/specs/stage-4-tickets.md`
+   * T1, raised in review of #33) so T3's advance can claim the next step atomically
+   * (`UPDATE Chain SET lastDispatchedOrd = :ord WHERE id = :id AND lastDispatchedOrd < :ord`)
+   * instead of reading the chain's tasks then writing, which two racing `done` transitions could
+   * both pass.
+   */
+  lastDispatchedOrd: number;
   createdAt: string;
 }
 
