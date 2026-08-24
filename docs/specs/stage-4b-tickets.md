@@ -323,6 +323,19 @@ string), AC-10 (every evidence field — on the composed body, **so no PR need b
     this stage lands**, not the day someone notices. Also refresh the *Verified state* block's suite
     rows on the branch this ships in, and say which branch they were measured on.
   - `docs/FEATURES.md` — §2's twelve behaviour rows.
+  - **`docs/HUMAN-TEST.md` — and T1 already invalidated four passages in it**, which is why this
+    line exists rather than being left implied. A stage that changes what the product *does* changes
+    the plain-language walkthrough by definition, and this file is the one a human reads instead of
+    the code. At minimum: **Part 4 item 4** (*"a fresh checkout per run, deleted afterwards"* — the
+    checkout still goes, **the branch now survives it**, which is the whole of D37); **Part 4
+    item 2** (the fifth check is now *does the declared base exist*, plus the new refusal when a
+    project declares no base at all); **Part 5** (*"the conversation resumes, the files do not"* is
+    still true of uncommitted work, but committed work now persists on the branch across a resume —
+    AC-14); and **the *What is NOT true yet* list**, where "restarting kills running sessions" stays
+    true but its cost drops, since commits are on a ref instead of dangling. Add the push/PR gesture
+    and its label, and write **AC-17 into the same list** — it is exactly the shape of the two
+    admissions already there. Check the whole file rather than only these four; they are the ones
+    found by reviewing T1, not a complete audit.
   - `docs/BACKLOG.md` — the deferrals spec §1 names, each with an unblock condition: a supervisor so
     a session survives a dev-server restart (D20's cloud runner); branch cleanup after a PR merges
     (**listing `agentos/*` and checking each name's session id against the `Session` table — never a
