@@ -34,7 +34,7 @@ import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { BetaMessage, BetaUsage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { createAgent, createProject, createTask, getSession, listProjects, openDb } from "../lib/agentos/db";
+import { createAgent, createProject, createTask, getSession, getTask, listProjects, openDb } from "../lib/agentos/db";
 import { dispatch, resolveBaseRef, resumeSession } from "../lib/agentos/dispatch";
 import { slugify, sessionBranchName } from "../lib/agentos/slug";
 import { parseAgentosYml } from "../lib/agentos/config";
@@ -1220,6 +1220,77 @@ async function runChecks() {
         fail("AC-6", `'git branch --list agentos/*' still shows ${JSON.stringify(branches)} — the branch D37 created before prepare ran must be deleted on refusal`);
       } else {
         pass("AC-6", `prepare exiting 3 refused the dispatch (${result.reason}); no Session row, no stale worktree, and the branch was deleted`);
+      }
+    }
+    db.close();
+  }
+
+  // ── AC-6b · a resume whose prepare fails does not strand the card or the chain ─────────────
+  // Not spec-numbered: a ticket-level check added in review of T2, in the same "b" spirit as
+  // verify-stage3b.mts's AC-6b/AC-8b. AC-6 covers the FIRST dispatch, where refusing means no
+  // Session row and no branch. The resume path cannot mean that — the session already exists and
+  // the branch already holds the paused turn's commits — so its correctness is a different
+  // assertion, and T2's first version made none: it marked the Session `failed` and left the Task
+  // in `doing` forever, a card claiming work in progress with nothing running behind it. That is
+  // the exact stale claim this product exists to catch, so it gets a check of its own.
+  {
+    const { dir } = makeFixtureRepo();
+    const db = openDb(tempDbPath("ac6b"));
+    const project = makeProject(db, dir);
+    const agent = makeAgent(db, project);
+    const task = makeTask(db, project, agent);
+    const runner = new PausingCommittingRunner(db, task.id, "which region?");
+
+    const result = await dispatch(task.id, "manual", { db, runner });
+    if (!result.started) {
+      fail("AC-6b", `setup: dispatch refused: ${JSON.stringify(result)}`);
+    } else {
+      const paused = await waitForSession(
+        db,
+        result.sessionId,
+        (s) => s.status === "waiting-inbox" && s.worktreePath === null,
+      );
+      const branchName = paused.branchName;
+      // The pause happened with no `prepare:` declared; the resume finds one that fails. The file
+      // is re-read on every turn (dispatch.ts's loadDeliveryConfig), which is what makes this
+      // rewrite take effect — and is itself D39's "on every turn that gets a worktree."
+      writeFileSync(join(dir, "agentos.yml"), 'prepare:\n  command: ["sh", "-c", "exit 7"]\n');
+
+      await resumeSession(result.sessionId, "eu-west-1", { db, runner });
+
+      const after = getSession(db, result.sessionId);
+      const taskAfter = getTask(db, task.id);
+      const branchStillThere = branchName !== null && branchLines(dir).includes(branchName);
+      const commitsStillThere =
+        branchName !== null &&
+        execFileSync("git", ["log", branchName, "--format=%H"], { cwd: dir, encoding: "utf8" })
+          .trim()
+          .split("\n")
+          .filter(Boolean).length >= 2;
+
+      if (after?.status !== "failed") {
+        fail("AC-6b", `session is '${after?.status}', expected 'failed' after a resume whose prepare exited 7`);
+      } else if (!after.failureReason?.includes("exited 7")) {
+        fail("AC-6b", `failureReason does not name the exit code: ${after.failureReason}`);
+      } else if (after.prepareExitCode !== 7) {
+        fail("AC-6b", `prepareExitCode is ${after.prepareExitCode}, expected 7`);
+      } else if (taskAfter?.status !== "todo") {
+        fail(
+          "AC-6b",
+          `task is '${taskAfter?.status}', expected 'todo' — a failed resume must hand the card back, not leave it in 'doing' with no live session`,
+        );
+      } else if (!branchStillThere || !commitsStillThere) {
+        fail(
+          "AC-6b",
+          `the paused turn's branch/commits must survive a failed resume — branch present=${branchStillThere}, has its commit=${commitsStillThere}`,
+        );
+      } else if (worktreePaths(dir).length !== 1) {
+        fail("AC-6b", `'git worktree list' shows ${JSON.stringify(worktreePaths(dir))}, expected only the main checkout`);
+      } else {
+        pass(
+          "AC-6b",
+          `a resume whose prepare exited 7 marked the session failed, handed the card back to 'todo', tore down the worktree, and left branch '${branchName}' with the paused turn's commit intact`,
+        );
       }
     }
     db.close();

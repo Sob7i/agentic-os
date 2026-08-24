@@ -808,6 +808,39 @@ export async function resumeSession(
         prepareExitCode: result.exitCode,
         prepareMs: result.durationMs,
       });
+
+      /**
+       * **The card and the chain have to move too, and the first version of this path moved
+       * neither.** Raised in review of T2. Marking only the `Session` row left the task sitting in
+       * `doing` — where §3.5 parks it for the whole pause — with no live session behind it, and a
+       * chain step neither advanced nor halted. A card claiming work is in progress when nothing
+       * is running is the exact stale claim this product exists to catch, and finding it inside
+       * our own execution layer is worse than finding it in a watched repo.
+       *
+       * This is the same `doing -> todo` + `haltChain` pair `runSessionToCompletion` performs for
+       * a genuine run failure, and it is deliberately a copy of that shape rather than a variation
+       * on it: a resume whose preparation failed *is* a failed turn, and it must leave the same
+       * evidence as one. The `status === 'doing'` guard and the halt nested inside it are load-
+       * bearing for the reason review of #38 recorded there — a human may have moved the card
+       * already, and halting a chain on behalf of a session that no longer owns its step is worse
+       * than not halting at all.
+       */
+      const currentTask = getTask(db, task.id);
+      if (currentTask && currentTask.status === "doing") {
+        const why =
+          `session ${sessionId} failed on resume: prepare command ` +
+          `'${config.prepare.command.join(" ")}' did not succeed`;
+        writeTaskTransition(db, {
+          taskId: task.id,
+          toStatus: "todo",
+          actorType: "system",
+          actorId: null,
+          reason: why,
+        });
+        if (currentTask.chainId) {
+          haltChain(db, currentTask.chainId, task.id, `${why} (step ${currentTask.chainOrd ?? "?"})`);
+        }
+      }
       return;
     }
     updateSession(db, sessionId, { prepareExitCode: result.exitCode, prepareMs: result.durationMs });
