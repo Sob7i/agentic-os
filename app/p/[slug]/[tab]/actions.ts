@@ -150,6 +150,12 @@ export async function initializeProject(
       primaryRepoPath: nav.project.path,
       yamlPath,
       maxConcurrentSessions: parsed.maxConcurrentSessions,
+      // D38/Stage 4b §3.1: a project onboarded through this button always supplies a real value —
+      // `parsed.integrationBranch` defaults to 'develop' inside the parser itself, never to
+      // 'HEAD'. Omitting these two here is exactly the compatibility shim `createProject`'s own
+      // doc comment describes, and it must never apply to a project created through this path.
+      integrationBranch: parsed.integrationBranch,
+      defaultBaseRef: parsed.defaultBaseRef,
     });
     // Stage 4: the built-in template ships with every project from the moment it exists.
     seedBuiltInTemplates(db, project.id);

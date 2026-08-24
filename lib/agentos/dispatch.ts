@@ -13,7 +13,7 @@
  * id something else already named (§7.1). There is no poller, no worker, no queue.
  */
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import type { CanUseTool, McpServerConfig, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -40,6 +40,8 @@ import {
   type Worktree,
 } from "./worktree";
 import { sessionBranchName } from "./slug";
+import { parseAgentosYml, type CommandSpec, type ParsedConfig } from "./config";
+import { runCommand, lastLines } from "./command";
 import { LocalRunner, composeOptions } from "./runner/local";
 import type { Runner } from "./runner/runner";
 import { createAgentosServer } from "./mcp/agentos-server";
@@ -55,8 +57,14 @@ import { run } from "../collectors/exec";
 // The funnel's own surface — §7.2
 // ---------------------------------------------------------------------------
 
-/** §7.3's five preconditions, named for `refusedBy` — the order they are checked in. */
-export type Precondition = "agentos.yml" | "dispatchable" | "concurrency" | "agent" | "baseRef";
+/**
+ * §7.3's five preconditions, named for `refusedBy` — the order they are checked in — plus one
+ * more Stage 4b adds: `"prepare"`, D39's own refusal. Not one of the numbered five (it runs after
+ * a worktree already exists, which none of the five do), but it is the same shape of outcome —
+ * `started: false`, a named reason, nothing left behind — so it shares the type rather than
+ * inventing a second one `refuse()` cannot return.
+ */
+export type Precondition = "agentos.yml" | "dispatchable" | "concurrency" | "agent" | "baseRef" | "prepare";
 
 export type DispatchResult =
   | { started: true; sessionId: string }
@@ -188,6 +196,46 @@ export function resolveBaseRef(
   project: Pick<ProjectRow, "defaultBaseRef" | "integrationBranch">,
 ): string | null {
   return task.baseRef ?? project.defaultBaseRef ?? project.integrationBranch;
+}
+
+// ---------------------------------------------------------------------------
+// D39/D40/Stage 4b §3.5 — prepare and verify are declared in agentos.yml, never inferred
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-reads and re-parses the project's `agentos.yml` for its `prepare:`/`verify:` commands.
+ * Neither is persisted to a `Project` column (§3.1's schema adds none for either) — the file is
+ * the only record, so both `dispatch()` and `resumeSession()` come back to it fresh on every
+ * turn, exactly as D39 requires for a resume: "on every turn that gets a worktree."
+ *
+ * Precondition 1 already confirmed the file exists before this is ever called; a read or parse
+ * failure here is therefore a file that changed on disk between then and now (or a read race),
+ * not the common case — but it must still refuse rather than throw, for the same reason every
+ * other precondition does.
+ */
+function loadDeliveryConfig(project: ProjectRow): { ok: true; config: ParsedConfig } | { ok: false; reason: string } {
+  let text: string;
+  try {
+    text = readFileSync(project.yamlPath, "utf8");
+  } catch (err) {
+    return { ok: false, reason: `could not read ${project.yamlPath}: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  const parsed = parseAgentosYml(text);
+  if (!parsed.ok) {
+    return { ok: false, reason: `agentos.yml is malformed: ${parsed.error}` };
+  }
+  return { ok: true, config: parsed };
+}
+
+/**
+ * Runs a declared `CommandSpec` and reports it in the shape `dispatch()` and `resumeSession()`
+ * both want: the last 40 lines of its combined stdout+stderr (§3.6's own number), alongside the
+ * raw `CommandResult` the caller needs to decide pass/fail/timeout.
+ */
+async function runDeclaredCommand(spec: CommandSpec, cwd: string) {
+  const result = await runCommand(spec.command, cwd, spec.timeoutMs);
+  const tail = lastLines(`${result.stdout}\n${result.stderr}`, 40);
+  return { result, tail };
 }
 
 async function computeDriftAtSpawn(project: ProjectRow): Promise<DriftAtSpawn> {
@@ -330,6 +378,16 @@ export async function dispatch(
     );
   }
 
+  // agentos.yml is re-read here, not earlier: precondition 1 only checked it EXISTS, and
+  // `prepare:`/`verify:` are never persisted (loadDeliveryConfig's own comment) — this is the one
+  // read this dispatch will do. Before the worktree, deliberately: a malformed file refuses with
+  // nothing yet created to clean up.
+  const configResult = loadDeliveryConfig(project);
+  if (!configResult.ok) {
+    return refuse("agentos.yml", configResult.reason);
+  }
+  const config = configResult.config;
+
   // ── All five pass — record the premise, mint the identity, materialize the workspace ─────
   const driftAtSpawn = await computeDriftAtSpawn(project);
 
@@ -345,6 +403,30 @@ export async function dispatch(
     mode: "create",
   });
 
+  // ── D39/§3.5 — prepare the workspace before a Session row (and any cost) exists ────────────
+  // The branch was just created, above — a failure here must delete it too (AC-6's last clause),
+  // or every failed preparation strands an empty `agentos/*` ref, defeating AC-2 and §3.3's
+  // cleanup story in one move. No Session row is created on this path at all: `createSession`
+  // below is the FIRST write, so returning before it is what makes "no session, no cost" true
+  // without needing to undo anything on the Session table.
+  let prepareExitCode: number | null = null;
+  let prepareMs: number | null = null;
+  if (config.prepare) {
+    const { result } = await runDeclaredCommand(config.prepare, wt.path);
+    prepareExitCode = result.exitCode;
+    prepareMs = result.durationMs;
+    if (result.exitCode !== 0) {
+      await removeWorktree(wt);
+      await deleteBranch(wt, branchName);
+      return refuse(
+        "prepare",
+        `prepare command '${config.prepare.command.join(" ")}' ${
+          result.timedOut ? `timed out after ${config.prepare.timeoutMs}ms` : `exited ${result.exitCode}`
+        } in the worktree — refusing the dispatch before any cost is spent (D39)`,
+      );
+    }
+  }
+
   const session = createSession(db, {
     id: sessionId,
     taskId,
@@ -358,6 +440,14 @@ export async function dispatch(
     driftAtSpawn,
   });
 
+  // `createSession` always inserts NULL for these two (its own doc comment: no per-column writer
+  // needed) — this is the one `updateSession` call that turns "no prepare: key" and "prepare: ran
+  // and passed" into two different rows instead of the same NULL. Absent key → both stay null,
+  // never 0 — §3.5's own rule, and `config.prepare === null` here means exactly that.
+  if (config.prepare) {
+    updateSession(db, session.id, { prepareExitCode, prepareMs });
+  }
+
   writeTaskTransition(db, {
     taskId,
     toStatus: "doing",
@@ -369,7 +459,17 @@ export async function dispatch(
   // §7.4: "the run then proceeds in the Next.js Node process" — started here, awaited by
   // nothing. The request returns at the line below; this promise settles on its own time.
   const prompt = `Task: ${task.name}\n\n${task.description}`;
-  void runSessionToCompletion({ db, runner, session, agent, taskId, worktree: wt, prompt, removeWt: deps.removeWorktree }).catch((err) => {
+  void runSessionToCompletion({
+    db,
+    runner,
+    session,
+    agent,
+    taskId,
+    worktree: wt,
+    prompt,
+    verify: config.verify,
+    removeWt: deps.removeWorktree,
+  }).catch((err) => {
     // A last-resort net: runSessionToCompletion already records failure state onto the Session
     // row itself. Reaching here means that bookkeeping threw too, which must not become an
     // unhandled rejection that crashes the process the run is supposed to survive.
@@ -391,6 +491,10 @@ interface RunSessionParams {
   taskId: string;
   worktree: Worktree;
   prompt: string;
+  /** D40/§3.6: the declared `verify:` command, or null if `agentos.yml` has none. Run by THIS
+   *  function, after the model settles and before teardown — never by the agent, never reported
+   *  by the session. */
+  verify: CommandSpec | null;
   /** Set only when resuming a paused session (§3.5) — the prior run's `sdkSessionId`. */
   resume?: string;
   /** Injected teardown (`DispatchDeps.removeWorktree`), defaulting to the real one. */
@@ -444,7 +548,7 @@ async function tearDownBestEffort(
 
 async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
   const removeWt = params.removeWt ?? removeWorktree;
-  const { db, runner, session, agent, taskId, worktree, prompt, resume } = params;
+  const { db, runner, session, agent, taskId, worktree, prompt, verify, resume } = params;
   const ctx: SessionCtx = { db, sessionId: session.id, taskId };
   const { mcpServers, canUseTool } = buildSessionSurface(ctx);
 
@@ -510,6 +614,20 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
     console.error(`session ${session.id}: could not read worktree commits; keeping its branch`, err);
   }
   if (commitShas.length) recordCommitShas(db, session.id, commitShas);
+
+  // D40/§3.6: verification is run by THIS function, never reported by the session — measured
+  // while the worktree still exists, so it must happen before teardown, same ordering trap as
+  // commits above. Runs regardless of `runError`: a session that crashed may still have left the
+  // worktree in a state worth checking, and `Session.status` below is unaffected by the result
+  // either way (D40's own rule — neither fact is allowed to hide the other).
+  let verifyExitCode: number | null = null;
+  let verifyTail: string | null = null;
+  if (verify) {
+    const { result, tail } = await runDeclaredCommand(verify, worktree.path);
+    verifyExitCode = result.exitCode;
+    verifyTail = tail;
+  }
+
   const teardownError = await tearDownBestEffort(worktree, removeWt);
 
   // §3.4: a run that committed nothing leaves nothing. Decided from the LIST ALREADY READ ABOVE
@@ -537,6 +655,11 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
     status: runError ? "failed" : "completed",
     endedAtISO: new Date().toISOString(),
     failureReason: reasons.length > 0 ? reasons.join("; ") : null,
+    // Absent `verify:` key → both stay null, never 0 (§3.5's rule, restated for this column by
+    // D40) — `verify === null` above means exactly that, and `verifyExitCode` is still `null` in
+    // that case, not overwritten with a claim nothing checked.
+    verifyExitCode,
+    verifyTail,
   });
 
   // §7.6: "doing -> todo, system, the session failed or was interrupted; reason recorded." Only
@@ -606,6 +729,17 @@ export async function resumeSession(
   const project = getProject(db, task.projectId);
   if (!project) throw new Error(`resumeSession: no Project ${task.projectId}`);
 
+  // D39/§1 item 3: "on every turn that gets a worktree, which includes an inbox resume" — read
+  // before any worktree churn below, so a malformed `agentos.yml` refuses fast. Thrown, like every
+  // other setup check above it in this function; `dispatch()`'s sibling refusal returns a
+  // `DispatchResult` because it HAS one to return, but `resumeSession` has no such type and never
+  // has — every precondition-shaped failure here is already a throw.
+  const configResult = loadDeliveryConfig(project);
+  if (!configResult.ok) {
+    throw new Error(`resumeSession: ${configResult.reason}`);
+  }
+  const config = configResult.config;
+
   // A paused session normally has no worktree — §3.5 removes it when the turn ends. It can still
   // have one if that teardown FAILED, in which case `worktreePath` was deliberately kept as the
   // only pointer to the directory left behind (see `tearDownBestEffort`). Creating the new
@@ -647,6 +781,38 @@ export async function resumeSession(
     name: session.branchName,
     mode: "attach",
   });
+
+  // D39/§1 item 3 — "the same gate," on the fresh worktree, before the model is reached. It
+  // cannot mean the SAME side effects `dispatch()`'s AC-6 asserts: this session already exists
+  // (deleting the row would erase the paused turn's own history) and this branch already holds
+  // real commits from before the pause (deleting it would be exactly the silent discard §3.2
+  // warns `mode: 'attach'` exists to prevent). So a failure here is recorded as this turn's own
+  // outcome — `status: 'failed'`, the reason naming the command — the same shape a genuine
+  // `runSessionToCompletion` failure already produces, and `runSessionToCompletion` (which is
+  // what WOULD reach the model) is never called. Returning rather than throwing matches
+  // `dispatch()`'s own refusal posture for this same gate: a declared, expected outcome, not a
+  // caller bug.
+  if (config.prepare) {
+    const { result } = await runDeclaredCommand(config.prepare, wt.path);
+    if (result.exitCode !== 0) {
+      await tearDownBestEffort(wt, deps.removeWorktree ?? removeWorktree);
+      updateSession(db, sessionId, {
+        status: "failed",
+        worktreePath: null,
+        endedAtISO: new Date().toISOString(),
+        failureReason:
+          `prepare command '${config.prepare.command.join(" ")}' ${
+            result.timedOut ? `timed out after ${config.prepare.timeoutMs}ms` : `exited ${result.exitCode}`
+          } on resume — refused before the model was reached (D39); the branch and its earlier ` +
+          `commit are untouched`,
+        prepareExitCode: result.exitCode,
+        prepareMs: result.durationMs,
+      });
+      return;
+    }
+    updateSession(db, sessionId, { prepareExitCode: result.exitCode, prepareMs: result.durationMs });
+  }
+
   updateSession(db, sessionId, { status: "running", worktreePath: wt.path });
 
   const resumed: SessionRow = { ...session, status: "running", worktreePath: wt.path };
@@ -659,6 +825,7 @@ export async function resumeSession(
     taskId: task.id,
     worktree: wt,
     prompt: answer,
+    verify: config.verify,
     resume: session.sdkSessionId ?? undefined,
   }).catch((err) => {
     console.error(`resumeSession: session ${sessionId}'s own completion handling failed`, err);

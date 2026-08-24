@@ -1,8 +1,10 @@
 /**
  * AC-0a, AC-1, AC-2, AC-3, AC-4, AC-13, AC-14, AC-15 from docs/specs/stage-4b-tickets.md T1 — the
- * branch, the declared base ref, and migration 4 — as runnable checks. T2/T3/T4's checks (AC-5…
- * AC-12, AC-16) are NOT here yet; they append to this same file, the same way `verify-stage4.mts`
- * grew across its own four tickets (its own header comment: "T1 + T2 + T3 + T4").
+ * branch, the declared base ref, and migration 4 — as runnable checks, PLUS T2's AC-5, AC-6,
+ * AC-7 and AC-16 — prepare, verify, and the `main`/`master` refusal — appended below them. T3/T4's
+ * checks (AC-8, AC-9, AC-10, AC-11, AC-12) are NOT here yet; they append to this same file, the
+ * same way `verify-stage4.mts` grew across its own four tickets (its own header comment:
+ * "T1 + T2 + T3 + T4").
  *
  * Fixture-based; the model is never called. A real bare-metal git repo in a temp dir for every
  * worktree/branch check (there is no fake for git — Stage 3 §9's own argument), and an in-memory
@@ -15,24 +17,61 @@
  * `docs/specs/stage-4b-tickets.md`'s inherited fact 1; migration 3 already exists, Stage 4's
  * `TaskTemplate` de-dup index).
  *
+ * T2's own fixtures overwrite the `agentos.yml` `makeFixtureRepo()` writes — `prepare:`/`verify:`
+ * are read fresh from that file at dispatch time (never persisted), so each AC-5/6/7 block writes
+ * exactly the yaml it needs before calling `makeProject`. No third-party command is ever declared
+ * — `touch`, `sh -c "exit N"` — real, local, and part of D39's "not inferred, not suggested"
+ * argument having nothing to do with what a *test* fixture is allowed to run.
+ *
  * Run: pnpm verify:stage4b
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { BetaMessage, BetaUsage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { createAgent, createProject, createTask, getSession, openDb } from "../lib/agentos/db";
+import { createAgent, createProject, createTask, getSession, listProjects, openDb } from "../lib/agentos/db";
 import { dispatch, resolveBaseRef, resumeSession } from "../lib/agentos/dispatch";
 import { slugify, sessionBranchName } from "../lib/agentos/slug";
+import { parseAgentosYml } from "../lib/agentos/config";
+import { initializeProject } from "../app/p/[slug]/[tab]/actions";
 import { createInboxAskTool } from "../lib/agentos/mcp/inbox-server";
 import { INBOX_ASK, INBOX_SERVER, qualify } from "../lib/agentos/mcp/names";
 import { FakeRunner } from "../lib/agentos/runner/fake";
 import type { RunOutcome, RunParams, Runner } from "../lib/agentos/runner/runner";
 import type { SessionRow } from "../lib/agentos/types";
+import type { ProjectConfig } from "../projects.config";
+
+/**
+ * T2's AC-16 needs "no `Project` row is created" end to end, through `initializeProject` — not
+ * only `parseAgentosYml` in isolation. `initializeProject`'s only non-injected dependency is
+ * `boardOnce()`, so a fixture project is substituted by splicing `projects.config.ts`'s
+ * `PROJECTS` array for the duration of one call — `scripts/verify-stage3b.mts`'s own trick
+ * (itself copied from `verify-stage3.mts`'s `withOnlyProject`), copied here rather than imported
+ * for the same reason that file gives: each `verify-stage*.mts` owns its own fixture family. Not
+ * a fourth test seam (tickets file, "standing constraints") — it substitutes nothing this stage
+ * introduces; it reuses a seam Stage 3/3b already established for `boardOnce()`.
+ */
+const projectsConfigRequire = createRequire(import.meta.url);
+function getProjects(): ProjectConfig[] {
+  return (projectsConfigRequire("../projects.config") as { PROJECTS: ProjectConfig[] }).PROJECTS;
+}
+async function withOnlyProject<T>(cfg: ProjectConfig, fn: () => Promise<T>): Promise<T> {
+  const PROJECTS = getProjects();
+  const saved = PROJECTS.splice(0, PROJECTS.length, cfg);
+  try {
+    return await fn();
+  } finally {
+    PROJECTS.splice(0, PROJECTS.length, ...saved);
+  }
+}
+function fixtureConfig(name: string, path: string): ProjectConfig {
+  return { name, path, stalledAfterDays: 365, dirtyThreshold: 50 };
+}
 
 let failures = 0;
 const pass = (id: string, msg: string) => console.log(`  PASS  ${id} — ${msg}`);
@@ -41,7 +80,7 @@ const fail = (id: string, msg: string) => {
   failures++;
 };
 
-console.log("\nStage 4b acceptance — the branch, the declared base ref, and migration 4 (T1)\n");
+console.log("\nStage 4b acceptance — branch/base/migration (T1) + prepare/verify/main-refusal (T2)\n");
 
 // ---------------------------------------------------------------------------
 // Fixtures — a real git repo in a temp dir per check, a fresh db per check, one cleanup sweep
@@ -1086,9 +1125,176 @@ async function runChecks() {
             `a hostile task name produced the legal ref '${hostileBranch}' ('git check-ref-format --branch' accepts it); an all-punctuation name produced '${emptyBranch}'`,
           );
         }
+
+        // Every assertion above reads state `createSession` already wrote synchronously, before
+        // `dispatch()` returned — so it needed no wait. But `dispatch()`'s own completion still
+        // runs on, unawaited (§7.4), and closing `db` under it mid-flight throws "database is not
+        // open" from inside that detached promise the moment it next tries to write. Harmless to
+        // THIS check (its own PASS/FAIL is already decided), but it is still a real bug: a
+        // dangling write racing this block's own cleanup. Draining both before `db.close()` is
+        // the fix, not a looser assertion.
+        await waitForSession(db, hostileResult.sessionId, (s) => s.status === "completed" || s.status === "failed");
+        await waitForSession(db, emptyResult.sessionId, (s) => s.status === "completed" || s.status === "failed");
       }
       db.close();
     }
+  }
+
+  // ── AC-5 · prepare runs first, asserted from INSIDE the runner's own callback ──────────────
+  // Afterwards cannot distinguish "before the model" from "after" — the assertion has to happen
+  // synchronously at the moment the runner is invoked, or it proves nothing about ordering.
+  {
+    const { dir } = makeFixtureRepo();
+    writeFileSync(join(dir, "agentos.yml"), 'prepare:\n  command: ["touch", "prepared.txt"]\n');
+    const dbPath = tempDbPath("ac5");
+    const db = openDb(dbPath);
+    const project = makeProject(db, dir);
+    const agent = makeAgent(db, project);
+    const task = makeTask(db, project, agent);
+
+    let sawPreparedFileAtRunnerInvocation: boolean | null = null;
+    class PrepareOrderRunner implements Runner {
+      async run(params: RunParams): Promise<RunOutcome> {
+        // THE assertion — recorded now, not read back later. `existsSync` is fine here: prepare
+        // already ran and settled (it is awaited, synchronously, before dispatch ever calls
+        // `runner.run`), so this is a snapshot of a stable filesystem, not a race.
+        sawPreparedFileAtRunnerInvocation = existsSync(join(params.cwd, "prepared.txt"));
+        const sdkSessionId = randomUUID();
+        await params.onMessage(initMessage(sdkSessionId));
+        await params.onMessage(resultMessage(sdkSessionId, 0.01));
+        return { sdkSessionId, costUsd: 0.01, resultSubtype: "success" };
+      }
+    }
+
+    const result = await dispatch(task.id, "manual", { db, runner: new PrepareOrderRunner() });
+    if (!result.started) {
+      fail("AC-5", `dispatch refused instead of preparing then running: ${JSON.stringify(result)}`);
+    } else {
+      const session = await waitForSession(db, result.sessionId, (s) => s.status === "completed" || s.status === "failed");
+      if (sawPreparedFileAtRunnerInvocation !== true) {
+        fail("AC-5", `'prepared.txt' did not exist in the worktree at the moment the runner was invoked (saw: ${sawPreparedFileAtRunnerInvocation})`);
+      } else if (session.prepareExitCode !== 0) {
+        fail("AC-5", `session recorded prepareExitCode=${session.prepareExitCode}, expected 0`);
+      } else {
+        pass("AC-5", "'prepared.txt' existed inside the runner's own callback — prepare ran, and exited 0, before the model was ever called");
+      }
+    }
+    db.close();
+  }
+
+  // ── AC-6 · a failed prepare refuses the dispatch and leaves nothing behind ─────────────────
+  {
+    const { dir } = makeFixtureRepo();
+    writeFileSync(join(dir, "agentos.yml"), 'prepare:\n  command: ["sh", "-c", "exit 3"]\n');
+    const dbPath = tempDbPath("ac6");
+    const db = openDb(dbPath);
+    const project = makeProject(db, dir);
+    const agent = makeAgent(db, project);
+    const task = makeTask(db, project, agent);
+
+    const sessionsBefore = (db.prepare("SELECT count(*) AS c FROM Session").get() as { c: number }).c;
+    // The runner must never be reached — if it is, this fixture would happily run it and mask a
+    // real bug, so it deliberately throws if `run` is ever called.
+    class NeverRunRunner implements Runner {
+      async run(): Promise<RunOutcome> {
+        throw new Error("NeverRunRunner: runner.run() was called — prepare did not refuse the dispatch");
+      }
+    }
+
+    const result = await dispatch(task.id, "manual", { db, runner: new NeverRunRunner() });
+    if (result.started) {
+      fail("AC-6", `dispatch started instead of refusing a prepare that exits 3: ${JSON.stringify(result)}`);
+    } else if (result.refusedBy !== "prepare") {
+      fail("AC-6", `dispatch refused by '${result.refusedBy}', expected 'prepare' — reason: ${result.reason}`);
+    } else if (!result.reason.includes("exited 3") || !result.reason.includes("sh -c exit 3")) {
+      fail("AC-6", `refusal reason does not name the command and its exit code: ${result.reason}`);
+    } else {
+      const sessionsAfter = (db.prepare("SELECT count(*) AS c FROM Session").get() as { c: number }).c;
+      const registeredWorktrees = worktreePaths(dir);
+      const branches = branchLines(dir);
+      if (sessionsAfter !== sessionsBefore) {
+        fail("AC-6", `SELECT count(*) FROM Session changed (${sessionsBefore} -> ${sessionsAfter}) — a failed prepare must create no Session row`);
+      } else if (registeredWorktrees.length !== 1) {
+        fail("AC-6", `'git worktree list' shows ${registeredWorktrees.length} entries, expected exactly 1 (the main checkout): ${JSON.stringify(registeredWorktrees)}`);
+      } else if (branches.length !== 0) {
+        fail("AC-6", `'git branch --list agentos/*' still shows ${JSON.stringify(branches)} — the branch D37 created before prepare ran must be deleted on refusal`);
+      } else {
+        pass("AC-6", `prepare exiting 3 refused the dispatch (${result.reason}); no Session row, no stale worktree, and the branch was deleted`);
+      }
+    }
+    db.close();
+  }
+
+  // ── AC-7 · verification is measured, not reported ──────────────────────────────────────────
+  // D40's own adversarial shape: the FakeRunner announces success while `verify:` exits non-zero.
+  // The recorded result must be the child process's, never the session's claim.
+  {
+    const { dir } = makeFixtureRepo();
+    writeFileSync(join(dir, "agentos.yml"), 'verify:\n  command: ["sh", "-c", "echo checked-and-red >&2; exit 1"]\n');
+    const dbPath = tempDbPath("ac7");
+    const db = openDb(dbPath);
+    const project = makeProject(db, dir);
+    const agent = makeAgent(db, project);
+    const task = makeTask(db, project, agent);
+
+    // CommittingRunner (defined above, for AC-1..AC-4) always reports `resultSubtype: "success"`
+    // via `resultMessage` regardless of what verify will find — exactly the "announces success"
+    // shape AC-7 asks for.
+    const result = await dispatch(task.id, "manual", { db, runner: new CommittingRunner(["work despite the red suite"]) });
+    if (!result.started) {
+      fail("AC-7", `dispatch refused: ${JSON.stringify(result)}`);
+    } else {
+      const session = await waitForSession(db, result.sessionId, (s) => s.status === "completed" || s.status === "failed");
+      if (session.status !== "completed") {
+        fail("AC-7", `session status is '${session.status}', expected 'completed' — the run itself succeeded even though the code is red`);
+      } else if (session.verifyExitCode !== 1) {
+        fail("AC-7", `session.verifyExitCode=${JSON.stringify(session.verifyExitCode)}, expected 1 (the runner's own claim of success must not have overridden it)`);
+      } else if (!session.verifyTail || session.verifyTail.trim() === "") {
+        fail("AC-7", "session.verifyTail is empty — the verify command's output was not recorded");
+      } else if (!session.verifyTail.includes("checked-and-red")) {
+        fail("AC-7", `session.verifyTail does not contain the verify command's own output: ${JSON.stringify(session.verifyTail)}`);
+      } else {
+        pass(
+          "AC-7",
+          `verify exited 1 while the runner announced success — Session.status='completed', verifyExitCode=1, verifyTail captured (${session.verifyTail.length} chars). Neither fact hid the other.`,
+        );
+      }
+    }
+    db.close();
+  }
+
+  // ── AC-16 · `main` (and `master`) are refused as an integrationBranch ──────────────────────
+  {
+    const mainResult = parseAgentosYml("integrationBranch: main\n");
+    const masterResult = parseAgentosYml("integrationBranch: master\n");
+    if (mainResult.ok) {
+      fail("AC-16", "parseAgentosYml accepted 'integrationBranch: main'");
+    } else if (!mainResult.error.includes("main") || !/develop/i.test(mainResult.error)) {
+      fail("AC-16", `refusal for 'main' does not name the workflow rule (main -> develop, owner-only): ${mainResult.error}`);
+    } else if (masterResult.ok) {
+      fail("AC-16", "parseAgentosYml accepted 'integrationBranch: master'");
+    } else {
+      pass("AC-16", `parseAgentosYml refuses 'main' (${mainResult.error}) and 'master' alike`);
+    }
+
+    // End to end: initializeProject must create no Project row when the yaml names 'main' — the
+    // same all-or-nothing shape Stage 3b's own malformed-yaml refusals already use.
+    const { dir } = makeFixtureRepo();
+    writeFileSync(join(dir, "agentos.yml"), "integrationBranch: main\n");
+    const dbPath = tempDbPath("ac16-integration");
+    const db = openDb(dbPath);
+    const cfg = fixtureConfig("ac16-main", dir);
+    const initResult = await withOnlyProject(cfg, () => initializeProject("ac16-main", { db }));
+    if (initResult.ok) {
+      fail("AC-16", `initializeProject accepted an agentos.yml naming 'main': ${JSON.stringify(initResult)}`);
+    } else if (listProjects(db).length !== 0) {
+      fail("AC-16", `initializeProject refused but created ${listProjects(db).length} Project row(s) anyway`);
+    } else if (!initResult.reason || !initResult.reason.includes("main")) {
+      fail("AC-16", `initializeProject's refusal does not surface the parser's own message: ${initResult.reason}`);
+    } else {
+      pass("AC-16", `initializeProject refuses 'integrationBranch: main' end to end — no Project row created (${initResult.reason})`);
+    }
+    db.close();
   }
 }
 
@@ -1100,5 +1306,5 @@ try {
   for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
 }
 
-console.log(failures === 0 ? "\nAll Stage 4b acceptance criteria (T1) pass.\n" : `\n${failures} FAILING.\n`);
+console.log(failures === 0 ? "\nAll Stage 4b acceptance criteria (T1 + T2) pass.\n" : `\n${failures} FAILING.\n`);
 process.exit(failures === 0 ? 0 : 1);
