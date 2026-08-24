@@ -42,6 +42,7 @@ import {
 import { sessionBranchName } from "./slug";
 import { parseAgentosYml, type CommandSpec, type ParsedConfig } from "./config";
 import { runCommand, lastLines, type CommandResult } from "./command";
+import { composePreamble } from "./delivery-render";
 import { LocalRunner, composeOptions } from "./runner/local";
 import type { Runner } from "./runner/runner";
 import { createAgentosServer } from "./mcp/agentos-server";
@@ -479,7 +480,17 @@ export async function dispatch(
 
   // §7.4: "the run then proceeds in the Next.js Node process" — started here, awaited by
   // nothing. The request returns at the line below; this promise settles on its own time.
-  const prompt = `Task: ${task.name}\n\n${task.description}`;
+  // §3.7: the preamble (the environment) precedes the task's own text (the brief) — composed by
+  // `delivery-render.ts`'s pure `composePreamble`, never retyped here.
+  const preamble = composePreamble({
+    worktreePath: wt.path,
+    branchName,
+    baseSha: wt.baseRef,
+    prepare: config.prepare,
+    verify: config.verify,
+  });
+  const taskText = `Task: ${task.name}\n\n${task.description}`;
+  const prompt = `${preamble}\n\n${taskText}`;
   void runSessionToCompletion({
     db,
     runner,

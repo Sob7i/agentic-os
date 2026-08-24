@@ -1,10 +1,13 @@
 /**
  * AC-0a, AC-1, AC-2, AC-3, AC-4, AC-13, AC-14, AC-15 from docs/specs/stage-4b-tickets.md T1 — the
  * branch, the declared base ref, and migration 4 — as runnable checks, PLUS T2's AC-5, AC-6,
- * AC-7 and AC-16 — prepare, verify, and the `main`/`master` refusal — appended below them. T3/T4's
- * checks (AC-8, AC-9, AC-10, AC-11, AC-12) are NOT here yet; they append to this same file, the
- * same way `verify-stage4.mts` grew across its own four tickets (its own header comment:
- * "T1 + T2 + T3 + T4").
+ * AC-7 and AC-16 — prepare, verify, and the `main`/`master` refusal — PLUS T3's AC-8, AC-10 and
+ * AC-12 — the composed preamble, the PR body, and the push control's label — appended below them.
+ * T3's own checks call `lib/agentos/delivery-render.ts`'s pure functions directly: no worktree, no
+ * remote, no model (that module's own docstring — "asserted without a worktree, a remote or a
+ * model," docs/specs/stage-4b-tickets.md T3). T4's checks (AC-9, AC-11) are NOT here yet; they
+ * append to this same file, the same way `verify-stage4.mts` grew across its own four tickets (its
+ * own header comment: "T1 + T2 + T3 + T4").
  *
  * Fixture-based; the model is never called. A real bare-metal git repo in a temp dir for every
  * worktree/branch check (there is no fake for git — Stage 3 §9's own argument), and an in-memory
@@ -38,12 +41,13 @@ import { createAgent, createProject, createTask, getSession, getTask, listProjec
 import { dispatch, resolveBaseRef, resumeSession } from "../lib/agentos/dispatch";
 import { slugify, sessionBranchName } from "../lib/agentos/slug";
 import { parseAgentosYml } from "../lib/agentos/config";
+import { composePreamble, composePrBody, pushControlLabel } from "../lib/agentos/delivery-render";
 import { initializeProject } from "../app/p/[slug]/[tab]/actions";
 import { createInboxAskTool } from "../lib/agentos/mcp/inbox-server";
 import { INBOX_ASK, INBOX_SERVER, qualify } from "../lib/agentos/mcp/names";
 import { FakeRunner } from "../lib/agentos/runner/fake";
 import type { RunOutcome, RunParams, Runner } from "../lib/agentos/runner/runner";
-import type { SessionRow } from "../lib/agentos/types";
+import type { DriftAtSpawn, SessionRow } from "../lib/agentos/types";
 import type { ProjectConfig } from "../projects.config";
 
 /**
@@ -80,7 +84,9 @@ const fail = (id: string, msg: string) => {
   failures++;
 };
 
-console.log("\nStage 4b acceptance — branch/base/migration (T1) + prepare/verify/main-refusal (T2)\n");
+console.log(
+  "\nStage 4b acceptance — branch/base/migration (T1) + prepare/verify/main-refusal (T2) + composed preamble/PR body/push label (T3)\n",
+);
 
 // ---------------------------------------------------------------------------
 // Fixtures — a real git repo in a temp dir per check, a fresh db per check, one cleanup sweep
@@ -1411,6 +1417,134 @@ async function runChecks() {
     }
     db.close();
   }
+
+  // ── AC-8 · the preamble carries the environment, asserted on the composed string ───────────
+  // `delivery-render.ts`'s own docstring: "asserted without a worktree, a remote or a model." No
+  // dispatch() call here — `composePreamble` is a pure function, and T3's whole point is that
+  // these three strings are checkable without spawning anything.
+  {
+    const branchName = "agentos/fixture-task-a1b2c3d4";
+    const baseSha = "deadbeefcafebabe0011223344556677889900aa";
+    const worktreePath = "/tmp/agentos/11112222-3333-4444-5555-666677778888";
+    const preamble = composePreamble({
+      worktreePath,
+      branchName,
+      baseSha,
+      prepare: { command: ["pnpm", "install"], timeoutMs: 300_000 },
+      verify: { command: ["pnpm", "verify"], timeoutMs: 300_000 },
+    });
+    if (!preamble.includes(branchName)) {
+      fail("AC-8", `composed preamble does not contain the branch name '${branchName}': ${JSON.stringify(preamble)}`);
+    } else if (!preamble.includes(baseSha)) {
+      fail("AC-8", `composed preamble does not contain the resolved base sha '${baseSha}': ${JSON.stringify(preamble)}`);
+    } else if (!preamble.includes(worktreePath)) {
+      fail("AC-8", `composed preamble does not contain the worktree path '${worktreePath}': ${JSON.stringify(preamble)}`);
+    } else if (!/commit your work before you finish or stop/i.test(preamble)) {
+      fail("AC-8", `composed preamble is missing the commit-before-you-stop sentence: ${JSON.stringify(preamble)}`);
+    } else if (!/destroyed when this session ends/i.test(preamble)) {
+      fail("AC-8", `composed preamble is missing the worktree-destroyed sentence: ${JSON.stringify(preamble)}`);
+    } else if (!preamble.includes("pnpm install") || !preamble.includes("pnpm verify")) {
+      fail("AC-8", `composed preamble does not render the declared prepare:/verify: commands: ${JSON.stringify(preamble)}`);
+    } else {
+      pass(
+        "AC-8",
+        "composed preamble carries the branch, the resolved base sha, the worktree path, the declared commands, and both must-know sentences",
+      );
+    }
+
+    // §3.7: an unconfigured prepare:/verify: says so plainly — never a fabricated default.
+    const bare = composePreamble({
+      worktreePath: "/tmp/agentos/bare",
+      branchName: "agentos/bare-task-99998888",
+      baseSha: "cafefeed00112233445566778899001122334455",
+      prepare: null,
+      verify: null,
+    });
+    if (!/prepare: not configured/.test(bare)) {
+      fail("AC-8", `an absent prepare: key does not render as "not configured": ${JSON.stringify(bare)}`);
+    } else if (!/verify: not configured/.test(bare)) {
+      fail("AC-8", `an absent verify: key does not render as "not configured": ${JSON.stringify(bare)}`);
+    } else {
+      pass("AC-8", "an unconfigured prepare:/verify: renders as 'not configured', never a fabricated default command");
+    }
+  }
+
+  // ── AC-10 · the PR body is the evidence, asserted on the composed string ───────────────────
+  // Deliberately no PR, no `gh`, no push — `composePrBody` is pure and T3 owns none of §3.8's
+  // side effects (that is T4's ticket). Session id, cost, driftAtSpawn, every commit sha, and the
+  // verify exit code must all appear in the rendered body.
+  {
+    const driftAtSpawn: DriftAtSpawn = {
+      severity: "attention",
+      claim: "3 files ahead of develop",
+      verified: "2 files ahead of develop",
+      source: "reconcile",
+      check: "git diff --stat",
+      checkedAtISO: "2026-08-22T00:00:00.000Z",
+    };
+    const sessionId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const shaOne = "1".repeat(40);
+    const shaTwo = "2".repeat(40);
+    const body = composePrBody({
+      sessionId,
+      costUsd: 1.2345,
+      driftAtSpawn,
+      commitShas: [shaOne, shaTwo],
+      verifyExitCode: 1,
+    });
+    if (!body.includes(sessionId)) {
+      fail("AC-10", `composed PR body does not contain the session id: ${JSON.stringify(body)}`);
+    } else if (!body.includes("$1.23")) {
+      fail("AC-10", `composed PR body does not contain the session's cost: ${JSON.stringify(body)}`);
+    } else if (!body.includes(driftAtSpawn.severity) || !body.includes(driftAtSpawn.claim)) {
+      fail("AC-10", `composed PR body does not contain driftAtSpawn: ${JSON.stringify(body)}`);
+    } else if (!body.includes(shaOne) || !body.includes(shaTwo)) {
+      fail("AC-10", `composed PR body is missing a commit sha: ${JSON.stringify(body)}`);
+    } else if (!body.includes("exited 1")) {
+      fail("AC-10", `composed PR body does not contain the verify exit code: ${JSON.stringify(body)}`);
+    } else {
+      pass("AC-10", "composed PR body carries the session id, cost, driftAtSpawn, every commit sha, and the verify exit code");
+    }
+
+    // Null cost and null verifyExitCode are distinct facts from zero — must render as words, never
+    // as "$0.00" or "exited 0" (docs/specs/stage-4b-tickets.md T3's own flagged risk).
+    const unknown = composePrBody({
+      sessionId,
+      costUsd: null,
+      driftAtSpawn,
+      commitShas: [],
+      verifyExitCode: null,
+    });
+    if (!/cost unknown/.test(unknown)) {
+      fail("AC-10", `a null costUsd does not render as words: ${JSON.stringify(unknown)}`);
+    } else if (/\$0\.00/.test(unknown)) {
+      fail("AC-10", `a null costUsd rendered as '$0.00' — unknown must never print as zero: ${JSON.stringify(unknown)}`);
+    } else if (!/not configured/.test(unknown)) {
+      fail("AC-10", `a null verifyExitCode does not say 'not configured': ${JSON.stringify(unknown)}`);
+    } else if (/exited 0/.test(unknown)) {
+      fail("AC-10", `a null verifyExitCode rendered as 'exited 0' — no verify: key must never read as a clean pass: ${JSON.stringify(unknown)}`);
+    } else {
+      pass("AC-10", "a session with no reported cost and no verify: key renders both as words, never as zero");
+    }
+  }
+
+  // ── AC-12 · the push control names what it does ─────────────────────────────────────────────
+  {
+    const branch = "agentos/stage-6-t1-a1b2c3d4";
+    const base = "develop";
+    const label = pushControlLabel(branch, base);
+    if (!label.includes(branch)) {
+      fail("AC-12", `push control label does not name the branch '${branch}': ${JSON.stringify(label)}`);
+    } else if (!label.includes(base)) {
+      fail("AC-12", `push control label does not name the base branch '${base}': ${JSON.stringify(label)}`);
+    } else if (/\bship\b/i.test(label)) {
+      fail("AC-12", `push control label reads "Ship" rather than naming the push and the PR: ${JSON.stringify(label)}`);
+    } else if (!/push/i.test(label) || !/PR/.test(label)) {
+      fail("AC-12", `push control label does not say what it does (push + PR): ${JSON.stringify(label)}`);
+    } else {
+      pass("AC-12", `label names both the branch and the base, never "Ship": ${JSON.stringify(label)}`);
+    }
+  }
 }
 
 try {
@@ -1421,5 +1555,5 @@ try {
   for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
 }
 
-console.log(failures === 0 ? "\nAll Stage 4b acceptance criteria (T1 + T2) pass.\n" : `\n${failures} FAILING.\n`);
+console.log(failures === 0 ? "\nAll Stage 4b acceptance criteria (T1 + T2 + T3) pass.\n" : `\n${failures} FAILING.\n`);
 process.exit(failures === 0 ? 0 : 1);
