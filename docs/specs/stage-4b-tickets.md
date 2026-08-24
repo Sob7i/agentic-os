@@ -13,9 +13,13 @@ in `docs/DECISIONS.md` first.** The next free number is **D44**; D42 and D43 wer
 
 ## What this stage inherits that is not in the spec
 
-Twelve measured facts, carried here so a ticket brief does not have to re-derive them. All measured
-**2026-08-22** by reading the named files at `f383c42`, which is `develop`'s head as this was
-written — re-check anything below that a ticket depends on rather than trusting the line numbers.
+Thirteen measured facts, carried here so a ticket brief does not have to re-derive them. All measured
+**2026-08-22** by reading the named files at `develop`'s head that day — **which this file
+deliberately does not name.** An earlier version wrote the sha out, breaking the convention it
+cites three paragraphs later: a branch head is a volatile fact and lives only in
+`docs/HANDOFF.md`'s *Verified state* block. Reproduce the base with
+`git log --oneline -1 origin/develop` and read the block for what it was. Re-check anything below
+that a ticket depends on rather than trusting the line numbers.
 
 1. **The next migration number is 4, not 3.** Spec §3.1 and AC-13 both say *"migration 3"*, and
    migration 3 already exists: it is Stage 4's `TaskTemplate` de-duplication and unique index, added
@@ -80,6 +84,17 @@ written — re-check anything below that a ticket depends on rather than trustin
     ([`db.ts`](../../lib/agentos/db.ts), `updateSession`), so a new `Session` column needs only a
     field on `SessionPatch` — there is no per-column writer to add. `createSession`'s input type is
     the one that needs `branchName` explicitly, since the branch is known at spawn.
+
+13. **`TemplateStep.baseRefFromStep` is specced and owned by no ticket.** Spec §3.1 requires it so a
+    chain's step N+1 can declare *"branch from step N's branch"* — the stacked-ticket case D38 exists
+    for. The spec's own escape clause (*"if Stage 4 has not landed when this is built, ship the form
+    field and the column, and leave the chain half to whichever lands second"*) does not apply:
+    **Stage 4 landed first**, so this stage owes the chain half and no ticket here claims it. T1
+    ships `Task.baseRef` and the form; manually created tasks can therefore stack and template
+    chains cannot. **This is a deferral, not an oversight to discover mid-build** — it goes to
+    `docs/BACKLOG.md` with its unblock condition (T4 writes it), because widening a ticket that is
+    already the largest in the stage to add a chain-instantiation path is how a stage stops landing.
+    Raised in review of #39.
 
 ## Standing constraints — every ticket
 
@@ -322,7 +337,7 @@ string), AC-10 (every evidence field — on the composed body, **so no PR need b
   - `docs/HANDOFF.md` — where things stand, and **AC-17 written in as an open owner gate the day
     this stage lands**, not the day someone notices. Also refresh the *Verified state* block's suite
     rows on the branch this ships in, and say which branch they were measured on.
-  - `docs/FEATURES.md` — §2's twelve behaviour rows.
+  - `docs/FEATURES.md` — **count §2's rows rather than trusting a number here.** It has **thirteen** as this is written; an earlier draft of this line said twelve and a reviewer said fourteen, which is how a miscounted total silently drops a shipped behaviour. Count them.
   - **`docs/HUMAN-TEST.md` — and T1 already invalidated four passages in it**, which is why this
     line exists rather than being left implied. A stage that changes what the product *does* changes
     the plain-language walkthrough by definition, and this file is the one a human reads instead of
