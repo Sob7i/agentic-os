@@ -41,7 +41,7 @@ import {
 } from "./worktree";
 import { sessionBranchName } from "./slug";
 import { parseAgentosYml, type CommandSpec, type ParsedConfig } from "./config";
-import { runCommand, lastLines } from "./command";
+import { runCommand, lastLines, type CommandResult } from "./command";
 import { LocalRunner, composeOptions } from "./runner/local";
 import type { Runner } from "./runner/runner";
 import { createAgentosServer } from "./mcp/agentos-server";
@@ -238,6 +238,28 @@ async function runDeclaredCommand(spec: CommandSpec, cwd: string) {
   return { result, tail };
 }
 
+/**
+ * How a declared command failed, in words a human can act on — raised in review of #41.
+ *
+ * `runCommand` reports three distinct failures and only one of them has an exit code: a non-zero
+ * exit, a timeout this module's own clock fired, and a spawn failure (most often the executable
+ * simply is not there — a `prepare:` naming `pnpm` on a machine without it). The first version
+ * interpolated `result.exitCode` unconditionally, so both of the latter two rendered as the
+ * literal **"exited null"** — the least actionable possible sentence for by far the most likely
+ * misconfiguration, and one that names neither the cause nor the fix.
+ */
+function commandFailureReason(spec: CommandSpec, result: CommandResult): string {
+  const argv = spec.command.join(" ");
+  if (result.timedOut) return `command '${argv}' timed out after ${spec.timeoutMs}ms`;
+  if (result.exitCode === null) {
+    // stderr carries Node's own spawn error here — `runCommand` puts it there precisely because a
+    // process that never started produced no output of its own.
+    const detail = result.stderr.trim().split("\n")[0] || "no error output";
+    return `command '${argv}' could not be run: ${detail}`;
+  }
+  return `command '${argv}' exited ${result.exitCode}`;
+}
+
 async function computeDriftAtSpawn(project: ProjectRow): Promise<DriftAtSpawn> {
   const board = await boardOnce();
   const report = board.projects.find((p) => p.path === project.primaryRepoPath);
@@ -420,9 +442,8 @@ export async function dispatch(
       await deleteBranch(wt, branchName);
       return refuse(
         "prepare",
-        `prepare command '${config.prepare.command.join(" ")}' ${
-          result.timedOut ? `timed out after ${config.prepare.timeoutMs}ms` : `exited ${result.exitCode}`
-        } in the worktree — refusing the dispatch before any cost is spent (D39)`,
+        `prepare ${commandFailureReason(config.prepare, result)} in the worktree — ` +
+          `refusing the dispatch before any cost is spent (D39)`,
       );
     }
   }
@@ -801,10 +822,8 @@ export async function resumeSession(
         worktreePath: null,
         endedAtISO: new Date().toISOString(),
         failureReason:
-          `prepare command '${config.prepare.command.join(" ")}' ${
-            result.timedOut ? `timed out after ${config.prepare.timeoutMs}ms` : `exited ${result.exitCode}`
-          } on resume — refused before the model was reached (D39); the branch and its earlier ` +
-          `commit are untouched`,
+          `prepare ${commandFailureReason(config.prepare, result)} on resume — refused before ` +
+          `the model was reached (D39); the branch and its earlier commit are untouched`,
         prepareExitCode: result.exitCode,
         prepareMs: result.durationMs,
       });

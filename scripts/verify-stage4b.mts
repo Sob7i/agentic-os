@@ -1225,6 +1225,50 @@ async function runChecks() {
     db.close();
   }
 
+  // ── AC-6c · a prepare that never ran says so, and never says "exited null" ─────────────────
+  // Ticket-level, added in review of #41. `runCommand` reports three failures and only one has an
+  // exit code; interpolating it unconditionally rendered a timeout and a spawn failure as the
+  // literal "exited null" — the least actionable sentence available, for the single most likely
+  // misconfiguration there is (a `prepare:` naming a program the machine does not have).
+  {
+    const cases: { yml: string; want: RegExp; label: string }[] = [
+      {
+        yml: 'prepare:\n  command: ["definitely-not-a-real-executable-4b"]\n',
+        want: /could not be run/,
+        label: "a missing executable",
+      },
+      {
+        yml: 'prepare:\n  command: ["sh", "-c", "sleep 5"]\n  timeoutMs: 200\n',
+        want: /timed out after 200ms/,
+        label: "a timeout",
+      },
+    ];
+    const failures: string[] = [];
+
+    for (const c of cases) {
+      const { dir } = makeFixtureRepo();
+      writeFileSync(join(dir, "agentos.yml"), c.yml);
+      const db = openDb(tempDbPath("ac6c"));
+      const project = makeProject(db, dir);
+      const agent = makeAgent(db, project);
+      const task = makeTask(db, project, agent);
+      const result = await dispatch(task.id, "manual", { db, runner: new CommittingRunner(["x"]) });
+
+      if (result.started) {
+        failures.push(`${c.label}: dispatch started instead of refusing`);
+      } else if (/exited null/.test(result.reason)) {
+        failures.push(`${c.label}: reason reads "exited null" — ${result.reason}`);
+      } else if (!c.want.test(result.reason)) {
+        failures.push(`${c.label}: reason does not say what happened — ${result.reason}`);
+      }
+      db.close();
+    }
+
+    failures.length === 0
+      ? pass("AC-6c", 'a prepare that timed out or could not be spawned names which of the two it was, and never renders as "exited null"')
+      : fail("AC-6c", failures.join("; "));
+  }
+
   // ── AC-6b · a resume whose prepare fails does not strand the card or the chain ─────────────
   // Not spec-numbered: a ticket-level check added in review of T2, in the same "b" spirit as
   // verify-stage3b.mts's AC-6b/AC-8b. AC-6 covers the FIRST dispatch, where refusing means no
