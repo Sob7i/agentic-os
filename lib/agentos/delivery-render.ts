@@ -117,11 +117,36 @@ export function composePrBody(input: PrBodyInput): string {
       ? input.commitShas.map((sha) => `- \`${sha}\``).join("\n")
       : "- (no commits)";
 
+  /**
+   * **All five fields of the drift record, not just the severity and the claim.** T3's first
+   * version rendered `<severity> — <claim>` and dropped `verified`, `source`, `check` and
+   * `checkedAtISO`; the author flagged it as a judgement call and it is the wrong side of one.
+   *
+   * A claim with no contradicting fact beside it, no file it came from, and no time it was
+   * checked is *an assertion* — which is the one thing invariant 2 forbids the product to make
+   * ("every fact displayed carries what was checked and when"), and the Board's own drift card
+   * has never been allowed to render less. It matters more here than on the card, not less: §3.8
+   * calls the PR body the point where "that evidence stops being internal", so this is the single
+   * place the record leaves the machine, in front of a reviewer who cannot click through to the
+   * session view to recover what was elided.
+   *
+   * Every field is always populated for every severity, including `in-sync` and `unverifiable` —
+   * `driftAtSpawnFromReport` in `dispatch.ts` fills all six on all three of its paths — so this
+   * renders sensibly for a clean project rather than printing empty labels.
+   */
+  const drift = input.driftAtSpawn;
+
   return [
     `Session: ${input.sessionId}`,
     `Cost: ${cost}`,
-    `Drift at spawn: ${input.driftAtSpawn.severity} — ${input.driftAtSpawn.claim}`,
     `Verify: ${verify}`,
+    "",
+    `Drift at spawn: ${drift.severity}`,
+    `- claimed: ${drift.claim}`,
+    `- verified: ${drift.verified}`,
+    `- source: ${drift.source}`,
+    `- check: ${drift.check}`,
+    `- checked at: ${drift.checkedAtISO}`,
     "",
     "Commits:",
     shas,

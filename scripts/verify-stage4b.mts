@@ -1469,6 +1469,52 @@ async function runChecks() {
     }
   }
 
+  // ── AC-8b · the preamble actually reaches the model ────────────────────────────────────────
+  // Not spec-numbered: a ticket-level check added in review of T3, whose own report flagged the
+  // gap. AC-8 asserts `composePreamble` against hand-built values — correct, and the reason this
+  // ticket is pure. But a perfect composer wired to the wrong arguments produces a perfect string
+  // nobody reads, and AC-8 cannot see that: it never calls `dispatch()`. So this check dispatches
+  // for real and reads the prompt off the runner's own captured params, asserting the REAL
+  // worktree path, the REAL branch and the REAL base sha arrived — the three facts §3.7 says a
+  // session "cannot function without", and the three most likely to be mis-plumbed.
+  {
+    const { dir } = makeFixtureRepo();
+    const db = openDb(tempDbPath("ac8b"));
+    const project = makeProject(db, dir);
+    const agent = makeAgent(db, project);
+    const task = makeTask(db, project, agent, { name: "preamble wiring" });
+    const runner = new CommittingRunner(["work"]);
+
+    const result = await dispatch(task.id, "manual", { db, runner });
+    if (!result.started) {
+      fail("AC-8b", `setup: dispatch refused: ${JSON.stringify(result)}`);
+    } else {
+      const session = await waitForSession(db, result.sessionId, (s) => s.endedAtISO !== null);
+      const prompt = runner.calls[0]?.prompt ?? "";
+      const wtPath = runner.calls[0]?.cwd ?? "";
+      const branch = session.branchName ?? "";
+      const baseSha = session.baseRef;
+
+      const missing: string[] = [];
+      if (!prompt.includes(wtPath)) missing.push(`worktree path ${wtPath}`);
+      if (!branch || !prompt.includes(branch)) missing.push(`branch ${branch || "(none recorded)"}`);
+      if (!prompt.includes(baseSha)) missing.push(`base sha ${baseSha}`);
+      if (!/commit your work before you finish or stop/i.test(prompt)) missing.push("the commit-before-you-stop sentence");
+      // The brief must still be there, after the environment — §3.7's "the task description stays
+      // the brief; the preamble stays the environment", which a preamble that REPLACED the task
+      // text would also satisfy every assertion above.
+      if (!prompt.includes(task.name)) missing.push("the task's own name");
+
+      missing.length === 0
+        ? pass(
+            "AC-8b",
+            `the prompt dispatch() actually handed the runner carries this run's real worktree, branch '${branch}', base sha ${baseSha.slice(0, 8)}, the commit sentence, and the task's own text`,
+          )
+        : fail("AC-8b", `the composed prompt reached the runner without: ${missing.join("; ")}`);
+    }
+    db.close();
+  }
+
   // ── AC-10 · the PR body is the evidence, asserted on the composed string ───────────────────
   // Deliberately no PR, no `gh`, no push — `composePrBody` is pure and T3 owns none of §3.8's
   // side effects (that is T4's ticket). Session id, cost, driftAtSpawn, every commit sha, and the
@@ -1496,14 +1542,29 @@ async function runChecks() {
       fail("AC-10", `composed PR body does not contain the session id: ${JSON.stringify(body)}`);
     } else if (!body.includes("$1.23")) {
       fail("AC-10", `composed PR body does not contain the session's cost: ${JSON.stringify(body)}`);
-    } else if (!body.includes(driftAtSpawn.severity) || !body.includes(driftAtSpawn.claim)) {
-      fail("AC-10", `composed PR body does not contain driftAtSpawn: ${JSON.stringify(body)}`);
+    } else if (
+      // All five fields, not just severity + claim. Tightened in review of T3: a claim with no
+      // contradicting fact, no source and no timestamp is an assertion, and invariant 2 forbids
+      // the product to make one — most of all here, where §3.8 says the evidence "stops being
+      // internal" and the reader cannot click through to the session view to recover what a
+      // shorter rendering elided.
+      !body.includes(driftAtSpawn.severity) ||
+      !body.includes(driftAtSpawn.claim) ||
+      !body.includes(driftAtSpawn.verified) ||
+      !body.includes(driftAtSpawn.source) ||
+      !body.includes(driftAtSpawn.check) ||
+      !body.includes(driftAtSpawn.checkedAtISO)
+    ) {
+      fail(
+        "AC-10",
+        `composed PR body does not carry the whole drift record (severity, claim, verified, source, check, checkedAtISO): ${JSON.stringify(body)}`,
+      );
     } else if (!body.includes(shaOne) || !body.includes(shaTwo)) {
       fail("AC-10", `composed PR body is missing a commit sha: ${JSON.stringify(body)}`);
     } else if (!body.includes("exited 1")) {
       fail("AC-10", `composed PR body does not contain the verify exit code: ${JSON.stringify(body)}`);
     } else {
-      pass("AC-10", "composed PR body carries the session id, cost, driftAtSpawn, every commit sha, and the verify exit code");
+      pass("AC-10", "composed PR body carries the session id, cost, the whole drift record (severity, claim, verified, source, check, checked-at), every commit sha, and the verify exit code");
     }
 
     // Null cost and null verifyExitCode are distinct facts from zero — must render as words, never
