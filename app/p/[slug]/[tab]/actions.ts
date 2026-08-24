@@ -21,6 +21,7 @@ import {
   writeTaskTransition,
 } from "@/lib/agentos/db";
 import { dispatch, resumeSession } from "@/lib/agentos/dispatch";
+import { pushAndOpenPr, type GhInvoker } from "@/lib/agentos/push";
 import type { Runner } from "@/lib/agentos/runner/runner";
 import { advanceChainAfterDone, instantiateTemplate } from "@/lib/agentos/chain";
 import { parseAgentosYml } from "@/lib/agentos/config";
@@ -596,4 +597,59 @@ export async function answerInboxAction(formData: FormData): Promise<void> {
   await resumeSession(sessionId, answer);
   answerInboxMessage(db, messageId, answer, "answered");
   revalidatePath(`/p/${slug}/inbox`);
+}
+
+/**
+ * The push-and-open-PR button's testable core (T4, docs/specs/stage-4b-tickets.md) — D41's one
+ * human click. **This is the highest-value target in the product: it is the one action that
+ * leaves the machine.** Same hostile-ownership shape every other action in this file already
+ * uses (`resolveOwnedTask`, resolved from a session's own task rather than trusted from the
+ * form), one hop further than `answerInboxAction`'s: the session must belong to a task that
+ * belongs to this project before `lib/agentos/push.ts` ever touches a remote.
+ */
+export interface PushResult {
+  ok: boolean;
+  reason: string | null;
+  prUrl: string | null;
+}
+
+export async function pushAndOpenPrForSlug(
+  slug: string,
+  sessionId: string,
+  confirmDespiteVerifyFailure: boolean,
+  deps: { db?: DatabaseSync; gh?: GhInvoker } = {},
+): Promise<PushResult> {
+  const db = deps.db ?? getDb();
+  const session = getSession(db, sessionId);
+  if (!session) {
+    return { ok: false, reason: `no such session ${sessionId}`, prUrl: null };
+  }
+  const owned = await resolveOwnedTask(slug, session.taskId, db);
+  if (!owned) {
+    return {
+      ok: false,
+      reason: `session ${sessionId} does not belong to project '${slug}'`,
+      prUrl: null,
+    };
+  }
+
+  const result = await pushAndOpenPr({ db, sessionId, confirmDespiteVerifyFailure, gh: deps.gh });
+  return result.ok
+    ? { ok: true, reason: null, prUrl: result.prUrl }
+    : { ok: false, reason: result.reason, prUrl: null };
+}
+
+export async function pushAndOpenPrAction(
+  _prevState: PushResult,
+  formData: FormData,
+): Promise<PushResult> {
+  const slug = String(formData.get("slug") ?? "");
+  const sessionId = String(formData.get("sessionId") ?? "");
+  const confirmDespiteVerifyFailure = formData.get("confirmDespiteVerifyFailure") === "on";
+  if (!slug || !sessionId) {
+    return { ok: false, reason: "the push request was incomplete — nothing was changed", prUrl: null };
+  }
+  const result = await pushAndOpenPrForSlug(slug, sessionId, confirmDespiteVerifyFailure);
+  revalidatePath(`/p/${slug}/sessions/${sessionId}`);
+  return result;
 }

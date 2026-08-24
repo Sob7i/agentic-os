@@ -189,6 +189,9 @@ export function loadSessionDetail(
     session,
     task,
     agent,
+    // Only `integrationBranch` — the push label's base — is what this view needs (T4,
+    // `session-model.ts`'s own `SessionViewInput.project` comment).
+    project,
     toolCalls: listToolCallsBySession(db, session.id),
     commitShas: listCommitShas(db, session.id).map((r) => r.sha),
   };

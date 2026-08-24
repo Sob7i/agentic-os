@@ -2,17 +2,22 @@
  * AC-0a, AC-1, AC-2, AC-3, AC-4, AC-13, AC-14, AC-15 from docs/specs/stage-4b-tickets.md T1 — the
  * branch, the declared base ref, and migration 4 — as runnable checks, PLUS T2's AC-5, AC-6,
  * AC-7 and AC-16 — prepare, verify, and the `main`/`master` refusal — PLUS T3's AC-8, AC-10 and
- * AC-12 — the composed preamble, the PR body, and the push control's label — appended below them.
- * T3's own checks call `lib/agentos/delivery-render.ts`'s pure functions directly: no worktree, no
- * remote, no model (that module's own docstring — "asserted without a worktree, a remote or a
- * model," docs/specs/stage-4b-tickets.md T3). T4's checks (AC-9, AC-11) are NOT here yet; they
- * append to this same file, the same way `verify-stage4.mts` grew across its own four tickets (its
- * own header comment: "T1 + T2 + T3 + T4").
+ * AC-12 — the composed preamble, the PR body, and the push control's label — PLUS T4's AC-9 and
+ * AC-11 — push + PR against a real bare-repo remote, and the "never merges" source guard —
+ * appended below them all, the same way `verify-stage4.mts` grew across its own four tickets (its
+ * own header comment: "T1 + T2 + T3 + T4"). T3's own checks call
+ * `lib/agentos/delivery-render.ts`'s pure functions directly: no worktree, no remote, no model
+ * (that module's own docstring — "asserted without a worktree, a remote or a model,"
+ * docs/specs/stage-4b-tickets.md T3).
  *
  * Fixture-based; the model is never called. A real bare-metal git repo in a temp dir for every
  * worktree/branch check (there is no fake for git — Stage 3 §9's own argument), and an in-memory
  * or fresh-temp-file SQLite db per check. Never `data/agentos.sqlite`, never a watched project.
  * Style, PASS/FAIL format and exit-code behaviour match `scripts/verify-stage4.mts`.
+ *
+ * **T4's own remote is a real `git init --bare` repo in a temp dir, never a network host** (§7) —
+ * `makeBareRemote()` below — and `gh` is always the injected `GhInvoker` (argv in, stdout out);
+ * no check anywhere in this file calls the real `gh` binary.
  *
  * AC-13's migration-additivity fixture copies migrations 1, 2 and 3's SQL verbatim from
  * `lib/agentos/db.ts`'s own (unexported) `MIGRATIONS` array — `verify-stage4.mts`'s own
@@ -29,7 +34,15 @@
  * Run: pnpm verify:stage4b
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -37,11 +50,23 @@ import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { BetaMessage, BetaUsage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { createAgent, createProject, createTask, getSession, getTask, listProjects, openDb } from "../lib/agentos/db";
+import {
+  createAgent,
+  createProject,
+  createSession,
+  createTask,
+  getSession,
+  getTask,
+  listProjects,
+  openDb,
+  recordCommitShas,
+  updateSession,
+} from "../lib/agentos/db";
 import { dispatch, resolveBaseRef, resumeSession } from "../lib/agentos/dispatch";
 import { slugify, sessionBranchName } from "../lib/agentos/slug";
 import { parseAgentosYml } from "../lib/agentos/config";
 import { composePreamble, composePrBody, pushControlLabel } from "../lib/agentos/delivery-render";
+import { pushAndOpenPr, type GhInvoker } from "../lib/agentos/push";
 import { initializeProject } from "../app/p/[slug]/[tab]/actions";
 import { createInboxAskTool } from "../lib/agentos/mcp/inbox-server";
 import { INBOX_ASK, INBOX_SERVER, qualify } from "../lib/agentos/mcp/names";
@@ -85,7 +110,7 @@ const fail = (id: string, msg: string) => {
 };
 
 console.log(
-  "\nStage 4b acceptance — branch/base/migration (T1) + prepare/verify/main-refusal (T2) + composed preamble/PR body/push label (T3)\n",
+  "\nStage 4b acceptance — branch/base/migration (T1) + prepare/verify/main-refusal (T2) + composed preamble/PR body/push label (T3) + push/PR/never-merge (T4)\n",
 );
 
 // ---------------------------------------------------------------------------
@@ -145,13 +170,96 @@ function branchLines(repoDir: string): string[] {
     .filter(Boolean);
 }
 
-function makeProject(db: ReturnType<typeof openDb>, repoDir: string) {
+function makeProject(
+  db: ReturnType<typeof openDb>,
+  repoDir: string,
+  opts: { integrationBranch?: string } = {},
+) {
   return createProject(db, {
     slug: `fixture-${randomUUID()}`,
     primaryRepoPath: repoDir,
     yamlPath: join(repoDir, "agentos.yml"),
     maxConcurrentSessions: 4,
+    // T4/AC-9 needs a real branch name here (`gh pr create --base`) — every earlier ticket left
+    // this unset, which `createProject` defaults to the literal 'HEAD' (its own doc comment: the
+    // pre-Stage-4b compatibility shim). `pushAndOpenPr` never opens a PR against that, so AC-9
+    // passes it explicitly rather than relying on the default.
+    integrationBranch: opts.integrationBranch,
   });
+}
+
+/** T4/§7: "the remote is a real bare repo in a temp dir, never a network host." A genuine
+ *  `git init --bare` — real `git push` semantics (ref creation, rejection, the lot), not a mock. */
+function makeBareRemote(): { dir: string } {
+  const dir = mkdtempSync(join(tmpdir(), "agentic-os-stage4b-bare-"));
+  TEMPS.push(dir);
+  execFileSync("git", ["init", "-q", "--bare", dir], { stdio: "pipe" });
+  return { dir };
+}
+
+function addOrigin(repoDir: string, remoteDir: string): void {
+  execFileSync("git", ["remote", "add", "origin", remoteDir], { cwd: repoDir, stdio: "pipe" });
+}
+
+/** Whether `branchName` exists on the bare remote — read independently of anything `push.ts`
+ *  itself claims, the same "ask git, not our own bookkeeping" posture `branchLines`/`worktreePaths`
+ *  already use above. */
+function remoteHasBranch(remoteDir: string, branchName: string): boolean {
+  const out = execFileSync("git", ["ls-remote", "--heads", remoteDir, branchName], { encoding: "utf8" });
+  return out.trim().length > 0;
+}
+
+/** T4/AC-9's own fixture drift snapshot — shape only matters for `composePrBody`'s field checks,
+ *  which AC-10 already covers; here it only has to be a valid `DriftAtSpawn`. */
+const AC9_DRIFT: DriftAtSpawn = {
+  severity: "in-sync",
+  claim: "no outstanding claim contradicted by git or GitHub",
+  verified: "reconciliation found no discrepancies",
+  source: "fixture",
+  check: "none",
+  checkedAtISO: "2026-08-22T00:00:00.000Z",
+};
+
+/**
+ * A `Session` row that already looks settled, with a branch and commits — built directly rather
+ * than through `dispatch()`/`CommittingRunner`, because AC-9 is about `pushAndOpenPr`'s own
+ * behaviour on a row that already carries this shape, not about how a row comes to carry it (T1's
+ * AC-1..AC-4 already cover that). `branchName` must be a REAL ref in `repoDir` — callers create it
+ * with `addDivergentBranch` before calling this.
+ */
+function makeSettledSession(
+  db: ReturnType<typeof openDb>,
+  task: ReturnType<typeof createTask>,
+  agent: ReturnType<typeof createAgent>,
+  opts: {
+    branchName: string;
+    baseRefSha: string;
+    commitShas: string[];
+    verifyExitCode?: number | null;
+  },
+) {
+  const session = createSession(db, {
+    taskId: task.id,
+    agentId: agent.id,
+    triggerKind: "manual",
+    worktreePath: "/tmp/agentic-os-stage4b-ac9-unused-worktree",
+    baseRef: opts.baseRefSha,
+    pid: process.pid,
+    bootId: "stage4b-ac9-fixture-boot",
+    driftAtSpawn: AC9_DRIFT,
+    branchName: opts.branchName,
+  });
+  updateSession(db, session.id, {
+    status: "completed",
+    worktreePath: null,
+    endedAtISO: new Date().toISOString(),
+    costUsd: 0.11,
+    verifyExitCode: opts.verifyExitCode ?? null,
+  });
+  if (opts.commitShas.length > 0) recordCommitShas(db, session.id, opts.commitShas);
+  const settled = getSession(db, session.id);
+  if (!settled) throw new Error("makeSettledSession: row vanished immediately after creation");
+  return settled;
 }
 
 function makeAgent(db: ReturnType<typeof openDb>, project: ReturnType<typeof createProject>) {
@@ -1606,6 +1714,253 @@ async function runChecks() {
       pass("AC-12", `label names both the branch and the base, never "Ship": ${JSON.stringify(label)}`);
     }
   }
+
+  // ── AC-9a · push + PR on a clean session, argv assertable end to end ──────────────────────
+  // Finding 1 (tickets file T4): the ticket's own `gh pr create --base <b> --head <h>` line
+  // omits --title/--body, which would leave T3's composePrBody dead code and every real PR
+  // shipping with no evidence. Assert the argv this suite hands the injected `gh` actually
+  // carries the composed title AND body — not just that pushAndOpenPr "succeeds".
+  {
+    const { dir } = makeFixtureRepo();
+    const baseSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+    const branchName = "agentos/ac9-happy-path";
+    const commitSha = addDivergentBranch(dir, branchName, "ac9-happy-change.md");
+    const { dir: remoteDir } = makeBareRemote();
+    addOrigin(dir, remoteDir);
+
+    const db = openDb(tempDbPath("ac9-happy"));
+    const project = makeProject(db, dir, { integrationBranch: "develop" });
+    const agent = makeAgent(db, project);
+    const task = makeTask(db, project, agent);
+    const session = makeSettledSession(db, task, agent, {
+      branchName,
+      baseRefSha: baseSha,
+      commitShas: [commitSha],
+      verifyExitCode: 0,
+    });
+
+    if (remoteHasBranch(remoteDir, branchName)) {
+      fail("AC-9", `setup: the bare remote already carries '${branchName}' before the click`);
+    } else if (session.pushedAtISO !== null || session.prUrl !== null) {
+      fail("AC-9", "setup: session already carries pushedAtISO/prUrl before the click");
+    } else {
+      const calls: { argv: string[]; cwd: string }[] = [];
+      const fakePrUrl = "https://github.com/example/agentic-os/pull/999";
+      const gh: GhInvoker = async (argv, cwd) => {
+        calls.push({ argv, cwd });
+        return `${fakePrUrl}\n`;
+      };
+
+      const result = await pushAndOpenPr({ db, sessionId: session.id, confirmDespiteVerifyFailure: false, gh });
+      const after = getSession(db, session.id);
+      const argv = calls[0]?.argv ?? [];
+      const bodyIdx = argv.indexOf("--body");
+      const body = bodyIdx >= 0 ? argv[bodyIdx + 1] : "";
+
+      if (!result.ok) {
+        fail("AC-9", `pushAndOpenPr refused a clean, unpushed session: ${JSON.stringify(result)}`);
+      } else if (!remoteHasBranch(remoteDir, branchName)) {
+        fail("AC-9", `'git ls-remote --heads' does not show '${branchName}' on the bare remote after the click`);
+      } else if (!after || after.pushedAtISO === null || after.prUrl !== fakePrUrl) {
+        fail("AC-9", `Session row was not updated with pushedAtISO/prUrl: ${JSON.stringify(after)}`);
+      } else if (calls.length !== 1) {
+        fail("AC-9", `gh was invoked ${calls.length} time(s), expected exactly 1`);
+      } else if (!argv.includes("--base") || argv[argv.indexOf("--base") + 1] !== "develop") {
+        fail("AC-9", `gh argv does not pass 'develop' as --base: ${JSON.stringify(argv)}`);
+      } else if (!argv.includes("--head") || argv[argv.indexOf("--head") + 1] !== branchName) {
+        fail("AC-9", `gh argv does not pass '${branchName}' as --head: ${JSON.stringify(argv)}`);
+      } else if (!argv.includes("--title") || (argv[argv.indexOf("--title") + 1] ?? "").length === 0) {
+        fail("AC-9", `finding 1: gh argv carries no non-empty --title: ${JSON.stringify(argv)}`);
+      } else if (bodyIdx === -1) {
+        fail("AC-9", `finding 1: gh argv carries no --body at all — composePrBody would be dead code: ${JSON.stringify(argv)}`);
+      } else if (!body.includes(session.id) || !body.includes(commitSha)) {
+        fail(
+          "AC-9",
+          `finding 1: gh argv's --body does not carry composePrBody's own evidence (session id, commit sha): ${JSON.stringify(body)}`,
+        );
+      } else {
+        pass(
+          "AC-9",
+          `push + PR succeeded on a clean session — remote now carries '${branchName}', Session.prUrl='${after.prUrl}', ` +
+            `and the gh argv this suite received carries a real --title and a --body containing composePrBody's evidence (finding 1)`,
+        );
+      }
+    }
+    db.close();
+  }
+
+  // ── AC-9b · a failed verification refuses, and the remote stays untouched ─────────────────
+  // Finding 3 (tickets file T4): the ticket only says the function refuses. Assert the STRONGER
+  // claim — `git ls-remote` shows no such ref at all, and `pushedAtISO`/`prUrl` are still null —
+  // which rules out an implementation that pushes first and checks verification second.
+  {
+    const { dir } = makeFixtureRepo();
+    const baseSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+    const branchName = "agentos/ac9-verify-failed";
+    const commitSha = addDivergentBranch(dir, branchName, "ac9-verifyfail-change.md");
+    const { dir: remoteDir } = makeBareRemote();
+    addOrigin(dir, remoteDir);
+
+    const db = openDb(tempDbPath("ac9-verifyfail"));
+    const project = makeProject(db, dir, { integrationBranch: "develop" });
+    const agent = makeAgent(db, project);
+    const task = makeTask(db, project, agent);
+    const session = makeSettledSession(db, task, agent, {
+      branchName,
+      baseRefSha: baseSha,
+      commitShas: [commitSha],
+      verifyExitCode: 1,
+    });
+
+    const calls: string[][] = [];
+    const gh: GhInvoker = async (argv) => {
+      calls.push(argv);
+      return "gh must not have been called";
+    };
+
+    const refused = await pushAndOpenPr({ db, sessionId: session.id, confirmDespiteVerifyFailure: false, gh });
+    const afterRefusal = getSession(db, session.id);
+
+    if (refused.ok) {
+      fail("AC-9", `pushAndOpenPr succeeded despite verifyExitCode=1 with no confirm: ${JSON.stringify(refused)}`);
+    } else if (refused.refusedBy !== "verify-failed") {
+      fail("AC-9", `refused for the wrong reason ('${refused.refusedBy}'): ${refused.reason}`);
+    } else if (!refused.reason.includes("1")) {
+      fail("AC-9", `refusal reason does not name the failing exit code: ${refused.reason}`);
+    } else if (remoteHasBranch(remoteDir, branchName)) {
+      fail(
+        "AC-9",
+        `finding 3: the bare remote carries '${branchName}' after a REFUSED push — the remote must stay untouched`,
+      );
+    } else if (!afterRefusal || afterRefusal.pushedAtISO !== null || afterRefusal.prUrl !== null) {
+      fail("AC-9", `finding 3: Session row changed on a refused push: ${JSON.stringify(afterRefusal)}`);
+    } else if (calls.length !== 0) {
+      fail("AC-9", `gh was invoked on a refused push (argv: ${JSON.stringify(calls)}) — nothing should reach it`);
+    } else {
+      // Confirming in the same shape D41 describes ("one click does the whole gesture") now lets
+      // the identical session push and open its PR.
+      const fakePrUrl = "https://github.com/example/agentic-os/pull/1000";
+      const confirmGh: GhInvoker = async () => `${fakePrUrl}\n`;
+      const confirmed = await pushAndOpenPr({
+        db,
+        sessionId: session.id,
+        confirmDespiteVerifyFailure: true,
+        gh: confirmGh,
+      });
+      const afterConfirm = getSession(db, session.id);
+      if (!confirmed.ok) {
+        fail("AC-9", `confirming did not push despite confirmDespiteVerifyFailure=true: ${JSON.stringify(confirmed)}`);
+      } else if (!remoteHasBranch(remoteDir, branchName)) {
+        fail("AC-9", "a confirmed push did not reach the bare remote");
+      } else if (!afterConfirm || afterConfirm.pushedAtISO === null || afterConfirm.prUrl !== fakePrUrl) {
+        fail("AC-9", `a confirmed push did not record pushedAtISO/prUrl: ${JSON.stringify(afterConfirm)}`);
+      } else {
+        pass(
+          "AC-9",
+          "a session with verifyExitCode=1 refused the push naming the exit code, left the remote and the " +
+            "Session row untouched (finding 3), and pushed only once confirmed in the same gesture",
+        );
+      }
+    }
+    db.close();
+  }
+
+  // ── AC-9c · finding 2 — a verify: that times out refuses the push exactly like a real failure ──
+  // `command.ts`'s CommandResult.exitCode is `null` both for "no verify: key" and for "the
+  // process never produced one" (killed by its own timeout). Before T4's fix, dispatch.ts wrote
+  // that null straight onto Session.verifyExitCode, which is indistinguishable from "nothing
+  // configured" — so a verify: that hung or failed to spawn would have sailed through the push
+  // gate. This drives a REAL dispatch with a verify: that times out and asserts both halves: the
+  // recorded value is never null, and the push gate refuses it.
+  {
+    const { dir } = makeFixtureRepo();
+    writeFileSync(join(dir, "agentos.yml"), 'verify:\n  command: ["sleep", "5"]\n  timeoutMs: 80\n');
+    const db = openDb(tempDbPath("ac9-verifytimeout"));
+    // No `integrationBranch` override here — `dispatch()` needs a REAL base ref to resolve
+    // (`resolveBaseRef` falls through to it when no task/project override is set), and this
+    // fixture repo has no `develop` branch. The default project shim stores 'HEAD', which always
+    // resolves. This check never reaches `push.ts`'s own integrationBranch read — it refuses at
+    // the verify-failed step, one check earlier.
+    const project = makeProject(db, dir);
+    const agent = makeAgent(db, project);
+    const task = makeTask(db, project, agent);
+    const runner = new CommittingRunner(["ac9c timeout change"]);
+
+    const result = await dispatch(task.id, "manual", { db, runner });
+    if (!result.started) {
+      fail("AC-9", `setup: dispatch refused: ${JSON.stringify(result)}`);
+    } else {
+      const session = await waitForSession(db, result.sessionId, (s) => s.endedAtISO !== null, 8000);
+      if (session.verifyExitCode === null) {
+        fail(
+          "AC-9",
+          "finding 2: a verify: that timed out recorded verifyExitCode=null — indistinguishable from " +
+            "'not configured', which would let it sail through the push gate unverified",
+        );
+      } else if (session.verifyExitCode === 0) {
+        fail("AC-9", `finding 2: 'sleep 5' under an 80ms timeout somehow recorded exitCode 0`);
+      } else {
+        const gh: GhInvoker = async () => {
+          throw new Error("gh must not be called — the push gate should refuse before reaching it");
+        };
+        const refused = await pushAndOpenPr({
+          db,
+          sessionId: session.id,
+          confirmDespiteVerifyFailure: false,
+          gh,
+        });
+        if (refused.ok || refused.refusedBy !== "verify-failed") {
+          fail(
+            "AC-9",
+            `finding 2: a timed-out verify: (recorded verifyExitCode=${session.verifyExitCode}) did not refuse the push: ${JSON.stringify(refused)}`,
+          );
+        } else {
+          pass(
+            "AC-9",
+            `finding 2: a verify: that timed out is recorded as verifyExitCode=${session.verifyExitCode} (never null), ` +
+              "and the push gate refuses it exactly like a real non-zero exit",
+          );
+        }
+      }
+    }
+    db.close();
+  }
+
+  // ── AC-11 · the product cannot merge ───────────────────────────────────────────────────────
+  // Deliberately crude (spec §4): a source-level scan, not behaviour, because an invariant
+  // enforced only by everyone remembering not to violate it is enforced by nobody (D41). Clean at
+  // this ticket's own base (docs/specs/stage-4b-tickets.md, inherited fact 5) — a failure here
+  // means Stage 4b itself introduced the string.
+  {
+    const FORBIDDEN: { pattern: RegExp; label: string }[] = [
+      { pattern: /gh\s+pr\s+merge/, label: "gh pr merge" },
+      { pattern: /\bgit\s+merge\b/, label: "git merge" },
+    ];
+    const offenders: string[] = [];
+    const scan = (dir: string) => {
+      if (!existsSync(dir)) return;
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === "node_modules" || entry.name === ".next" || entry.name === ".git") continue;
+          scan(p);
+        } else if (/\.(ts|tsx)$/.test(entry.name)) {
+          const src = readFileSync(p, "utf8");
+          for (const { pattern, label } of FORBIDDEN) {
+            if (pattern.test(src)) offenders.push(`${p}: matches '${label}'`);
+          }
+        }
+      }
+    };
+    scan(join(process.cwd(), "lib"));
+    scan(join(process.cwd(), "app"));
+
+    if (offenders.length > 0) {
+      fail("AC-11", `'gh pr merge' or 'git merge' appears in shipped source: ${JSON.stringify(offenders)}`);
+    } else {
+      pass("AC-11", "'gh pr merge' and 'git merge' appear in no .ts/.tsx file under lib/ or app/");
+    }
+  }
 }
 
 try {
@@ -1616,5 +1971,5 @@ try {
   for (const t of TEMPS) rmSync(t, { recursive: true, force: true });
 }
 
-console.log(failures === 0 ? "\nAll Stage 4b acceptance criteria (T1 + T2 + T3) pass.\n" : `\n${failures} FAILING.\n`);
+console.log(failures === 0 ? "\nAll Stage 4b acceptance criteria (T1 + T2 + T3 + T4) pass.\n" : `\n${failures} FAILING.\n`);
 process.exit(failures === 0 ? 0 : 1);

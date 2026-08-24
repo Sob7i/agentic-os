@@ -1,11 +1,13 @@
 # Agentic OS — Session Handoff
 
-> Continuation notes for the next working session (human or agent). Updated **2026-08-22**
-> (Stage 4's four tickets landed on stacked branches, **T1–T4**, D42 closed; **Stage 4b specced**
-> — the delivery path, D37–D41). Previous update, same day: Stage 4's ticket queue written.
-> Previous before that, 2026-08-18 (round-3 design closed; Stages 3a/4/5 specced; **Stage 3a
-> built**). Read `CLAUDE.md` first (session ritual, conventions, doc map); this file is only
-> "where we are and what's next."
+> Continuation notes for the next working session (human or agent). Updated **2026-08-24**
+> (**Stage 4b's four tickets landed on stacked branches, T1–T4** — the delivery path is built:
+> branch, prepared workspace, verified result, and a push-and-open-PR gesture behind one human
+> click. **AC-17 is now the open owner gate**, same shape as Stage 2's and Stage 3b's). Previous
+> update, 2026-08-22: Stage 4's four tickets landed (T1–T4, D42 closed) and Stage 4b was specced
+> (D37–D41). Previous before that, 2026-08-18 (round-3 design closed; Stages 3a/4/5 specced;
+> **Stage 3a built**). Read `CLAUDE.md` first (session ritual, conventions, doc map); this file is
+> only "where we are and what's next."
 >
 > **Trust but verify:** this file can go stale between sessions — merged PRs, pushed commits, or
 > a changed remote don't announce themselves here. Cross-check `git status`, `git log`, and
@@ -51,21 +53,40 @@
 > oracles to red, because `8P/0F` no longer matches the `7P/1F` they still expect — **5 of 7 green,
 > stage3 and stage3a red.** Both runs are the same known, pre-existing shape (`docs/BACKLOG.md`);
 > **stage4, stage3b and stage3c were green in both**, and nothing here is new red from this ticket.
+>
+> **Re-checked 2026-08-24 (on `feat/stage-4b-t4-push`, after Stage 4b T4 — an eighth suite exists
+> now).** `pnpm verify` discovers **8** suites: stage1, stage2, stage3, stage3a, stage3b, stage3c,
+> stage4, stage4b. `gh api rate_limit --jq .resources.graphql` showed `3768` remaining (quota
+> available) before this run. **Two corrections to values this block had carried since
+> 2026-08-22, both predicted values the block exists to hold — no lesson, per `CLAUDE.md`'s own
+> rule for this class:** (1) `verify:stage4` reports **25 of 25**, not the *16 of 16* this row
+> said — Stage 4's own suite grew across review of #34–#38 and the count here was never refreshed
+> after `feat/stage-4-t4-ui` landed. (2) `pnpm verify:stage1` is **7 of 8 with AC-2 red**, not the
+> *8 of 8* the row below used to say happens "while itqan is active" — itqan's last real commit has
+> aged past the stall threshold again since 2026-08-20's un-stalling push, independent of GitHub
+> connectivity (AC-1 passed cleanly this run; only AC-2 failed). This is `CLAUDE.md`'s own
+> documented "known blocking item," recurring exactly the way a time-since-last-commit check is
+> expected to: it will read green again only if someone commits to itqan, or red forever until the
+> fixture question in `docs/BACKLOG.md` is decided. **stage2, stage3, stage3a, stage3b, stage3c,
+> stage4 and stage4b were all fully green this run** — the two pinned oracles (`verify:stage3`
+> AC-11, `verify:stage3a` AC-1) matched Stage 1's `7P/1F` baseline, so nothing here is new red from
+> this ticket.
 
 | Fact | When checked | Reproduce with |
 |---|---|---|
 | `develop` head | `f383c42` (measured 2026-08-22, after #38 merged) | `git log --oneline -1 origin/develop` |
 | Open PRs | **not recorded — run the command** | `gh pr list` |
 | Last merged | #16, #17 (2026-08-19), #18 (2026-08-19) | `gh pr list --state merged --limit 5` |
-| `pnpm verify` | **101 checks across 6 suites, as last counted on `feat/stage-3c-t4-docs`; a 7th suite (`verify:stage4`, 16 checks) exists as of `feat/stage-4-t4-ui` and is not yet folded into this total** — see the 2026-08-22 note above for that branch's own per-suite result. Which one or two of the 101 are red still depends on whether GitHub is answering, exactly as below. Connected: **99 of 101** (Stage 1 green 8/8; `verify:stage3` AC-11 and `verify:stage3a` AC-1 red). Rate-limited: **100 of 101** (Stage 1 AC-1 red; both oracles green). Plus 1 SKIP either way (`verify:stage3` AC-12, the opt-in real session). **The earlier *100 of 102* on this row was a miscount, not a third state** — it counted Stage 1's own PASS lines, which AC-11 was pasting into its failure message | `pnpm verify` |
-| — what is red, and why | **Read this row before treating anything above as stable.** `verify:stage3` **AC-11** and `verify:stage3a` **AC-1** both pin Stage 1's expected result at the literal `7P/1F`. (1) itqan's last commit was 2026-07-19 until *we* pushed to it on 2026-08-20, which un-stalled DC7 and turned Stage 1 AC-2 green — so **both oracles went red because a known failure was fixed.** (2) Then, an hour into 2026-08-21, GitHub's GraphQL quota ran out; Stage 1's DC1 needs it, `AC-1` went red with the documented offline symptom and Stage 1 returned `7P/1F` again — **a different check failing, the same count** — so both oracles went green again, for the wrong reason. `verify:stage3`'s own offline-detection branch never fires in that case, because the pinned comparison is evaluated first and matches. `docs/BACKLOG.md` carries all three halves of the fix; `docs/LEARNINGS.md` (2026-08-21) carries the lesson | `gh api rate_limit`, then `pnpm verify:stage1` |
-| `pnpm verify:stage1` | **8 of 8 when GitHub answers** (AC-2 green while itqan is active); **7 of 8 when it does not** — AC-1 fails with *"nadim severity is attention, expected drift"*, which is DC1 being unable to call `gh`, not a drift regression | `pnpm verify:stage1` |
+| `pnpm verify` | **151 checks across 8 suites, as counted on `feat/stage-4b-t4-push`, 2026-08-24** (stage1 8 + stage2 11 + stage3 34 incl. 1 SKIP + stage3a 8 + stage3b 18 + stage3c 23 + stage4 25 + stage4b 24 = 151). Which check inside Stage 1 is red depends on whether GitHub is answering and on itqan's own commit age, exactly as the two rows below explain. This run: **149 of 151 PASS, 1 FAIL (Stage 1's AC-2), 1 SKIP** (`verify:stage3` AC-12, the opt-in real session) — the two pinned oracles matched Stage 1's baseline and stayed green | `pnpm verify` |
+| — what is red, and why | **Read this row before treating anything above as stable.** `verify:stage3` **AC-11** and `verify:stage3a` **AC-1** both pin Stage 1's expected result at the literal `7P/1F`, and that count means "AC-1 passes, AC-2 fails" as often as the reverse — see the 2026-08-24 note above for which shape held this run. `docs/BACKLOG.md` carries the itqan-fixture question; `docs/LEARNINGS.md` (2026-08-21) carries the oracle-pinning lesson | `gh api rate_limit`, then `pnpm verify:stage1` |
+| `pnpm verify:stage1` | **8 checks.** Two independent failure modes share this suite and must not be conflated: **AC-1** fails only when GitHub's GraphQL quota is exhausted (network-dependent, transient); **AC-2** fails whenever itqan's last real commit has aged past the stall threshold (git-dependent, `CLAUDE.md`'s own "known blocking item," unrelated to GitHub). Read both rows above before trusting a bare pass count | `pnpm verify:stage1` |
 | `pnpm verify:stage2` | 11 of 11 | `pnpm verify:stage2` |
 | `pnpm verify:stage3` | **33 checks**, of which AC-12 is always a SKIP — so **32 of 33 with AC-11 red**, or **33 of 33** when the pinned baseline happens to match (see the row above). **The "33 → 35 checks" note this row carried as *measured but unexplained* is now explained, and the suite never grew.** When AC-11 went red it began quoting the first 300 characters of Stage 1's output into its own failure message — raw, newlines intact — so two or three of Stage 1's `PASS` lines were counted as Stage 3's, varying run to run with where the 300-character cut landed. Fixed 2026-08-21 by flattening the excerpt; `docs/LEARNINGS.md` has why it was worse than a miscount | `pnpm verify:stage3` |
 | `pnpm verify:stage3a` | **8 checks** — **7 of 8** or **8 of 8**, on the same pinned baseline and for the same reason as `verify:stage3` | `pnpm verify:stage3a` |
 | `pnpm verify:stage3c` | **23 of 23** — AC-1…AC-21 plus AC-12b and **AC-16b** (added in review of #30) | `pnpm verify:stage3c` |
 | `pnpm verify:stage3b` | 18 of 18 — T1's five + AC-2c/AC-2d, T2's five + AC-4b, T3's four, T4's **AC-9** (the four added in PR review) | `pnpm verify:stage3b` |
-| `pnpm verify:stage4` | **16 of 16** — T1's three (AC-0a, AC-0b, AC-0c), T2's five (AC-1, AC-1b, AC-2, AC-3, AC-11), T3's six (AC-4, AC-4b, AC-5, AC-7, AC-8, AC-10), T4's two (AC-6, AC-9). Measured 2026-08-22 on `feat/stage-4-t4-ui` | `pnpm verify:stage4` |
+| `pnpm verify:stage4` | **25 of 25**, measured 2026-08-24 on `feat/stage-4b-t4-push` — corrected from the *16 of 16* this row carried since `feat/stage-4-t4-ui` (see the 2026-08-24 note above) | `pnpm verify:stage4` |
+| `pnpm verify:stage4b` | **24 of 24** — T1's eight (AC-0a, AC-1, AC-2, AC-3, AC-4, AC-13, AC-14, AC-15), T2's six (AC-5, AC-6, AC-6b, AC-7, AC-16 ×2), T3's five (AC-8 ×2, AC-8b, AC-10 ×2, AC-12), T4's five (AC-9 ×3, AC-11 — one AC-9 block also proves T4 finding 2's `VERIFY_DID_NOT_COMPLETE` sentinel). Measured 2026-08-24 on `feat/stage-4b-t4-push` | `pnpm verify:stage4b` |
 | runner smoke | 4 of 4, **not in `verify`** | `pnpm tsx lib/agentos/runner/runner.smoke.mts` |
 | nadim's drift | **uncorrected** (AC-1 still passes) | `pnpm verify:stage1` |
 | Live board severities | **not recorded, by rule** | `pnpm dev` |
@@ -443,6 +464,62 @@ touched no hub doc, on purpose.
   any agent in project 'agentic-os'`* — exactly the inherited-fact-4 refusal the ticket predicted,
   naming the first of the six unresolved agent names in step order. Zero chain rows were written.
 
+## Stage 4b — T1–T4 landed (2026-08-24)
+
+Four tickets, stacked (`feat/stage-4b-t1-branch` → `-t2-prepare` → `-t3-compose` → `-t4-push`,
+itself stacked on Stage 4's own T4), none merged yet. **Every acceptance criterion in
+[`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) §4 passes** — `pnpm verify:stage4b`
+is **24 of 24** (see *Verified state*). AC-17, the owner gate, is not a fixture check and is not
+counted in that 24 — see the callout at the top of *Next up*.
+
+- **T1 — the branch, the declared base, and migration 4.** `worktree.ts` gains an optional
+  `WorktreeBranch` (`{ name, mode: 'create' | 'attach' }`) — absent still means today's
+  `--detach`, so every pre-Stage-4b caller and fixture compiles and passes unchanged. `dispatch.ts`
+  names the branch at spawn (`slug.ts`'s `sessionBranchName`) and creates it with `mode: 'create'`;
+  `resumeSession` attaches to the same branch with `mode: 'attach'`, never re-creating it. The base
+  ref resolves through a pure, exported `resolveBaseRef` (`task.baseRef ?? project.defaultBaseRef ??
+  project.integrationBranch`) — no `?? "HEAD"` fourth term, because that would have silently put
+  back the exact default D38 exists to remove. Migration 4 (not migration 3 — Stage 4 already used
+  that number) backfills `integrationBranch = 'develop'` on every pre-existing `Project` row, since
+  D38's fallback chain has to terminate somewhere and `NULL` gives it no terminus.
+- **T2 — prepare, verify, and the four config keys.** `command.ts` (new) is the one seam this
+  stage needed beyond `run()`: an exit code, stdout and stderr, a caller-supplied timeout —
+  `run()` itself is untouched and stays the git-only runner it always was. `config.ts` gains
+  `integrationBranch`, `defaultBaseRef`, `prepare`, `verify`, and refuses `main`/`master` outright
+  for the first key, naming `CLAUDE.md`'s own workflow rule. `prepare:` runs in the fresh worktree
+  before the model is ever called and refuses the dispatch on anything but a clean exit — deleting
+  the branch T1 already created, so a failed preparation cannot strand an empty `agentos/*` ref.
+  `verify:` runs after the model settles and before teardown, and the session's own claim of
+  success never overrides what the check actually recorded (AC-7's whole point).
+- **T3 — the preamble and the PR body.** `lib/agentos/delivery-render.ts` (new, a leaf: no `db`,
+  no `node:*`) holds three pure functions — `composePreamble` (the block that precedes the task's
+  own text: worktree, branch, base sha, the declared commands, the two must-know sentences),
+  `composePrBody` (session id, cost, all five `driftAtSpawn` fields, every commit sha, the verify
+  result), `pushControlLabel` (never "Ship"). `dispatch.ts` changes by exactly one line: the prompt
+  becomes `composePreamble(...) + taskText`. Three of this stage's user-visible strings are
+  asserted without a worktree, a remote, or a model.
+- **T4 — push, the PR, the UI, and the stage.** `lib/agentos/push.ts` (new) — `pushAndOpenPr`, one
+  gesture: `git push -u origin <branch>` via `run()`, then `gh pr create --base <integrationBranch>
+  --head <branch> --title … --body …` via an injected `GhInvoker` (argv in, stdout out), then
+  `pushedAtISO`/`prUrl` stored. The server action (`pushAndOpenPrAction` in `actions.ts`) carries
+  the same hostile-ownership check every other action in that file uses, one hop through the
+  session's own task. The client control (`components/tasks/PushControl.tsx`) copies
+  `InstantiateForm.tsx`'s own shape exactly — the server action arrives as a prop, the file
+  `import type`s `PushResult` only — because `verify:stage3c`'s AC-1 walks every `"use client"`
+  file's value imports and does not special-case `"use server"`.
+  **Three things the ticket file got wrong or left underspecified, found and closed in review:**
+  (1) the ticket's own `gh pr create --base <b> --head <h>` line omitted `--title`/`--body`, which
+  would have made `composePrBody` dead code — closed by passing both, and by asserting the argv the
+  suite hands the injected invoker actually carries the composed body (AC-9). (2) `command.ts`'s
+  `exitCode: null` meant two different things — "no `verify:` key" and "a configured `verify:`
+  that never produced a clean exit" — and `dispatch.ts` used to collapse them, which would have let
+  a timed-out check sail through the push gate exactly like nothing was configured. Closed with a
+  sentinel, `dispatch.ts`'s `VERIFY_DID_NOT_COMPLETE` (`-1`, never a real exit code), so `null` now
+  means only "unconfigured" (`docs/LEARNINGS.md`, 2026-08-24). (3) a `gh pr create` that fails
+  *after* a successful push used to have no retry path — closed by recording `pushedAtISO` and
+  `prUrl` as two separate facts, so a retry on a pushed-but-PR-less session skips `git push` and
+  attempts only the PR half.
+
 ## How to pick up
 
 1. `git status && git log --oneline -5 && gh pr list` — verify this file against reality.
@@ -456,17 +533,19 @@ touched no hub doc, on purpose.
 
 ## Next up
 
-> **Stage 4b's ticket queue is written (2026-08-22).**
-> [`docs/specs/stage-4b-tickets.md`](specs/stage-4b-tickets.md) — four stacked tickets, T2 off T1,
-> T3 off T2, T4 off T3. Stage 4 (templates and chains) landed the same day across #34, #36, #37
-> and #38, so the build item below is **T1: the branch, the declared base, and migration 4.** The
-> ticket file's inherited facts carry one correction to the spec that would have bitten
-> immediately: the spec says *migration 3* and migration 3 already exists — Stage 4 added it in
-> review of #38 — so this stage adds **migration 4**.
+> **Stage 4b is built — all four tickets (2026-08-24).** [`docs/specs/stage-4b-tickets.md`](specs/stage-4b-tickets.md)'s
+> stack — T1 (branch, declared base, migration 4), T2 (prepare/verify), T3 (the composed preamble
+> and PR body), T4 (push, the PR, the UI) — lands on `feat/stage-4b-t1-branch` through
+> `feat/stage-4b-t4-push`, each still stacked on the one before it and none merged to `develop` yet.
 >
-> **Stage 4b lands with an owner gate of its own, AC-17**, and no fixture can close it: one real
-> branch, pushed, with a real PR opened and merged. It joins the two below rather than replacing
-> them.
+> **Stage 4b lands with an owner gate of its own, AC-17, and it has FOUR conditions, not three —
+> read all four before treating this as closed:** a branch **this product created**, **pushed**,
+> with a real PR **opened**, **reviewed by a human**, and **merged by the owner**. Every one of
+> those is proven only against a fixture (a real `git init --bare` remote in a temp dir, an
+> injected `gh`) — `pnpm verify:stage4b`'s AC-9 and AC-11 prove the mechanism, not the event. It
+> joins Stage 2's *one real drift corrected* and Stage 3b's *no human has run the cycle by hand* as
+> a third open owner gate, none of which the other two close or are closed by.
+> Reproduce whether it has happened with `gh pr list --state all --search "head:agentos/"`.
 
 
 > **Corrected while landing T4:** items 2, 5 and 6 below (both Stage 3 spec gates already cleared
@@ -506,15 +585,14 @@ touched no hub doc, on purpose.
    is arithmetic and must not be written down as an observation** — doing exactly that to AC-10 in
    2026-08-18 is why these are enumerated rather than assumed. Taking M-1 and M-1b also settles the
    `docs/BACKLOG.md` entry on the portfolio sidebar, which is now one look away from decidable.
-6. **Stage 4 is built (T1–T4, all four tickets); merge the stack, then build Stage 4b.** See
-   *Stage 4 — T1–T4 landed* above for what each ticket did. All four sit on stacked, unmerged
-   branches (`feat/stage-4-t1-schema` → `-t2-instantiate` → `-t3-advance` → `-t4-ui`) — **the agent
-   opens PRs, it does not merge them** (`CLAUDE.md`), so that stack landing on `develop` is an owner
-   action, in order, same as any stacked chain here. Once merged,
-   [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) (`☑`, D37–D41 closed) is next —
-   the delivery path that lets a session's work leave as a branch and a PR instead of a sha with a
-   gc deadline (item 7 below explains why this one matters more than a normal "next stage").
-   [`stage-5-goals.spec.md`](specs/stage-5-goals.spec.md) is still **`☐`**, gated on one owner call
+6. **Stage 4 and Stage 4b are both built (T1–T4 each, eight tickets total); merge both stacks.**
+   See *Stage 4 — T1–T4 landed* above and the Stage 4b callout at the top of this section for what
+   each ticket did. All eight sit on stacked, unmerged branches — Stage 4's
+   `feat/stage-4-t1-schema` → `-t2-instantiate` → `-t3-advance` → `-t4-ui`, then Stage 4b's
+   `feat/stage-4b-t1-branch` → `-t2-prepare` → `-t3-compose` → `-t4-push` stacked on TOP of Stage
+   4's own T4 — **the agent opens PRs, it does not merge them** (`CLAUDE.md`), so landing both
+   stacks on `develop`, in order, is an owner action. Once merged, the actual next *build* item is
+   [`stage-5-goals.spec.md`](specs/stage-5-goals.spec.md), still **`☐`**, gated on one owner call
    in its §5.11 — the default spend cap, and whether a goal may spawn unattended before the loop has
    been watched once. Stage 6 (the rewritten Overview) and Stage 7 (portfolio cost) are **not**
    specced yet, deliberately: both read data that Stages 3–5 produce, and speccing them now would
@@ -525,25 +603,33 @@ touched no hub doc, on purpose.
    `docs/FEATURES.md` § *Templates, gates, and chains* for the argument this measurement is meant to
    settle.
 
-7. **⚠ Stage 4b is the reason nothing built so far can build anything** *(added 2026-08-22)*. Asked
-   whether the execution layer could run the Stage 4 build itself, the answer measured out as **no,
-   and for one specific reason**: a session's commits land on a **detached HEAD** in a worktree that
-   is then `--force` removed, so a successful run's entire output is a sha with a garbage
-   collector's deadline on it. There is no branch, no push, no PR; the worktree has no
-   `node_modules`, so the agent cannot run `pnpm verify` on its own work; `dispatch` branches from
-   whatever `HEAD` the owner's checkout happens to be on; and the prompt a session receives is
-   literally `Task: <name>\n\n<description>` and nothing else. **Every one of those is closed by
-   Stage 4b** (D37–D41). **And the flat fact under all of this is how many sessions have ever run —
-   a volatile value, so it is not restated here:** reproduce it with
+7. **⚠ Stage 4b was the reason nothing built so far could build anything — and is now closed in
+   code** *(added 2026-08-22, resolved 2026-08-24)*. Asked whether the execution layer could run
+   the Stage 4 build itself, the answer measured out as **no, and for one specific reason**: a
+   session's commits landed on a **detached HEAD** in a worktree that was then `--force` removed,
+   so a successful run's entire output was a sha with a garbage collector's deadline on it. There
+   was no branch, no push, no PR; the worktree had no `node_modules`, so the agent could not run
+   `pnpm verify` on its own work; `dispatch` branched from whatever `HEAD` the owner's checkout
+   happened to be on; and the prompt a session received was literally `Task: <name>\n\n<description>`
+   and nothing else. **Every one of those is now closed** (D37–D41, built across Stage 4b's four
+   tickets) — but closed in code is not closed in fact until AC-17's four conditions are real (the
+   callout at the top of this section). **The flat fact under all of this is how many sessions have
+   ever run — a volatile value, so it is not restated here:** reproduce it with
    `sqlite3 data/agentos.sqlite "select count(*) from Session"`, and read the *Verified state*
-   block above for what it was when last checked. If the answer is still zero, the first Stage 4b
-   acceptance run is *also* the first proof that `LocalRunner` works end-to-end — two unknowns at
-   once, and why D27
-   chose `fractal-code` for first real runs rather than this repo. Sequenced **before Stage 6**,
-   because Stage 6 is the first stage that could plausibly be built by this product instead of by
-   hand — and it cannot be while finished work is recoverable only by reading a sha out of SQLite.
+   block above for what it was when last checked. If the answer is still zero, the first real
+   push-and-PR is *also* the first proof that this whole path works end to end against a real
+   remote — one unknown, not two, since `LocalRunner` itself has by now run inside `pnpm dev`
+   against fixtures many times over. Sequenced **before Stage 6**, because Stage 6 is the first
+   stage that could plausibly be built by this product instead of by hand — and it cannot be until
+   a session's finished work is recoverable as something other than a sha read out of SQLite.
 
-- **2026-08-18** — Round-3 wireframes reviewed and the shell closed as **D23**: Concept B′ over
+8. **Push one real branch and open one real PR, by hand** (owner gate, added 2026-08-24). Once
+   the Stage 4b stack is merged, this is what actually closes AC-17: run a real task to completion
+   on `agentic-os` (or `fractal-code`, D27's own choice for first real runs), then click the push
+   control on its settled session (Part 6 of `docs/HUMAN-TEST.md`). Watch for all four of AC-17's
+   conditions in order — pushed, PR opened, reviewed, merged — not just the first two the button
+   itself performs. It joins items 1 and 2 above as the third of this file's three open owner
+   gates; none of the three closes another.
   the design agent's own recommendation of C, because the Kanban is the surface this product will be
   used in for hours and C spends 268px of it permanently on five projects you are not working on.
   **One amendment to the owner's instruction, stated rather than applied silently:** the drift band
@@ -704,3 +790,20 @@ None.
   **Stage 4b carries its own owner gate (AC-17)** and it is the same shape as Stage 2's and Stage
   3b's: every fixture check runs against a bare repo in `/tmp`, so until one real PR exists on
   GitHub that this product opened, the last mile is code nobody has run.
+
+- **2026-08-24** — Stage 4b's T4 built: push, the PR, and the UI. `lib/agentos/push.ts`'s
+  `pushAndOpenPr` is D41's one gesture — push, `gh pr create` with a generated title and T3's
+  composed body, store both facts — behind `PushControl.tsx` on the session card. Three defects
+  the ticket file itself flagged as likely were found and closed in review, not invented for
+  effect: the ticket's own `gh pr create` line would have shipped every PR with no evidence body
+  (closed by asserting the argv AC-9 hands the injected `gh` actually carries `--title`/`--body`);
+  `command.ts`'s `exitCode: null` collided with a pre-existing, different meaning of `null` already
+  living on `Session.verifyExitCode`, which would have let a timed-out `verify:` sail through the
+  push gate unverified (closed at the source in `dispatch.ts`, with a `-1` sentinel no real exit
+  code can produce — `docs/LEARNINGS.md`); and a `gh pr create` failing after a successful push had
+  no way back in (closed by recording the push and the PR as two separate facts, so a retry skips
+  the push half once it has already landed). `pnpm verify:stage4b` is **24 of 24**; `pnpm verify`
+  has no new red per suite — Stage 1's AC-2 (itqan re-stalled since 2026-08-20's un-stalling push)
+  is the only failure, unrelated to this branch and independently reproducible. **AC-17 — one real
+  branch, pushed, with a real PR opened, reviewed by a human, and merged by the owner — remains
+  open**, and is now this file's third open owner gate alongside Stage 2's and Stage 3b's.

@@ -133,6 +133,24 @@ belongs in `docs/DECISIONS.md` instead.
   not a note: **promoted to `CLAUDE.md` §Conventions.** Interpolate complete strings; never let a
   line break fall between text and an expression that continues the same word.
 
+- (2026-08-24) **A `null` sentinel meant two different things one column apart, and only one of
+  them had a name.** `command.ts`'s `CommandResult.exitCode` is `null` for two unrelated reasons —
+  the caller declared no such key at all, or the process was declared and never produced an exit
+  code (this module's own timeout fired, or the executable could not spawn). `dispatch.ts` wrote
+  that `null` straight onto `Session.verifyExitCode` for both, which collided with a THIRD, older
+  meaning already living on that exact column: "no `verify:` key configured." A `verify:` that hung
+  would have read identically to a project with none declared, and Stage 4b's push gate (which
+  refuses only on a non-null, non-zero `verifyExitCode`) would have let unverified work through
+  in exactly the case it was built to catch. Found by writing the seam's own doc comment
+  (`command.ts`'s `exitCode` field) side by side with the column's doc comment
+  (`types.ts`'s `SessionRow.verifyExitCode`) and noticing they used the same value for different
+  claims. **Fix:** never let a lower-level "no result" propagate unchanged into a column that
+  already overloads its own `null` for something else — translate it into a sentinel the column
+  cannot already mean (`VERIFY_DID_NOT_COMPLETE = -1`, impossible for a real process exit code,
+  which is always 0–255). **The general shape: when a value crosses a layer boundary, check
+  whether the layer it lands in already has a meaning for the value it's about to receive — two
+  honest "unknown"s from two different sources are not the same fact.**
+
 ## Verification
 
 - (2026-08-18) **A spec section that boasted "verified, not assumed" was verified against the wrong

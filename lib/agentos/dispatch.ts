@@ -261,6 +261,25 @@ function commandFailureReason(spec: CommandSpec, result: CommandResult): string 
   return `command '${argv}' exited ${result.exitCode}`;
 }
 
+/**
+ * **T4 finding 2** (docs/specs/stage-4b-tickets.md). `command.ts`'s `CommandResult.exitCode` is
+ * documented as `null` for two DIFFERENT reasons: the process never produced one — this module's
+ * own timeout fired, or the executable could not be spawned at all. Writing that `null` straight
+ * onto `Session.verifyExitCode` collides with that column's OTHER, pre-existing meaning of `null`
+ * — "no `verify:` key was configured" (`SessionRow.verifyExitCode`'s own doc comment, D40) — so a
+ * `verify:` that was declared and then timed out or failed to spawn read identically to a project
+ * with no `verify:` at all. `lib/agentos/push.ts`'s push gate refuses only on a non-zero,
+ * non-null `verifyExitCode`; under the old behaviour a timed-out check would have sailed through
+ * it exactly like "nothing configured" — a delivery path publishing unverified work, silently.
+ *
+ * Never a real process exit code (those are always 0–255, and `runCommand` never invents one), so
+ * this is distinguishable from every genuine exit code as well as from `null`. Applies to
+ * `verify:` only — `prepare:`'s own `exitCode` already refuses the dispatch outright on anything
+ * but a clean `0` (§3.5), timeout and spawn-failure included, so there is no adjacent column for
+ * `prepare:` to collide with.
+ */
+export const VERIFY_DID_NOT_COMPLETE = -1;
+
 async function computeDriftAtSpawn(project: ProjectRow): Promise<DriftAtSpawn> {
   const board = await boardOnce();
   const report = board.projects.find((p) => p.path === project.primaryRepoPath);
@@ -656,7 +675,10 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
   let verifyTail: string | null = null;
   if (verify) {
     const { result, tail } = await runDeclaredCommand(verify, worktree.path);
-    verifyExitCode = result.exitCode;
+    // See `VERIFY_DID_NOT_COMPLETE`'s own comment above (T4 finding 2): a configured `verify:`
+    // that never produced a clean exit code must not be recorded as `null`, which this column
+    // reserves for "no verify: key at all."
+    verifyExitCode = result.exitCode ?? VERIFY_DID_NOT_COMPLETE;
     verifyTail = tail;
   }
 

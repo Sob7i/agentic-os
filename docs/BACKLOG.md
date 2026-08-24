@@ -443,6 +443,19 @@ was rewritten after PR review — it is partly resolved, not merely deferred.)*
   measured install time across a real chain being a material fraction of the run. It almost
   certainly is not next to a five-hour build, which is why this is deferred rather than specced.
 
+- **Stage 4b branches, prepares, verifies and pushes the project's primary repo only** *(added
+  2026-08-24, deferred by [`stage-4b-delivery.spec.md`](specs/stage-4b-delivery.spec.md) §1, closed
+  in review of the T4 ticket)*. D21 already allows a project to mount several repos, and the rail's
+  own **`Repos`** setup row (the entry immediately above this one, D32) names the gap without a
+  schema behind it yet. This is that gap's Stage 4b shape specifically: `pushAndOpenPr` reads one
+  path, `project.primaryRepoPath`, for the worktree, the `git push` and the `gh pr create` cwd
+  alike — a task whose real work spans a second repo has nothing to name it with. **What a real
+  answer needs:** a per-session repo manifest (which repo each `prepare:`/`verify:`/push step
+  targets), which is exactly what the unspecced `Repos` row above is waiting on — so this entry
+  does not duplicate that one's unblock condition, it is one more reason to take it. **Unblock
+  condition:** the same as the entry above — D20's local-session model gaining a real enforcement
+  point, since a repo manifest with no enforcement behind it is a promise this runtime cannot keep.
+
 - **A supervisor so a session survives a dev-server restart — mitigated, not solved, by D37**
   *(added 2026-08-22; the entry from the Stage 3 build above still owns the fix)*. Stage 4b
   deliberately does not solve this and does make it cheaper: with the work on a branch from the
