@@ -1926,6 +1926,88 @@ async function runChecks() {
     db.close();
   }
 
+  // ── AC-9e · the branch dispatch() really made is the branch that really gets pushed ────────
+  // Ticket-level, added in review of T4, whose own report flagged the gap: AC-9a…AC-9d synthesize
+  // a settled session with `makeSettledSession`, so the branch they push is one the FIXTURE named,
+  // never one `dispatch()` created. That is the same shape as the wiring gap AC-8b was added for
+  // in T3 — every part correct in isolation, nothing asserting they are joined up — and it matters
+  // most on this ticket, because this is the path that publishes work outside the machine.
+  //
+  // So: dispatch for real, let a committing runner produce a real commit on the real
+  // `agentos/<slug>-<short>` branch, let teardown run (which is also where an empty run's branch
+  // would have been deleted), and only then push to the bare remote.
+  {
+    const { dir } = makeFixtureRepo();
+    const { dir: remoteDir } = makeBareRemote();
+    addOrigin(dir, remoteDir);
+
+    const db = openDb(tempDbPath("ac9e"));
+    // integrationBranch is the PR base and need not exist locally (the injected gh never runs);
+    // the task names 'main' as its base so dispatch's own precondition 5 resolves against a real
+    // ref in this fixture.
+    const project = makeProject(db, dir, { integrationBranch: "develop" });
+    const agent = makeAgent(db, project);
+    const task = makeTask(db, project, agent, { name: "end to end push", baseRef: "main" });
+    const runner = new CommittingRunner(["real work from a real session"]);
+
+    const dispatched = await dispatch(task.id, "manual", { db, runner });
+    if (!dispatched.started) {
+      fail("AC-9e", `setup: dispatch refused: ${JSON.stringify(dispatched)}`);
+    } else {
+      const settled = await waitForSession(db, dispatched.sessionId, (s) => s.endedAtISO !== null);
+      const branchName = settled.branchName;
+
+      if (!branchName) {
+        fail("AC-9e", "setup: the settled session recorded no branchName");
+      } else if (remoteHasBranch(remoteDir, branchName)) {
+        fail("AC-9e", `setup: the remote already carries '${branchName}' before the click`);
+      } else {
+        const calls: { argv: string[]; cwd: string }[] = [];
+        const gh: GhInvoker = async (argv, cwd) => {
+          calls.push({ argv, cwd });
+          return "https://github.com/example/agentic-os/pull/1000\n";
+        };
+        const result = await pushAndOpenPr({
+          db,
+          sessionId: dispatched.sessionId,
+          confirmDespiteVerifyFailure: false,
+          gh,
+        });
+
+        const argv = calls[0]?.argv ?? [];
+        const headIdx = argv.indexOf("--head");
+        const bodyIdx = argv.indexOf("--body");
+        const body = bodyIdx >= 0 ? argv[bodyIdx + 1] : "";
+        // Read the sha off the REMOTE, not out of our own rows — the point of this check is that
+        // the object really travelled, so the assertion must not go through anything push.ts said.
+        const remoteSha = remoteHasBranch(remoteDir, branchName)
+          ? execFileSync("git", ["ls-remote", "--heads", remoteDir, branchName], { encoding: "utf8" })
+              .trim()
+              .split(/\s+/)[0]
+          : null;
+        const localSha = execFileSync("git", ["rev-parse", branchName], { cwd: dir, encoding: "utf8" }).trim();
+
+        if (!result.ok) {
+          fail("AC-9e", `pushAndOpenPr refused a real dispatched session: ${JSON.stringify(result)}`);
+        } else if (remoteSha === null) {
+          fail("AC-9e", `the branch dispatch() created ('${branchName}') never reached the remote`);
+        } else if (remoteSha !== localSha) {
+          fail("AC-9e", `remote '${branchName}' is at ${remoteSha}, local at ${localSha} — the pushed ref is not this session's work`);
+        } else if (argv[headIdx + 1] !== branchName) {
+          fail("AC-9e", `gh --head is '${argv[headIdx + 1]}', not the branch dispatch created ('${branchName}')`);
+        } else if (!body.includes(dispatched.sessionId)) {
+          fail("AC-9e", `the PR body does not name the session that produced the work: ${JSON.stringify(body)}`);
+        } else {
+          pass(
+            "AC-9e",
+            `a real dispatch created '${branchName}', a real runner committed on it, teardown left it standing, and the click pushed exactly that ref (${remoteSha.slice(0, 8)}) to the bare remote with the session named in the body`,
+          );
+        }
+      }
+    }
+    db.close();
+  }
+
   // ── AC-11 · the product cannot merge ───────────────────────────────────────────────────────
   // Deliberately crude (spec §4): a source-level scan, not behaviour, because an invariant
   // enforced only by everyone remembering not to violate it is enforced by nobody (D41). Clean at
