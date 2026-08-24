@@ -716,6 +716,97 @@ async function runChecks() {
     db.close();
   }
 
+  // ── AC-2b · a branch is never deleted on a FAILED commit read ──────────────────────────────
+  // Ticket-level, added in review of #40. AC-2 proves the branch goes when a run genuinely
+  // committed nothing. This proves the opposite case is distinguished: `readWorktreeCommits`
+  // throws only when `git log` itself failed, and `worktree.ts` separates that from an empty
+  // result precisely because collapsing them discards commit evidence "in the one situation where
+  // it is hardest to notice." A transient git failure must not be read as "wrote nothing" and take
+  // the branch — and the real commits on it — with it.
+  //
+  // The failure is produced for real rather than stubbed: the runner commits (so the branch has
+  // genuine work on it, in the repo's object store and on the ref) and then destroys its own
+  // worktree directory, which is exactly what makes the subsequent `git log` in that cwd fail.
+  // ESM exports are read-only, so a monkey-patch is not available here anyway — and this is the
+  // more honest simulation.
+  {
+    const { dir } = makeFixtureRepo();
+    const db = openDb(tempDbPath("ac2b"));
+    const project = makeProject(db, dir);
+    const agent = makeAgent(db, project);
+    const task = makeTask(db, project, agent, { name: "unreadable commits" });
+
+    class CommitThenDestroyWorktreeRunner implements Runner {
+      async run(params: RunParams): Promise<RunOutcome> {
+        const sdkSessionId = randomUUID();
+        await params.onMessage(initMessage(sdkSessionId));
+        const id = ["-c", "user.email=t@t", "-c", "user.name=t"];
+        writeFileSync(join(params.cwd, "work-that-must-survive.md"), "# real work\n");
+        execFileSync("git", [...id, "add", "-A"], { cwd: params.cwd });
+        execFileSync("git", [...id, "commit", "-q", "-m", "work that must survive"], { cwd: params.cwd });
+        // The directory goes; the commit and the branch do not — they live in the main repo.
+        rmSync(params.cwd, { recursive: true, force: true });
+        await params.onMessage(resultMessage(sdkSessionId, 0.01));
+        return { sdkSessionId, costUsd: 0.01, resultSubtype: "success" };
+      }
+    }
+
+    const result = await dispatch(task.id, "manual", { db, runner: new CommitThenDestroyWorktreeRunner() });
+    if (!result.started) {
+      fail("AC-2b", `setup: dispatch refused: ${JSON.stringify(result)}`);
+    } else {
+      const session = await waitForSession(db, result.sessionId, (s) => s.endedAtISO !== null);
+      const branch = session.branchName ?? "";
+      const branches = branchLines(dir);
+      if (!branch) {
+        fail("AC-2b", "setup: the session recorded no branchName");
+      } else if (!branches.includes(branch)) {
+        fail(
+          "AC-2b",
+          `branch '${branch}' was deleted after a FAILED commit read — a git failure was mistaken for "wrote nothing", destroying the run's own evidence`,
+        );
+      } else {
+        const logged = execFileSync("git", ["log", branch, "--format=%s"], { cwd: dir, encoding: "utf8" });
+        logged.includes("work that must survive")
+          ? pass(
+              "AC-2b",
+              `a failed commit read kept branch '${branch}', and the commit it carries is still reachable — "the read failed" and "nothing was committed" stay distinct facts`,
+            )
+          : fail("AC-2b", `branch '${branch}' survived but its commit did not: ${JSON.stringify(logged)}`);
+      }
+    }
+    db.close();
+  }
+
+  // ── AC-3b · an option-like baseRef refuses instead of resolving to something else ───────────
+  // Ticket-level, added in review of #40. `baseRef` comes from a task field or `agentos.yml`, and
+  // a bare `git rev-parse <ref>` reads a leading '-' as an OPTION: `git rev-parse --git-dir`
+  // prints `.git` and exits 0, which passes a null check and hands `worktree add` a path where a
+  // sha belongs. Demonstrated by hand before the fix; asserted here so it stays fixed.
+  {
+    const { dir } = makeFixtureRepo();
+    const db = openDb(tempDbPath("ac3b"));
+    const project = makeProject(db, dir);
+    const agent = makeAgent(db, project);
+    const bad: string[] = ["--git-dir", "--all"];
+    const failures: string[] = [];
+
+    for (const ref of bad) {
+      const task = makeTask(db, project, agent, { name: `option ref ${ref}`, baseRef: ref });
+      const result = await dispatch(task.id, "manual", { db, runner: new CommittingRunner(["x"]) });
+      if (result.started) {
+        failures.push(`'${ref}' STARTED a session instead of refusing`);
+      } else if (result.refusedBy !== "baseRef") {
+        failures.push(`'${ref}' refused by '${result.refusedBy}', expected 'baseRef'`);
+      }
+    }
+
+    failures.length === 0
+      ? pass("AC-3b", `option-like baseRefs (${bad.join(", ")}) refuse at precondition 5 rather than resolving to a non-sha`)
+      : fail("AC-3b", failures.join("; "));
+    db.close();
+  }
+
   // ── AC-13 · migration 4 is additive over a db holding Stage 3 AND Stage 4 rows ─────────────
   {
     const dbPath = tempDbPath("ac13");

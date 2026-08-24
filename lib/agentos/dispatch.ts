@@ -171,8 +171,15 @@ export function driftAtSpawnFromReport(report: ProjectReport | undefined, fallba
  *
  * The same compatibility now lives at `createProject`, where an unconfigured project **stores**
  * `'HEAD'` as its `integrationBranch` instead of resolving to it silently. Same behaviour, but the
- * fallback becomes a row you can query (`SELECT slug FROM Project WHERE integrationBranch = 'HEAD'`
- * lists every project nobody has configured) rather than a branch of a pure function nobody reads.
+ * fallback becomes a row you can query rather than a branch of a pure function nobody reads.
+ *
+ * **What that query does and does not find, because the first version of this comment overclaimed
+ * it** (raised in review of #40): `SELECT slug FROM Project WHERE integrationBranch = 'HEAD'` lists
+ * projects created *after* this migration with nothing supplied — fixtures, and any future caller
+ * that forgets. It does **not** list projects that predate it: migration 4 backfilled those to
+ * `'develop'`, so they are indistinguishable by this column from a project that chose `develop`.
+ * The two populations are different and only the second is queryable; saying "every project nobody
+ * has configured" was exactly the kind of unfalsifiable claim this product exists to catch.
  * D38 says `HEAD` "stays available, as an explicit opt-in a project writes down"; written down is
  * exactly what a stored column is, and what a `??` chain is not.
  */
@@ -300,7 +307,22 @@ export async function dispatch(
       `project '${project.slug}' declares no base: task.baseRef, defaultBaseRef and integrationBranch are all unset (D38 — the base ref is declared, never inherited from the owner's checkout)`,
     );
   }
-  const resolvedHead = await run("git", ["rev-parse", baseRef], project.primaryRepoPath);
+  /**
+   * `--verify --end-of-options … ^{commit}`, not a bare `rev-parse <ref>`. Raised in review of #40.
+   *
+   * `baseRef` is user- and config-controlled (a task field, or `agentos.yml`), and a bare
+   * `rev-parse` treats a leading `-` as an option: `git rev-parse --git-dir` returns `.git` and
+   * exits 0, sailing straight past the `null` check below and handing `worktree add` a path where
+   * it expects a sha. `--end-of-options` forces the value to be read as a revision, `--verify`
+   * demands exactly one, and `^{commit}` refuses a ref that resolves to something that is not a
+   * commit — a tag object, say. An option-like ref now refuses at this precondition, which §3.1
+   * already calls the loud and correct outcome.
+   */
+  const resolvedHead = await run(
+    "git",
+    ["rev-parse", "--verify", "--end-of-options", `${baseRef}^{commit}`],
+    project.primaryRepoPath,
+  );
   if (resolvedHead === null) {
     return refuse(
       "baseRef",
@@ -467,10 +489,25 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
   // Not paused — a genuine completion or a genuine failure. Commits are read BEFORE teardown
   // in both cases (§3.2's trap: nothing survives `worktree remove` but what's already read).
   let commitShas: string[] = [];
+  /**
+   * **`null` means the read FAILED; `[]` means the run committed nothing. They are not the same
+   * fact and this stage must not collapse them.** Raised in review of #40.
+   *
+   * `readWorktreeCommits` throws only when `git log` itself failed — `worktree.ts` distinguishes
+   * that from an empty result on purpose, its own comment warning that collapsing the two would
+   * discard commit evidence "in the one situation where it is hardest to notice." T1 reintroduced
+   * exactly that collapse one level up: the catch left `commitShas` as `[]`, and §3.4's
+   * empty-run rule below then deleted the branch — so a transient git failure destroyed the ref
+   * AND the commits on it, which is the precise loss D37 exists to prevent.
+   */
+  let commitsUnread = false;
   try {
     commitShas = await readWorktreeCommits(worktree);
-  } catch {
-    // Best-effort: a failed read here must not block teardown from happening at all.
+  } catch (err) {
+    // Best-effort for teardown — which must still happen — but the failure is remembered, because
+    // the branch-delete decision below is only safe on a read that actually succeeded.
+    commitsUnread = true;
+    console.error(`session ${session.id}: could not read worktree commits; keeping its branch`, err);
   }
   if (commitShas.length) recordCommitShas(db, session.id, commitShas);
   const teardownError = await tearDownBestEffort(worktree, removeWt);
@@ -481,7 +518,7 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
   // that completed cleanly are equally "wrote nothing" if the list is empty, and the
   // `waiting-inbox` path above already returned before this line — that session is paused and
   // `resumeSession` will attach to exactly this branch, so it must never be deleted here.
-  if (commitShas.length === 0 && session.branchName) {
+  if (commitShas.length === 0 && !commitsUnread && session.branchName) {
     await deleteBranch(worktree, session.branchName);
   }
 

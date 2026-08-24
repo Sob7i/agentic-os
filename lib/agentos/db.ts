@@ -457,6 +457,10 @@ export interface CreateProjectInput {
    * greppable evidence; a column is. D38's own wording is "available, as an explicit opt-in a
    * project writes down."
    *
+   * **That query finds rows created after migration 4 and no others** (raised in review of #40):
+   * rows that predate it were backfilled to `'develop'` and are indistinguishable by this column
+   * from a project that genuinely chose `develop`. See `resolveBaseRef` in `dispatch.ts`.
+   *
    * A project onboarded through `initializeProject` (T2) always supplies a real value here — its
    * own default is `'develop'`, read from `agentos.yml`, which is why this shim never applies to
    * one.
