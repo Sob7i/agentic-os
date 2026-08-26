@@ -58,7 +58,34 @@ export const DEFAULT_DB_PATH = "data/agentos.sqlite";
  * independent of the `user_version` tracking below — belt and suspenders for "running it twice is
  * safe."
  */
-const MIGRATIONS: { version: number; sql: string }[] = [
+/**
+ * A migration is either a plain SQL string (migrations 1–3's shape: `CREATE TABLE IF NOT EXISTS`
+ * and `CREATE INDEX IF NOT EXISTS` are naturally safe to replay) or a `run` function, for a
+ * migration whose statements are NOT naturally idempotent — SQLite's `ALTER TABLE ADD COLUMN` has
+ * no `IF NOT EXISTS` form, unlike `CREATE TABLE`/`CREATE INDEX`. Migration 4 (Stage 4b T1) needs
+ * the second shape: `verify-stage4.mts`'s AC-0d builds its fixture by opening a database fully
+ * (which now migrates through 4), then *rewinding* `PRAGMA user_version` to 2 to simulate "a
+ * database that stopped mid-migration" — and SQLite's rewind moves the version number, not the
+ * physical schema, so a bare `ALTER TABLE ADD COLUMN` replayed from that state fails with
+ * `duplicate column name` on a column the first full open already added. `addColumnIfMissing`
+ * below is what "running it twice is safe" (this comment block's own words) actually requires for
+ * a column migration, not just a table one.
+ */
+type Migration = { version: number; sql: string } | { version: number; run: (db: DatabaseSync) => void };
+
+function columnExists(db: DatabaseSync, table: string, column: string): boolean {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return cols.some((c) => c.name === column);
+}
+
+/** `ALTER TABLE <table> ADD COLUMN <column> <type>`, skipped if the column is already there. */
+function addColumnIfMissing(db: DatabaseSync, table: string, column: string, sqlType: string): void {
+  if (!columnExists(db, table, column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${sqlType}`);
+  }
+}
+
+const MIGRATIONS: Migration[] = [
   {
     version: 1,
     sql: `
@@ -279,6 +306,47 @@ const MIGRATIONS: { version: number; sql: string }[] = [
         ON TaskTemplate(projectId, slug);
     `,
   },
+  {
+    // Stage 4b §3.1 / docs/specs/stage-4b-tickets.md T1. **The next migration is 4, not 3** — the
+    // spec's own §3.1 and AC-13 say "migration 3," and migration 3 already exists above (Stage 4's
+    // TaskTemplate de-dup, added in review of #38). Reading "migration 3" literally here would edit
+    // an applied migration, the one thing never to do. This is the only migration Stage 4b adds —
+    // every column every ticket in the stage needs, including the six only T2 and T4 will write
+    // (`prepareExitCode`, `prepareMs`, `verifyExitCode`, `verifyTail`, `pushedAtISO`, `prUrl`) — so
+    // T2 and T4 write to columns that already exist and never touch this migration once it lands.
+    //
+    // Every column is nullable with no DEFAULT clause, with one exception: the backfill below.
+    // D38 already decided the base-ref fallback chain (`task.baseRef ?? project.defaultBaseRef ??
+    // project.integrationBranch`, `dispatch.ts`'s `resolveBaseRef`) ENDS at `integrationBranch` —
+    // a `NULL` there gives the chain no terminus, so every existing row's tasks would refuse at
+    // precondition 5 the moment this migration lands. The backfill is *how an existing row
+    // acquires the terminus D38 specified*, not a new choice about what the terminus is; AC-13
+    // asserts this one column as `'develop'` and every other new column as `NULL`.
+    //
+    // `run`, not `sql` — see `addColumnIfMissing`'s own comment above (AC-0d's rewind-`user_version`
+    // fixture replays this migration against a schema that may already carry these columns).
+    version: 4,
+    run: (db: DatabaseSync) => {
+      addColumnIfMissing(db, "Project", "integrationBranch", "TEXT");
+      addColumnIfMissing(db, "Project", "defaultBaseRef", "TEXT");
+
+      addColumnIfMissing(db, "Task", "baseRef", "TEXT");
+
+      addColumnIfMissing(db, "Session", "branchName", "TEXT");
+      addColumnIfMissing(db, "Session", "prepareExitCode", "INTEGER");
+      addColumnIfMissing(db, "Session", "prepareMs", "INTEGER");
+      addColumnIfMissing(db, "Session", "verifyExitCode", "INTEGER");
+      addColumnIfMissing(db, "Session", "verifyTail", "TEXT");
+      addColumnIfMissing(db, "Session", "pushedAtISO", "TEXT");
+      addColumnIfMissing(db, "Session", "prUrl", "TEXT");
+
+      // D38's backfill, for rows that existed BEFORE this migration ran. A row created AFTER it
+      // (createProject, T2's initializeProject) is untouched by this UPDATE and gets its own
+      // value — or none — at the moment it is created. Naturally idempotent (an UPDATE ... WHERE
+      // IS NULL), so this runs unconditionally rather than needing its own existence check.
+      db.exec("UPDATE Project SET integrationBranch = 'develop' WHERE integrationBranch IS NULL");
+    },
+  },
 ];
 
 /** Applies every migration above `PRAGMA user_version` hasn't seen yet, in order, transactionally. */
@@ -290,7 +358,8 @@ function migrate(db: DatabaseSync): void {
     if (m.version <= current) continue;
     db.exec("BEGIN");
     try {
-      db.exec(m.sql);
+      if ("sql" in m) db.exec(m.sql);
+      else m.run(db);
       db.exec(`PRAGMA user_version = ${m.version}`);
       db.exec("COMMIT");
     } catch (err) {
@@ -375,6 +444,30 @@ export interface CreateProjectInput {
   yamlPath: string;
   defaultAgentId?: string | null;
   maxConcurrentSessions?: number;
+  /**
+   * D38/Stage 4b §3.1: the PR base that `dispatch`'s base-ref chain (`resolveBaseRef`) terminates
+   * at. **Omitting it stores the literal `'HEAD'`, and that is the compatibility shim for every
+   * caller written before this stage** — fixture projects across Stage 3/3b/3c/4, whose repos have
+   * no `develop` branch to resolve. Their behaviour is unchanged.
+   *
+   * It is stored rather than resolved to, and the difference is the point: `resolveBaseRef` keeps
+   * D38's three terms exactly, so a project that named a branch can never silently fall through to
+   * the owner's checkout, and a project nobody configured is a **row you can find** —
+   * `SELECT slug FROM Project WHERE integrationBranch = 'HEAD'`. A `??` in a pure function is not
+   * greppable evidence; a column is. D38's own wording is "available, as an explicit opt-in a
+   * project writes down."
+   *
+   * **That query finds rows created after migration 4 and no others** (raised in review of #40):
+   * rows that predate it were backfilled to `'develop'` and are indistinguishable by this column
+   * from a project that genuinely chose `develop`. See `resolveBaseRef` in `dispatch.ts`.
+   *
+   * A project onboarded through `initializeProject` (T2) always supplies a real value here — its
+   * own default is `'develop'`, read from `agentos.yml`, which is why this shim never applies to
+   * one.
+   */
+  integrationBranch?: string | null;
+  /** D38: nullable; null means "use the project's integrationBranch." Never defaulted here. */
+  defaultBaseRef?: string | null;
 }
 
 export function createProject(db: DatabaseSync, input: CreateProjectInput): ProjectRow {
@@ -385,11 +478,13 @@ export function createProject(db: DatabaseSync, input: CreateProjectInput): Proj
     yamlPath: input.yamlPath,
     defaultAgentId: input.defaultAgentId ?? null,
     maxConcurrentSessions: input.maxConcurrentSessions ?? 1,
+    integrationBranch: input.integrationBranch ?? "HEAD",
+    defaultBaseRef: input.defaultBaseRef ?? null,
     createdAt: nowISO(),
   };
   db.prepare(
-    `INSERT INTO Project (id, slug, primaryRepoPath, yamlPath, defaultAgentId, maxConcurrentSessions, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO Project (id, slug, primaryRepoPath, yamlPath, defaultAgentId, maxConcurrentSessions, integrationBranch, defaultBaseRef, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     row.id,
     row.slug,
@@ -397,6 +492,8 @@ export function createProject(db: DatabaseSync, input: CreateProjectInput): Proj
     row.yamlPath,
     row.defaultAgentId,
     row.maxConcurrentSessions,
+    row.integrationBranch,
+    row.defaultBaseRef,
     row.createdAt,
   );
   return row;
@@ -542,6 +639,12 @@ export interface CreateTaskInput {
    */
   chainId?: string | null;
   chainOrd?: number | null;
+  /**
+   * D38/Stage 4b §3.1: overrides both of the project's base-ref columns when `dispatch` resolves
+   * this task. Optional and defaults to `null` ("use the project's default") — every caller that
+   * predates this stage keeps compiling and behaving exactly as before.
+   */
+  baseRef?: string | null;
 }
 
 /** Every task starts in `todo` with no `blockedReason` — both are set by later transitions. */
@@ -558,11 +661,12 @@ export function createTask(db: DatabaseSync, input: CreateTaskInput): TaskRow {
     scheduleKind: input.scheduleKind ?? "manual",
     chainId: input.chainId ?? null,
     chainOrd: input.chainOrd ?? null,
+    baseRef: input.baseRef ?? null,
     createdAt: nowISO(),
   };
   db.prepare(
-    `INSERT INTO Task (id, projectId, name, description, status, blockedReason, approvalGate, assigneeAgentId, scheduleKind, chainId, chainOrd, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO Task (id, projectId, name, description, status, blockedReason, approvalGate, assigneeAgentId, scheduleKind, chainId, chainOrd, baseRef, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     row.id,
     row.projectId,
@@ -575,6 +679,7 @@ export function createTask(db: DatabaseSync, input: CreateTaskInput): TaskRow {
     row.scheduleKind,
     row.chainId,
     row.chainOrd,
+    row.baseRef,
     row.createdAt,
   );
   return row;
@@ -702,6 +807,15 @@ export interface CreateSessionInput {
   bootId: string;
   /** Parsed object in, JSON text out (§7.5) — never stored as an object. */
   driftAtSpawn: DriftAtSpawn;
+  /**
+   * D37/Stage 4b §3.2: the branch this session's worktree was created on. The branch is known at
+   * spawn — `dispatch` names it before calling `createWorktree` — so this is the one place it must
+   * be set explicitly rather than left to a later `updateSession` (docs/specs/stage-4b-tickets.md
+   * T1, inherited fact 12). Optional and defaults to `null` only so every caller written before
+   * this stage — every fixture across Stage 3/3b/3c/4's suites — keeps compiling and behaving
+   * exactly as before; `dispatch` itself always supplies a real value.
+   */
+  branchName?: string | null;
 }
 
 /**
@@ -727,10 +841,17 @@ export function createSession(db: DatabaseSync, input: CreateSessionInput): Sess
     startedAtISO: nowISO(),
     endedAtISO: null,
     failureReason: null,
+    branchName: input.branchName ?? null,
+    prepareExitCode: null,
+    prepareMs: null,
+    verifyExitCode: null,
+    verifyTail: null,
+    pushedAtISO: null,
+    prUrl: null,
   };
   db.prepare(
-    `INSERT INTO Session (id, taskId, agentId, sdkSessionId, status, triggerKind, worktreePath, baseRef, costUsd, pid, bootId, driftAtSpawnJson, startedAtISO, endedAtISO, failureReason)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO Session (id, taskId, agentId, sdkSessionId, status, triggerKind, worktreePath, baseRef, costUsd, pid, bootId, driftAtSpawnJson, startedAtISO, endedAtISO, failureReason, branchName, prepareExitCode, prepareMs, verifyExitCode, verifyTail, pushedAtISO, prUrl)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     row.id,
     row.taskId,
@@ -747,6 +868,13 @@ export function createSession(db: DatabaseSync, input: CreateSessionInput): Sess
     row.startedAtISO,
     row.endedAtISO,
     row.failureReason,
+    row.branchName,
+    row.prepareExitCode,
+    row.prepareMs,
+    row.verifyExitCode,
+    row.verifyTail,
+    row.pushedAtISO,
+    row.prUrl,
   );
   return row;
 }
@@ -788,6 +916,15 @@ export interface SessionPatch {
   costUsd?: number | null;
   endedAtISO?: string | null;
   failureReason?: string | null;
+  /** D39/§3.5 — T2 writes these two. */
+  prepareExitCode?: number | null;
+  prepareMs?: number | null;
+  /** D40/§3.6 — T2 writes these two. */
+  verifyExitCode?: number | null;
+  verifyTail?: string | null;
+  /** D41/§3.8 — T4 writes these two. */
+  pushedAtISO?: string | null;
+  prUrl?: string | null;
 }
 
 /** Partial update for the fields that change over a session's life. Never inserts a row. */

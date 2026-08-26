@@ -13,7 +13,7 @@
  * id something else already named (§7.1). There is no poller, no worker, no queue.
  */
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import type { CanUseTool, McpServerConfig, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -31,13 +31,17 @@ import {
   updateSession,
   writeTaskTransition,
 } from "./db";
-import type { AgentRow, DriftAtSpawn, ProjectRow, SessionRow, TriggerKind } from "./types";
+import type { AgentRow, DriftAtSpawn, ProjectRow, SessionRow, TaskRow, TriggerKind } from "./types";
 import {
   createWorktree,
+  deleteBranch,
   readWorktreeCommits,
   removeWorktree,
   type Worktree,
 } from "./worktree";
+import { sessionBranchName } from "./slug";
+import { parseAgentosYml, type CommandSpec, type ParsedConfig } from "./config";
+import { runCommand, lastLines, type CommandResult } from "./command";
 import { LocalRunner, composeOptions } from "./runner/local";
 import type { Runner } from "./runner/runner";
 import { createAgentosServer } from "./mcp/agentos-server";
@@ -53,8 +57,14 @@ import { run } from "../collectors/exec";
 // The funnel's own surface — §7.2
 // ---------------------------------------------------------------------------
 
-/** §7.3's five preconditions, named for `refusedBy` — the order they are checked in. */
-export type Precondition = "agentos.yml" | "dispatchable" | "concurrency" | "agent" | "baseRef";
+/**
+ * §7.3's five preconditions, named for `refusedBy` — the order they are checked in — plus one
+ * more Stage 4b adds: `"prepare"`, D39's own refusal. Not one of the numbered five (it runs after
+ * a worktree already exists, which none of the five do), but it is the same shape of outcome —
+ * `started: false`, a named reason, nothing left behind — so it shares the type rather than
+ * inventing a second one `refuse()` cannot return.
+ */
+export type Precondition = "agentos.yml" | "dispatchable" | "concurrency" | "agent" | "baseRef" | "prepare";
 
 export type DispatchResult =
   | { started: true; sessionId: string }
@@ -147,6 +157,107 @@ export function driftAtSpawnFromReport(report: ProjectReport | undefined, fallba
     check: "none",
     checkedAtISO: report.checkedAtISO,
   };
+}
+
+// ---------------------------------------------------------------------------
+// D38/Stage 4b §3.1 — the base ref is declared, never inherited from the owner's checkout
+// ---------------------------------------------------------------------------
+
+/**
+ * `task.baseRef ?? project.defaultBaseRef ?? project.integrationBranch` — spec §3.1,
+ * docs/specs/stage-4b-tickets.md T1. A pure function, exported so AC-3 asserts the resolution
+ * itself without spawning anything; `dispatch` below resolves it with `git rev-parse` at
+ * precondition 5, same as it always has.
+ *
+ * **Exactly three terms, and no `?? "HEAD"` at the end.** T1's first pass added a fourth so that
+ * every pre-existing fixture project — whose `createProject` call supplies none of the three —
+ * kept dispatching. The compatibility problem was real; solving it *here* was not, because it put
+ * D38's one forbidden default back as invisible code behaviour: with no task override and no yaml
+ * override the result was byte-identical to the hardcoded `HEAD` this stage exists to remove, and
+ * nothing would have failed if T2 forgot to set `integrationBranch` at all. That is precisely the
+ * shape §3.1 warns about — *"the decision would have shipped as a claim rather than a change."*
+ *
+ * The same compatibility now lives at `createProject`, where an unconfigured project **stores**
+ * `'HEAD'` as its `integrationBranch` instead of resolving to it silently. Same behaviour, but the
+ * fallback becomes a row you can query rather than a branch of a pure function nobody reads.
+ *
+ * **What that query does and does not find, because the first version of this comment overclaimed
+ * it** (raised in review of #40): `SELECT slug FROM Project WHERE integrationBranch = 'HEAD'` lists
+ * projects created *after* this migration with nothing supplied — fixtures, and any future caller
+ * that forgets. It does **not** list projects that predate it: migration 4 backfilled those to
+ * `'develop'`, so they are indistinguishable by this column from a project that chose `develop`.
+ * The two populations are different and only the second is queryable; saying "every project nobody
+ * has configured" was exactly the kind of unfalsifiable claim this product exists to catch.
+ * D38 says `HEAD` "stays available, as an explicit opt-in a project writes down"; written down is
+ * exactly what a stored column is, and what a `??` chain is not.
+ */
+export function resolveBaseRef(
+  task: Pick<TaskRow, "baseRef">,
+  project: Pick<ProjectRow, "defaultBaseRef" | "integrationBranch">,
+): string | null {
+  return task.baseRef ?? project.defaultBaseRef ?? project.integrationBranch;
+}
+
+// ---------------------------------------------------------------------------
+// D39/D40/Stage 4b §3.5 — prepare and verify are declared in agentos.yml, never inferred
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-reads and re-parses the project's `agentos.yml` for its `prepare:`/`verify:` commands.
+ * Neither is persisted to a `Project` column (§3.1's schema adds none for either) — the file is
+ * the only record, so both `dispatch()` and `resumeSession()` come back to it fresh on every
+ * turn, exactly as D39 requires for a resume: "on every turn that gets a worktree."
+ *
+ * Precondition 1 already confirmed the file exists before this is ever called; a read or parse
+ * failure here is therefore a file that changed on disk between then and now (or a read race),
+ * not the common case — but it must still refuse rather than throw, for the same reason every
+ * other precondition does.
+ */
+function loadDeliveryConfig(project: ProjectRow): { ok: true; config: ParsedConfig } | { ok: false; reason: string } {
+  let text: string;
+  try {
+    text = readFileSync(project.yamlPath, "utf8");
+  } catch (err) {
+    return { ok: false, reason: `could not read ${project.yamlPath}: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  const parsed = parseAgentosYml(text);
+  if (!parsed.ok) {
+    return { ok: false, reason: `agentos.yml is malformed: ${parsed.error}` };
+  }
+  return { ok: true, config: parsed };
+}
+
+/**
+ * Runs a declared `CommandSpec` and reports it in the shape `dispatch()` and `resumeSession()`
+ * both want: the last 40 lines of its combined stdout+stderr (§3.6's own number), alongside the
+ * raw `CommandResult` the caller needs to decide pass/fail/timeout.
+ */
+async function runDeclaredCommand(spec: CommandSpec, cwd: string) {
+  const result = await runCommand(spec.command, cwd, spec.timeoutMs);
+  const tail = lastLines(`${result.stdout}\n${result.stderr}`, 40);
+  return { result, tail };
+}
+
+/**
+ * How a declared command failed, in words a human can act on — raised in review of #41.
+ *
+ * `runCommand` reports three distinct failures and only one of them has an exit code: a non-zero
+ * exit, a timeout this module's own clock fired, and a spawn failure (most often the executable
+ * simply is not there — a `prepare:` naming `pnpm` on a machine without it). The first version
+ * interpolated `result.exitCode` unconditionally, so both of the latter two rendered as the
+ * literal **"exited null"** — the least actionable possible sentence for by far the most likely
+ * misconfiguration, and one that names neither the cause nor the fix.
+ */
+function commandFailureReason(spec: CommandSpec, result: CommandResult): string {
+  const argv = spec.command.join(" ");
+  if (result.timedOut) return `command '${argv}' timed out after ${spec.timeoutMs}ms`;
+  if (result.exitCode === null) {
+    // stderr carries Node's own spawn error here — `runCommand` puts it there precisely because a
+    // process that never started produced no output of its own.
+    const detail = result.stderr.trim().split("\n")[0] || "no error output";
+    return `command '${argv}' could not be run: ${detail}`;
+  }
+  return `command '${argv}' exited ${result.exitCode}`;
 }
 
 async function computeDriftAtSpawn(project: ProjectRow): Promise<DriftAtSpawn> {
@@ -247,16 +358,57 @@ export async function dispatch(
   }
 
   // ── Precondition 5 — the base ref resolves ────────────────────────────────────────────────
-  // Always the primary repo's current HEAD — the schema has no per-project or per-task branch
-  // column (§3.7), and "the primary repo" (§7.3) is the only ref a dispatch can mean without one.
-  const BASE_REF = "HEAD";
-  const resolvedHead = await run("git", ["rev-parse", BASE_REF], project.primaryRepoPath);
+  // D38: task → project.defaultBaseRef → project.integrationBranch (resolveBaseRef above),
+  // never the owner's checkout — "wherever the owner happens to be standing" is exactly the
+  // failure CLAUDE.md records from the other direction (four sub-agents starting a worktree from
+  // the wrong base). A ref that doesn't resolve refuses here, loudly, same as it always has.
+  const baseRef = resolveBaseRef(task, project);
+  /**
+   * All three terms unset. Only reachable for a `Project` row inserted outside `createProject`
+   * (which stores `'HEAD'` when nothing is supplied) and not seen by migration 4's backfill —
+   * so in practice, a hand-written row. It refuses rather than falling back, because the fallback
+   * that would go here is the hardcoded `HEAD` D38 removed: §3.1 is explicit that a project whose
+   * base does not resolve "refuses at `dispatch`'s existing precondition 5, which is loud and
+   * correct."
+   */
+  if (baseRef === null) {
+    return refuse(
+      "baseRef",
+      `project '${project.slug}' declares no base: task.baseRef, defaultBaseRef and integrationBranch are all unset (D38 — the base ref is declared, never inherited from the owner's checkout)`,
+    );
+  }
+  /**
+   * `--verify --end-of-options … ^{commit}`, not a bare `rev-parse <ref>`. Raised in review of #40.
+   *
+   * `baseRef` is user- and config-controlled (a task field, or `agentos.yml`), and a bare
+   * `rev-parse` treats a leading `-` as an option: `git rev-parse --git-dir` returns `.git` and
+   * exits 0, sailing straight past the `null` check below and handing `worktree add` a path where
+   * it expects a sha. `--end-of-options` forces the value to be read as a revision, `--verify`
+   * demands exactly one, and `^{commit}` refuses a ref that resolves to something that is not a
+   * commit — a tag object, say. An option-like ref now refuses at this precondition, which §3.1
+   * already calls the loud and correct outcome.
+   */
+  const resolvedHead = await run(
+    "git",
+    ["rev-parse", "--verify", "--end-of-options", `${baseRef}^{commit}`],
+    project.primaryRepoPath,
+  );
   if (resolvedHead === null) {
     return refuse(
       "baseRef",
-      `git rev-parse ${BASE_REF} failed in ${project.primaryRepoPath} — no base to branch the worktree from`,
+      `git rev-parse ${baseRef} failed in ${project.primaryRepoPath} — no base to branch the worktree from`,
     );
   }
+
+  // agentos.yml is re-read here, not earlier: precondition 1 only checked it EXISTS, and
+  // `prepare:`/`verify:` are never persisted (loadDeliveryConfig's own comment) — this is the one
+  // read this dispatch will do. Before the worktree, deliberately: a malformed file refuses with
+  // nothing yet created to clean up.
+  const configResult = loadDeliveryConfig(project);
+  if (!configResult.ok) {
+    return refuse("agentos.yml", configResult.reason);
+  }
+  const config = configResult.config;
 
   // ── All five pass — record the premise, mint the identity, materialize the workspace ─────
   const driftAtSpawn = await computeDriftAtSpawn(project);
@@ -265,7 +417,36 @@ export async function dispatch(
   // "The session id is the caller's identity to assign" (worktree.ts's own docstring on
   // createWorktree) — minted here so the worktree's directory name and the Session row's
   // primary key are the same value, readable end-to-end from a session id alone.
-  const wt = await createWorktree(project.primaryRepoPath, BASE_REF, sessionId);
+  // D37: the branch is created NOW, before the model is called, so every commit lands on a ref
+  // from the first one — never derived later from a recorded sha (§3.2).
+  const branchName = sessionBranchName(task.name, sessionId);
+  const wt = await createWorktree(project.primaryRepoPath, baseRef, sessionId, {
+    name: branchName,
+    mode: "create",
+  });
+
+  // ── D39/§3.5 — prepare the workspace before a Session row (and any cost) exists ────────────
+  // The branch was just created, above — a failure here must delete it too (AC-6's last clause),
+  // or every failed preparation strands an empty `agentos/*` ref, defeating AC-2 and §3.3's
+  // cleanup story in one move. No Session row is created on this path at all: `createSession`
+  // below is the FIRST write, so returning before it is what makes "no session, no cost" true
+  // without needing to undo anything on the Session table.
+  let prepareExitCode: number | null = null;
+  let prepareMs: number | null = null;
+  if (config.prepare) {
+    const { result } = await runDeclaredCommand(config.prepare, wt.path);
+    prepareExitCode = result.exitCode;
+    prepareMs = result.durationMs;
+    if (result.exitCode !== 0) {
+      await removeWorktree(wt);
+      await deleteBranch(wt, branchName);
+      return refuse(
+        "prepare",
+        `prepare ${commandFailureReason(config.prepare, result)} in the worktree — ` +
+          `refusing the dispatch before any cost is spent (D39)`,
+      );
+    }
+  }
 
   const session = createSession(db, {
     id: sessionId,
@@ -273,11 +454,20 @@ export async function dispatch(
     agentId: agent.id,
     triggerKind: trigger,
     worktreePath: wt.path,
-    baseRef: wt.baseRef, // the resolved sha, never "HEAD" verbatim — see worktree.ts's own trap note
+    baseRef: wt.baseRef, // the resolved sha, never the ref verbatim — see worktree.ts's own trap note
+    branchName,
     pid: process.pid,
     bootId,
     driftAtSpawn,
   });
+
+  // `createSession` always inserts NULL for these two (its own doc comment: no per-column writer
+  // needed) — this is the one `updateSession` call that turns "no prepare: key" and "prepare: ran
+  // and passed" into two different rows instead of the same NULL. Absent key → both stay null,
+  // never 0 — §3.5's own rule, and `config.prepare === null` here means exactly that.
+  if (config.prepare) {
+    updateSession(db, session.id, { prepareExitCode, prepareMs });
+  }
 
   writeTaskTransition(db, {
     taskId,
@@ -290,7 +480,17 @@ export async function dispatch(
   // §7.4: "the run then proceeds in the Next.js Node process" — started here, awaited by
   // nothing. The request returns at the line below; this promise settles on its own time.
   const prompt = `Task: ${task.name}\n\n${task.description}`;
-  void runSessionToCompletion({ db, runner, session, agent, taskId, worktree: wt, prompt, removeWt: deps.removeWorktree }).catch((err) => {
+  void runSessionToCompletion({
+    db,
+    runner,
+    session,
+    agent,
+    taskId,
+    worktree: wt,
+    prompt,
+    verify: config.verify,
+    removeWt: deps.removeWorktree,
+  }).catch((err) => {
     // A last-resort net: runSessionToCompletion already records failure state onto the Session
     // row itself. Reaching here means that bookkeeping threw too, which must not become an
     // unhandled rejection that crashes the process the run is supposed to survive.
@@ -312,6 +512,10 @@ interface RunSessionParams {
   taskId: string;
   worktree: Worktree;
   prompt: string;
+  /** D40/§3.6: the declared `verify:` command, or null if `agentos.yml` has none. Run by THIS
+   *  function, after the model settles and before teardown — never by the agent, never reported
+   *  by the session. */
+  verify: CommandSpec | null;
   /** Set only when resuming a paused session (§3.5) — the prior run's `sdkSessionId`. */
   resume?: string;
   /** Injected teardown (`DispatchDeps.removeWorktree`), defaulting to the real one. */
@@ -365,7 +569,7 @@ async function tearDownBestEffort(
 
 async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
   const removeWt = params.removeWt ?? removeWorktree;
-  const { db, runner, session, agent, taskId, worktree, prompt, resume } = params;
+  const { db, runner, session, agent, taskId, worktree, prompt, verify, resume } = params;
   const ctx: SessionCtx = { db, sessionId: session.id, taskId };
   const { mcpServers, canUseTool } = buildSessionSurface(ctx);
 
@@ -410,13 +614,52 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
   // Not paused — a genuine completion or a genuine failure. Commits are read BEFORE teardown
   // in both cases (§3.2's trap: nothing survives `worktree remove` but what's already read).
   let commitShas: string[] = [];
+  /**
+   * **`null` means the read FAILED; `[]` means the run committed nothing. They are not the same
+   * fact and this stage must not collapse them.** Raised in review of #40.
+   *
+   * `readWorktreeCommits` throws only when `git log` itself failed — `worktree.ts` distinguishes
+   * that from an empty result on purpose, its own comment warning that collapsing the two would
+   * discard commit evidence "in the one situation where it is hardest to notice." T1 reintroduced
+   * exactly that collapse one level up: the catch left `commitShas` as `[]`, and §3.4's
+   * empty-run rule below then deleted the branch — so a transient git failure destroyed the ref
+   * AND the commits on it, which is the precise loss D37 exists to prevent.
+   */
+  let commitsUnread = false;
   try {
     commitShas = await readWorktreeCommits(worktree);
-  } catch {
-    // Best-effort: a failed read here must not block teardown from happening at all.
+  } catch (err) {
+    // Best-effort for teardown — which must still happen — but the failure is remembered, because
+    // the branch-delete decision below is only safe on a read that actually succeeded.
+    commitsUnread = true;
+    console.error(`session ${session.id}: could not read worktree commits; keeping its branch`, err);
   }
   if (commitShas.length) recordCommitShas(db, session.id, commitShas);
+
+  // D40/§3.6: verification is run by THIS function, never reported by the session — measured
+  // while the worktree still exists, so it must happen before teardown, same ordering trap as
+  // commits above. Runs regardless of `runError`: a session that crashed may still have left the
+  // worktree in a state worth checking, and `Session.status` below is unaffected by the result
+  // either way (D40's own rule — neither fact is allowed to hide the other).
+  let verifyExitCode: number | null = null;
+  let verifyTail: string | null = null;
+  if (verify) {
+    const { result, tail } = await runDeclaredCommand(verify, worktree.path);
+    verifyExitCode = result.exitCode;
+    verifyTail = tail;
+  }
+
   const teardownError = await tearDownBestEffort(worktree, removeWt);
+
+  // §3.4: a run that committed nothing leaves nothing. Decided from the LIST ALREADY READ ABOVE
+  // — never a second `git log` after the worktree is gone (§3.4's ordering trap, §3.2's from a
+  // different direction). Runs regardless of `runError`: a session that failed and a session
+  // that completed cleanly are equally "wrote nothing" if the list is empty, and the
+  // `waiting-inbox` path above already returned before this line — that session is paused and
+  // `resumeSession` will attach to exactly this branch, so it must never be deleted here.
+  if (commitShas.length === 0 && !commitsUnread && session.branchName) {
+    await deleteBranch(worktree, session.branchName);
+  }
 
   // Both facts are recorded, and neither is allowed to hide the other: `status` reports what the
   // *run* did, and a teardown failure is appended to the reason rather than reclassifying a
@@ -433,6 +676,11 @@ async function runSessionToCompletion(params: RunSessionParams): Promise<void> {
     status: runError ? "failed" : "completed",
     endedAtISO: new Date().toISOString(),
     failureReason: reasons.length > 0 ? reasons.join("; ") : null,
+    // Absent `verify:` key → both stay null, never 0 (§3.5's rule, restated for this column by
+    // D40) — `verify === null` above means exactly that, and `verifyExitCode` is still `null` in
+    // that case, not overwritten with a claim nothing checked.
+    verifyExitCode,
+    verifyTail,
   });
 
   // §7.6: "doing -> todo, system, the session failed or was interrupted; reason recorded." Only
@@ -502,6 +750,17 @@ export async function resumeSession(
   const project = getProject(db, task.projectId);
   if (!project) throw new Error(`resumeSession: no Project ${task.projectId}`);
 
+  // D39/§1 item 3: "on every turn that gets a worktree, which includes an inbox resume" — read
+  // before any worktree churn below, so a malformed `agentos.yml` refuses fast. Thrown, like every
+  // other setup check above it in this function; `dispatch()`'s sibling refusal returns a
+  // `DispatchResult` because it HAS one to return, but `resumeSession` has no such type and never
+  // has — every precondition-shaped failure here is already a throw.
+  const configResult = loadDeliveryConfig(project);
+  if (!configResult.ok) {
+    throw new Error(`resumeSession: ${configResult.reason}`);
+  }
+  const config = configResult.config;
+
   // A paused session normally has no worktree — §3.5 removes it when the turn ends. It can still
   // have one if that teardown FAILED, in which case `worktreePath` was deliberately kept as the
   // only pointer to the directory left behind (see `tearDownBestEffort`). Creating the new
@@ -526,7 +785,86 @@ export async function resumeSession(
   // A fresh worktree from the SAME base ref (§3.5) — the conversation resumes, the filesystem
   // does not. Uncommitted work from the paused turn is gone; the inbox tool's own description is
   // what told the agent to commit first.
-  const wt = await createWorktree(project.primaryRepoPath, session.baseRef, sessionId);
+  //
+  // D37/§3.2's second half: this ATTACHES to the branch the first dispatch already created — it
+  // must never pass `mode: 'create'` here, which would fail outright (the branch already exists)
+  // or, if `createWorktree` were changed to tolerate that by recreating it, would silently
+  // discard whatever the paused turn committed before asking. `session.branchName` is null only
+  // for a session this migration cannot see (created before Stage 4b, when a worktree still used
+  // `--detach`) — such a session has no branch to attach to, so it is thrown rather than guessed.
+  if (session.branchName === null) {
+    throw new Error(
+      `resumeSession: session ${sessionId} has no branchName — it was dispatched before Stage 4b ` +
+        `and cannot be resumed onto a branch`,
+    );
+  }
+  const wt = await createWorktree(project.primaryRepoPath, session.baseRef, sessionId, {
+    name: session.branchName,
+    mode: "attach",
+  });
+
+  // D39/§1 item 3 — "the same gate," on the fresh worktree, before the model is reached. It
+  // cannot mean the SAME side effects `dispatch()`'s AC-6 asserts: this session already exists
+  // (deleting the row would erase the paused turn's own history) and this branch already holds
+  // real commits from before the pause (deleting it would be exactly the silent discard §3.2
+  // warns `mode: 'attach'` exists to prevent). So a failure here is recorded as this turn's own
+  // outcome — `status: 'failed'`, the reason naming the command — the same shape a genuine
+  // `runSessionToCompletion` failure already produces, and `runSessionToCompletion` (which is
+  // what WOULD reach the model) is never called. Returning rather than throwing matches
+  // `dispatch()`'s own refusal posture for this same gate: a declared, expected outcome, not a
+  // caller bug.
+  if (config.prepare) {
+    const { result } = await runDeclaredCommand(config.prepare, wt.path);
+    if (result.exitCode !== 0) {
+      await tearDownBestEffort(wt, deps.removeWorktree ?? removeWorktree);
+      updateSession(db, sessionId, {
+        status: "failed",
+        worktreePath: null,
+        endedAtISO: new Date().toISOString(),
+        failureReason:
+          `prepare ${commandFailureReason(config.prepare, result)} on resume — refused before ` +
+          `the model was reached (D39); the branch and its earlier commit are untouched`,
+        prepareExitCode: result.exitCode,
+        prepareMs: result.durationMs,
+      });
+
+      /**
+       * **The card and the chain have to move too, and the first version of this path moved
+       * neither.** Raised in review of T2. Marking only the `Session` row left the task sitting in
+       * `doing` — where §3.5 parks it for the whole pause — with no live session behind it, and a
+       * chain step neither advanced nor halted. A card claiming work is in progress when nothing
+       * is running is the exact stale claim this product exists to catch, and finding it inside
+       * our own execution layer is worse than finding it in a watched repo.
+       *
+       * This is the same `doing -> todo` + `haltChain` pair `runSessionToCompletion` performs for
+       * a genuine run failure, and it is deliberately a copy of that shape rather than a variation
+       * on it: a resume whose preparation failed *is* a failed turn, and it must leave the same
+       * evidence as one. The `status === 'doing'` guard and the halt nested inside it are load-
+       * bearing for the reason review of #38 recorded there — a human may have moved the card
+       * already, and halting a chain on behalf of a session that no longer owns its step is worse
+       * than not halting at all.
+       */
+      const currentTask = getTask(db, task.id);
+      if (currentTask && currentTask.status === "doing") {
+        const why =
+          `session ${sessionId} failed on resume: prepare command ` +
+          `'${config.prepare.command.join(" ")}' did not succeed`;
+        writeTaskTransition(db, {
+          taskId: task.id,
+          toStatus: "todo",
+          actorType: "system",
+          actorId: null,
+          reason: why,
+        });
+        if (currentTask.chainId) {
+          haltChain(db, currentTask.chainId, task.id, `${why} (step ${currentTask.chainOrd ?? "?"})`);
+        }
+      }
+      return;
+    }
+    updateSession(db, sessionId, { prepareExitCode: result.exitCode, prepareMs: result.durationMs });
+  }
+
   updateSession(db, sessionId, { status: "running", worktreePath: wt.path });
 
   const resumed: SessionRow = { ...session, status: "running", worktreePath: wt.path };
@@ -539,6 +877,7 @@ export async function resumeSession(
     taskId: task.id,
     worktree: wt,
     prompt: answer,
+    verify: config.verify,
     resume: session.sdkSessionId ?? undefined,
   }).catch((err) => {
     console.error(`resumeSession: session ${sessionId}'s own completion handling failed`, err);

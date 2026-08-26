@@ -41,10 +41,26 @@ export interface Worktree {
   readonly baseRef: string;
 }
 
+/** D37/§3.2: whether this worktree's ref is freshly minted from the base, or an existing one the
+ *  worktree checks out as-is. `name` is a full branch name (e.g. `agentos/fix-widget-a1b2c3d4`),
+ *  never a bare slug. */
+export interface WorktreeBranch {
+  name: string;
+  mode: "create" | "attach";
+}
+
 /**
- * Create a detached worktree for one session, at `<tmpdir>/agentos/<sessionId>`. A distinct
- * `sessionId` is what guarantees a second run gets a different path (AC-2) — this function does
- * not generate one itself, since the session id is the caller's identity to assign.
+ * Create a worktree for one session, at `<tmpdir>/agentos/<sessionId>`. A distinct `sessionId` is
+ * what guarantees a second run gets a different path (AC-2) — this function does not generate one
+ * itself, since the session id is the caller's identity to assign.
+ *
+ * `branch` is an **optional trailing parameter** (docs/specs/stage-4b-tickets.md T1, inherited
+ * fact 3) — absent means today's `git worktree add --detach`, unchanged, so the two production
+ * callers that predate D37 and every fixture across Stage 3/3b/3c/4's suites keep compiling and
+ * passing with no edit anywhere else. When present: `mode: 'create'` runs `worktree add -b <name>
+ * <path> <sha>` (a first dispatch, minting the branch this session commits to); `mode: 'attach'`
+ * runs `worktree add <path> <name>` (an inbox resume, checking out the branch a paused turn
+ * already committed to — never re-creating it, which would silently discard those commits).
  *
  * Fails loudly: a missing repo or an unresolvable `baseRef` must not hand back a path that isn't
  * really a worktree.
@@ -53,6 +69,7 @@ export async function createWorktree(
   repoPath: string,
   baseRef: string,
   sessionId: string,
+  branch?: WorktreeBranch,
 ): Promise<Worktree> {
   const path = join(agentosRoot(), sessionId);
   mkdirSync(dirname(path), { recursive: true });
@@ -66,6 +83,11 @@ export async function createWorktree(
    * session that committed would silently record no commits. A branch name has the
    * same flaw the moment the branch moves. Spec §7.3's fifth precondition already
    * requires `git rev-parse <baseRef>` to succeed; this pins the answer.
+   *
+   * This still runs in `attach` mode, where `baseRef` is the session's own stored value from its
+   * first dispatch (already a resolved sha) — resolving a sha resolves to itself, so `Worktree`'s
+   * `baseRef` stays pinned to the ORIGINAL base across a resume, which is what lets
+   * `readWorktreeCommits`' `<baseSha>..HEAD` range keep including the paused turn's commit.
    */
   const resolved = await run("git", ["rev-parse", baseRef], repoPath);
   if (resolved === null) {
@@ -73,13 +95,38 @@ export async function createWorktree(
   }
   const baseSha = resolved.trim();
 
-  const out = await run("git", ["worktree", "add", "--detach", path, baseSha], repoPath);
+  const args =
+    branch === undefined
+      ? ["worktree", "add", "--detach", path, baseSha]
+      : branch.mode === "create"
+        ? ["worktree", "add", "-b", branch.name, path, baseSha]
+        : ["worktree", "add", path, branch.name];
+
+  const out = await run("git", args, repoPath);
   if (out === null) {
     throw new Error(
-      `git worktree add failed: repo=${repoPath} baseRef=${baseRef} (${baseSha}) path=${path}`,
+      `git worktree add failed: repo=${repoPath} baseRef=${baseRef} (${baseSha}) path=${path}` +
+        (branch ? ` branch=${branch.name} (${branch.mode})` : ""),
     );
   }
   return { path, repoPath, baseRef: baseSha };
+}
+
+/**
+ * D37/§3.4: delete the branch a session's worktree was created on. Called only when the run
+ * committed nothing — a ref pointing at its own base is noise, and noise is what makes
+ * `git branch --list 'agentos/*'` useless as a cleanup story (§3.3). Best-effort: a failure here
+ * must not crash the completion handling that already recorded the session's terminal state: it
+ * leaves one extra empty branch behind rather than losing that record, and is logged so it is not
+ * silent.
+ */
+export async function deleteBranch(wt: Worktree, name: string): Promise<void> {
+  const out = await run("git", ["branch", "-D", name], wt.repoPath);
+  if (out === null) {
+    console.error(
+      `deleteBranch: 'git branch -D ${name}' failed in ${wt.repoPath} — an empty-run branch may be left behind`,
+    );
+  }
 }
 
 /**
@@ -141,6 +188,10 @@ export async function removeWorktree(wt: Worktree): Promise<void> {
  *
  * `onCommits` fires before teardown on both paths — that ordering is the whole contract, since
  * after removal there is nothing left to read.
+ *
+ * `branch` is the same optional passthrough `createWorktree` gained for D37 — added at the end so
+ * every existing caller (only `scripts/verify-stage3.mts` has one; no production caller exists)
+ * keeps compiling unchanged.
  */
 export async function withWorktree<T>(
   repoPath: string,
@@ -148,8 +199,9 @@ export async function withWorktree<T>(
   sessionId: string,
   fn: (worktreePath: string) => Promise<T>,
   onCommits?: (shas: string[]) => void | Promise<void>,
+  branch?: WorktreeBranch,
 ): Promise<{ result: T; commitShas: string[] }> {
-  const wt = await createWorktree(repoPath, baseRef, sessionId);
+  const wt = await createWorktree(repoPath, baseRef, sessionId, branch);
 
   // Best-effort on the failure path: a run that already threw must not be masked
   // by a second error raised while trying to record what it left behind.

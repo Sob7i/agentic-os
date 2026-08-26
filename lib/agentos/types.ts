@@ -50,6 +50,17 @@ export interface ProjectRow {
   /** Null until an `Agent` exists to point at. */
   defaultAgentId: string | null;
   maxConcurrentSessions: number;
+  /**
+   * D38/Stage 4b §3.1: the PR base — from `agentos.yml`, default `'develop'` once a project is
+   * initialized through it (T2). Migration 4 backfills existing rows to `'develop'` rather than
+   * leaving them `NULL`, since D38's base-ref fallback chain ends here and a `NULL` terminus would
+   * refuse every dispatch. A row this migration cannot see (created after it, by a caller that
+   * still supplies nothing) is the one case this column stays genuinely unset for.
+   */
+  integrationBranch: string | null;
+  /** D38: defaults to `integrationBranch` when unset — never to `HEAD`. Nullable; `null` means
+   *  "use the project's `integrationBranch`," not "use `HEAD`." */
+  defaultBaseRef: string | null;
   createdAt: string;
 }
 
@@ -90,6 +101,9 @@ export interface TaskRow {
    */
   chainId: string | null;
   chainOrd: number | null;
+  /** D38/Stage 4b §3.1: overrides both of the project's base-ref columns when set. Nullable — a
+   *  hand-made task has none, and the resolution chain falls through to the project's own default. */
+  baseRef: string | null;
   createdAt: string;
 }
 
@@ -209,6 +223,27 @@ export interface SessionRow {
   startedAtISO: string;
   endedAtISO: string | null;
   failureReason: string | null;
+  /**
+   * D37/Stage 4b §3.2: `agentos/<slug>-<first 8 of sessionId>`, set at spawn (`createSession`'s
+   * caller always supplies it — see `CreateSessionInput`'s own comment). Null only for a session
+   * row this migration cannot see: one created before Stage 4b, when a worktree still used
+   * `--detach`.
+   */
+  branchName: string | null;
+  /** D39/§3.5: the `prepare:` command's exit code. Never `0` unless it actually ran and passed —
+   *  `null` means "no `prepare:` key in `agentos.yml`," a fact distinct from a clean pass. */
+  prepareExitCode: number | null;
+  /** D39: how long `prepare:` took to run, in milliseconds. Null alongside `prepareExitCode`. */
+  prepareMs: number | null;
+  /** D40/§3.6: the `verify:` command's exit code, recorded by the runner — never by anything the
+   *  session said. `null` means "no `verify:` key," never "passed." */
+  verifyExitCode: number | null;
+  /** D40: the last 40 lines of `verify:`'s combined output. Null alongside `verifyExitCode`. */
+  verifyTail: string | null;
+  /** D41/§3.8: when the one push-and-open-PR click fired. Null until it does. */
+  pushedAtISO: string | null;
+  /** D41: the opened PR's URL, stored by the same click that set `pushedAtISO`. */
+  prUrl: string | null;
 }
 
 export interface ToolCallRow {
