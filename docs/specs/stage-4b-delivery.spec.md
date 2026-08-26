@@ -128,9 +128,22 @@ Session  gains  branchName            -- 'agentos/<slug>-<short>'; null only pre
                 pushedAtISO, prUrl
 ```
 
-Every added column is **nullable with no default**, and migration 3 is additive for the same reason
-Stage 4's migration 2 is: `data/agentos.sqlite` on the owner's machine already holds real rows
+Every added column is **nullable with no default** — with one stated exception below — and the
+stage's migration is additive for the same reason Stage 4's migration 2 is: `data/agentos.sqlite` on the owner's machine already holds real rows
 (`stage-4-tickets.md`, inherited fact 3). **Never edit an applied migration.**
+
+> **The number is 4, not 3, and one column is not null.** Corrected in review of #39. This section
+> and AC-13 both said *migration 3*; Stage 4 added a migration 3 of its own in review of #38, so
+> following that literally either edits an applied migration or silently no-ops, since `migrate()`
+> skips any version at or below `PRAGMA user_version`. **Reproduce the next free number with
+> `grep -n '    version: ' lib/agentos/db.ts` rather than trusting any number written here.**
+>
+> The exception to *nullable with no default*: the migration **backfills existing `Project` rows
+> with `integrationBranch = 'develop'`.** D38's fallback chain ends at `integrationBranch`, so a
+> `NULL` there leaves the chain with no terminus and every pre-existing task refusing at
+> precondition 5 the moment the stage lands. The backfill is how an existing row acquires the
+> terminus D38 specified — not a new choice about what that terminus is. AC-13 asserts every other
+> new column `NULL` and this one `'develop'`.
 
 **`defaultBaseRef` falls back to `integrationBranch`, not to `HEAD`, and that correction is the
 whole of D38.** The first draft of this spec defaulted it to `HEAD` while D38's own title said *"never
@@ -358,8 +371,10 @@ push is genuinely exercised without touching a network host.
   enforced only by nobody remembering to violate it is enforced by nobody.
 - **AC-12 — the control names what it does.** The label contains the branch name and the base
   branch. Asserted on the rendered string from a pure function.
-- **AC-13 — the migration is additive.** Migration 3 against a database holding Stage 3 and Stage 4
-  rows leaves every existing row byte-identical, with new columns `NULL`; migrating twice is a no-op.
+- **AC-13 — the migration is additive.** The stage's migration (number **4** — see §3.1's box)
+  against a database holding Stage 3 and Stage 4 rows leaves every existing row byte-identical, with
+  new columns `NULL` **except `Project.integrationBranch`, backfilled to `'develop'`**; migrating
+  twice is a no-op.
 - **AC-14 — a resume attaches, and keeps what the paused turn committed.** Script a `FakeRunner` to
   commit and then pause via `inbox_ask`; answer it; the resumed turn's worktree is on **the same
   branch**, `git worktree add` did not fail, and the first turn's commit is still reachable from it.
@@ -382,8 +397,11 @@ lands**, not the day someone notices.
 
 ## §5 — Decisions
 
-**D37–D41, written into `docs/DECISIONS.md` by T1 before any code.** Summarised here; the records
-are the contract.
+**D37–D41 are already in `docs/DECISIONS.md`** — they landed with this spec in #33, not with a
+ticket. Summarised here; **the records are the contract, and a ticket reads them rather than
+writing them.** This paragraph used to say *"written into `docs/DECISIONS.md` by T1 before any
+code"*, which would have had T1 create a second copy of five closed decisions — the second source
+of truth invariant 5 forbids. Corrected in review of #39.
 
 1. **D37 — a session commits to a named branch, created at spawn.** Not derived at teardown, not
    invented at push. §3.2.
@@ -405,15 +423,18 @@ are the contract.
 
 ## §6 — Build notes
 
-Four tickets, stacked, in this order. **The ticket file does not exist yet** —
-`docs/specs/stage-4b-tickets.md` is written before T1 starts and is not part of this spec's PR, so
-do not follow that link expecting to find it. The sketch below is the input to writing it, not a
-substitute for it. (The first draft linked it as though it existed; raised in review of #33.)
+Four tickets, stacked, in this order. **The ticket file now exists** —
+[`stage-4b-tickets.md`](stage-4b-tickets.md), written 2026-08-22 before T1 started and in its own PR,
+not this spec's. The sketch below was the input to writing it and is **not** a substitute for it:
+the ticket file carries twelve measured inherited facts, and at least one of them corrects this
+spec — **the next migration number is 4, not the "migration 3" §3.1 and AC-13 name**, because
+Stage 4 added a migration 3 in review of #38. Read the tickets, not this list. (The first draft
+linked the file as though it existed before it did; raised in review of #33.)
 
-1. **T1 — D37/D38, migration 3, and the branch.** `worktree.ts` (the branch parameter and its
+1. **T1 — D37/D38, the migration (number 4, §3.1), and the branch.** `worktree.ts` (the branch parameter and its
    create/attach flag, and the empty-branch delete), `dispatch.ts` (base ref resolution: task →
    project `defaultBaseRef` → `integrationBranch`) **and `resumeSession`, which attaches**, `db.ts`
-   migration 3, the task form's optional `baseRef` field, the suite. Closes AC-1, AC-2, AC-3, AC-4,
+   the migration, the task form's optional `baseRef` field, the suite. Closes AC-1, AC-2, AC-3, AC-4,
    AC-13, AC-14, AC-15.
 2. **T2 — prepare and verify.** `lib/agentos/command.ts` (the new runner — exit code, stdout,
    stderr, caller-supplied timeout), `config.ts` (**all four keys**, including the `main` refusal),
