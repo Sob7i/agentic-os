@@ -9,6 +9,7 @@ import s from "@/components/shell/shell.module.css";
 import { loadSessionDetail, openInboxCount } from "@/lib/tasks/data";
 import { sessionViewModel } from "@/lib/tasks/session-model";
 import { SessionView } from "@/components/tasks/SessionView";
+import { pushAndOpenPrAction } from "@/app/p/[slug]/[tab]/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,7 @@ export default async function SessionDetailPage({
           inboxOpenCount={openInboxCount(nav.project.path)}
         />
         <main className={s.pane}>
-          <SessionView model={model} />
+          <SessionView model={model} slug={slug} pushAction={pushAndOpenPrAction} />
         </main>
       </div>
     </>

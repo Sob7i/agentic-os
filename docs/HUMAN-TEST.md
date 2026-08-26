@@ -237,17 +237,26 @@ strange.
    something or someone asks for a specific task to run. That is a deliberate choice: a program that
    finds work and starts it on its own is exactly the failure this product exists to catch.
 
-2. **Five checks run first, in order, and stop at the first failure.** Does this project have an
-   execution layer? Is the task actually runnable? Is the project under its concurrency limit? Does
-   the assigned agent exist? Does the starting commit exist? **A refusal tells you which one
-   stopped it**, and writes nothing at all — no half-started session.
+2. **Five checks run first, in order, and stop at the first failure — then a sixth runs once the
+   workspace exists.** Does this project have an execution layer? Is the task actually runnable? Is
+   the project under its concurrency limit? Does the assigned agent exist? Does the starting commit
+   exist? **A refusal tells you which one stopped it**, and writes nothing at all — no half-started
+   session. **Stage 4b adds one more, after those five:** if the project declares a `prepare:`
+   command (installing dependencies, say), it runs in the fresh workspace *before* the model is ever
+   called, and a non-zero exit refuses the run the same way — no session, no cost, and even the
+   branch the workspace was about to commit to is removed rather than left empty.
 
 3. **A refusal is over.** Nothing is queued, nothing retries. A queue would be a hidden list of
    things that are *about to happen*, which is a second source of truth about the future — the exact
    thing this product exists to prevent.
 
-4. **The agent works in a disposable copy of your repo.** A fresh checkout per run, deleted
-   afterwards. Two runs never share a workspace, so one run can't leave a mess the next one inherits.
+4. **The agent works in a disposable copy of your repo — on a real branch, not a nameless copy.**
+   A fresh checkout per run, on a branch named after the task (`agentos/<task>-<id>`), deleted
+   afterwards. Two runs never share a workspace, so one run can't leave a mess the next one
+   inherits. **What "deleted" no longer means, since Stage 4b:** the *workspace* — the directory the
+   agent worked in — is gone; the *branch* survives as long as the run committed something, exactly
+   the way any other local branch would. A run that commits nothing deletes its own empty branch
+   too, so `git branch --list 'agentos/*'` only ever shows branches with real work on them.
 
 5. **Every session records the premise it started on.** At the moment a run starts, the app snapshots
    what the Board thought of that project — including "everything was in sync". Later you can ask
@@ -279,6 +288,14 @@ An agent can ask you a question. When it does:
 **The consequence, stated plainly: the conversation resumes, the files do not.** Anything the agent
 hadn't committed before asking is gone. The agent is explicitly told to commit before asking.
 
+**What changed with Stage 4b: what it HAD committed before asking now survives too.** The fresh
+workspace resume gets is not a fresh branch — it's the same one the first part of the run was
+already committing to, checked out again. So a question asked after two real commits resumes onto
+a workspace that still has both of them, even though the directory itself was deleted and rebuilt
+in between. Before Stage 4b those earlier commits lived nowhere but a detached checkout that was
+about to be thrown away with the rest of the workspace; now they are on a ref, exactly like
+anything else in the repo.
+
 **Why not just leave it waiting?** Because "waiting" would mean a live process held open, possibly
 overnight. It wouldn't survive restarting the app, and a laptop going to sleep would be
 indistinguishable from a hung agent. The pause is written to disk instead, so it survives anything.
@@ -308,6 +325,21 @@ it made, and any questions it asked.
 
 **The commits are read from git, never from our own records.** If the app says a run produced a
 commit, that commit exists — it was read out of the repository, not remembered by us.
+
+**Since Stage 4b, a finished session with real commits carries one more thing: a button.** It reads
+*"Push `agentos/<branch>` & open PR → <base>"* — never "Ship", because a push and an opened PR is
+exactly what the one click does and nothing more. It's one click: it pushes the branch, opens a PR
+against the project's integration branch (`develop` unless the project says otherwise), and writes
+the session's own evidence — cost, drift at spawn, every commit, whether verification passed — into
+the PR body, so the reviewer never has to click back here to see it. If the project declared a
+`verify:` command and it did not pass, the button is replaced by a checkbox you have to tick first —
+naming the failing check — before the same click will push anyway. **It never appears on a session
+that's still running**, only on one that has settled with a branch and at least one commit, and once
+it has been clicked the button becomes the PR's own link.
+
+> ✅ **Try it:** finish a run that made at least one commit, open its session page, and read the
+> button's own label before clicking anything — it should name the exact branch and the exact base,
+> not a euphemism for either.
 
 ---
 
@@ -422,6 +454,14 @@ Being straight about this is more useful than a demo.
    look healthy", and that project stopped being committed to. The check is right; the example rotted.
    Fixing it means changing a written acceptance criterion, so it stays visibly failing rather than
    being quietly edited.
+
+7. **No branch this product created has ever actually been pushed.** Push-and-open-PR (Part 6) is
+   built and proven against a real bare git repo in a temp directory, standing in for GitHub — every
+   check that matters (the remote gains the branch, the PR body carries the session's own evidence,
+   a failed verification refuses the click) is proven that way. What has never happened: **one real
+   branch, pushed, with a real PR opened on GitHub, reviewed by a human, and merged by the owner.**
+   Same shape as items 1 and 3 above — this is Stage 4b's own version of "the parts fit together, not
+   that they've been used for real."
 
 ---
 

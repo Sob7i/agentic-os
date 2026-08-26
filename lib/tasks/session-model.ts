@@ -1,5 +1,6 @@
-import type { AgentRow, DriftAtSpawn, SessionRow, TaskRow, ToolCallRow } from "@/lib/agentos/types";
+import type { AgentRow, DriftAtSpawn, ProjectRow, SessionRow, TaskRow, ToolCallRow } from "@/lib/agentos/types";
 import { parseJsonColumn } from "@/lib/agentos/db";
+import { prBaseOrNull, pushControlLabel, verifyStatusText } from "@/lib/agentos/delivery-render";
 import { shortSessionId, shortSha } from "./model";
 
 /**
@@ -39,12 +40,35 @@ export interface SessionViewModel {
   /** §7.5: a snapshot, rendered in the past tense — this is what was true when the session spawned,
    *  never re-read as current state. */
   driftAtSpawn: DriftAtSpawn;
+  /** D37/Stage 4b §3.2: null only for a session that predates Stage 4b (worktree.ts's own
+   *  `--detach` era) — never for one dispatched after migration 4. */
+  branchName: string | null;
+  /** D40/§3.6: null means "no `verify:` key," never "passed." A non-null, non-zero value — real
+   *  exit code or `dispatch.ts`'s `VERIFY_DID_NOT_COMPLETE` sentinel alike — is what makes the
+   *  push control in §3.8 render its confirm step. */
+  verifyExitCode: number | null;
+  /** D41/§3.8: set together, by the same click. `prUrl !== null` means the gesture already ran. */
+  pushedAtISO: string | null;
+  prUrl: string | null;
+  /** §3.8: settled + a branch + at least one commit — the three preconditions the push control's
+   *  own visibility is gated on (mirrors `pushAndOpenPr`'s own checks in `lib/agentos/push.ts`,
+   *  restated here since this module has no `db` to call it with). */
+  canPush: boolean;
+  /** T3's own label (`pushControlLabel`), pre-rendered here since it is pure and this is already
+   *  the one module that turns raw rows into everything the page needs to print. Null when
+   *  `canPush` is false — there is nothing to label. */
+  pushLabel: string | null;
+  /** `verifyStatusText`'s rendering of this session's verify result — one mapping, one place (D36). */
+  verifyNote: string;
 }
 
 export interface SessionViewInput {
   session: SessionRow;
   task: TaskRow;
   agent: AgentRow;
+  /** D38/Stage 4b §3.1: `integrationBranch` is the PR base the push label names — needed here
+   *  only for that string, never for anything this view writes. */
+  project: Pick<ProjectRow, "integrationBranch">;
   toolCalls: ToolCallRow[];
   commitShas: string[];
   nowMs?: number;
@@ -59,6 +83,13 @@ export function sessionViewModel(input: SessionViewInput): SessionViewModel {
     0,
     Math.round((endMs - new Date(session.startedAtISO).getTime()) / 60_000),
   );
+
+  // §3.8: settled (not live) + a branch + at least one commit. Mirrors `pushAndOpenPr`'s own
+  // preconditions in `lib/agentos/push.ts` — restated, not imported: that module pulls in `db`
+  // and `node:child_process` transitively, which this leaf-ish view model must never reach
+  // (`verify:stage3c` AC-1, inherited fact 7).
+  const canPush = !live && session.branchName !== null && input.commitShas.length > 0;
+
   return {
     id: session.id,
     shortId: shortSessionId(session.id),
@@ -80,6 +111,29 @@ export function sessionViewModel(input: SessionViewInput): SessionViewModel {
       .map((tc) => ({ seq: tc.seq, name: tc.name, input: parseJsonColumn<unknown>(tc.inputJson) })),
     failureReason: session.failureReason,
     driftAtSpawn: parseJsonColumn<DriftAtSpawn>(session.driftAtSpawnJson),
+    branchName: session.branchName,
+    verifyExitCode: session.verifyExitCode,
+    pushedAtISO: session.pushedAtISO,
+    prUrl: session.prUrl,
+    /**
+     * **No integration branch means no control, not a control that guesses.** Raised in review of
+     * #43. This defaulted the label's base to `"develop"` when `Project.integrationBranch` was
+     * null, so the button read *"& open PR → develop"* while `pushAndOpenPr` would refuse the same
+     * click with `no-integration-branch`. A control that states an outcome the server will decline
+     * is the product asserting something it has not checked — invariant 2, on the one surface that
+     * spends money and publishes outside the machine.
+     *
+     * `canPush` carries the same condition, so the control is not rendered at all rather than
+     * rendered and then refused.
+     */
+    canPush: canPush && prBaseOrNull(input.project.integrationBranch) !== null,
+    pushLabel: (() => {
+      const base = prBaseOrNull(input.project.integrationBranch);
+      return canPush && session.branchName && base ? pushControlLabel(session.branchName, base) : null;
+    })(),
+    /** Pre-rendered server-side so the client component never re-derives what a code means
+     *  (D36) — `verifyStatusText` is the one place that mapping lives. */
+    verifyNote: verifyStatusText(session.verifyExitCode),
   };
 }
 

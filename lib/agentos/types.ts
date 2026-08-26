@@ -236,7 +236,11 @@ export interface SessionRow {
   /** D39: how long `prepare:` took to run, in milliseconds. Null alongside `prepareExitCode`. */
   prepareMs: number | null;
   /** D40/§3.6: the `verify:` command's exit code, recorded by the runner — never by anything the
-   *  session said. `null` means "no `verify:` key," never "passed." */
+   *  session said. `null` means "no `verify:` key," never "passed." A configured `verify:` that
+   *  never produced a clean exit (killed by its own timeout, or the executable could not be
+   *  spawned) is recorded as `dispatch.ts`'s `VERIFY_DID_NOT_COMPLETE` sentinel (`-1`, never a
+   *  real process exit code), not as `null` — collapsing the two would let a check that never ran
+   *  clean read as "nothing configured" (T4 finding 2, docs/specs/stage-4b-tickets.md). */
   verifyExitCode: number | null;
   /** D40: the last 40 lines of `verify:`'s combined output. Null alongside `verifyExitCode`. */
   verifyTail: string | null;

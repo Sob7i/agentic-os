@@ -4,10 +4,10 @@
 > anything, to answer "does it already do X?" Write to it after building, in the same PR as the
 > code. Planned behaviour lives in `docs/PRD.md`; it does not belong here until it runs.
 
-**Status as of 2026-08-18: Stages 1, 2 and 3a run** — the reconciliation Board, and gated fix
-proposals that write into a watched repo only on an explicit per-proposal click. Every row below
-was verified by running it, not by reading the code. The `Verify` column is the command or action
-that was actually executed.
+**Status as of 2026-08-24: Stages 1, 2, 3, 3a, 3b, 3c, 4 and 4b all run** — the reconciliation
+Board and gated fix proposals (portfolio layer), and the execution layer's full loop through a
+pushed branch and an opened PR (Stage 4b). Every row below was verified by running it, not by
+reading the code. The `Verify` column is the command or action that was actually executed.
 
 **Run it:** `pnpm install && pnpm dev` → the Board. `pnpm verify` runs **every** acceptance suite
 and no longer stops at the first red one — it did until 2026-08-18, which meant Stage 1's known
@@ -360,6 +360,63 @@ the seeded template for real, once, in a project whose six named agents actually
 looking at the nine resulting cards — eight of them blocked. Nobody has seen whether that reads as
 "one plan" or as "eight stalled tasks." `docs/specs/stage-4-tickets.md`'s own closing section has
 the argument in full.
+
+### The delivery path (Stage 4b — spec: `docs/specs/stage-4b-delivery.spec.md`, D37–D41)
+
+The four things between a session's commit and a human's *"checked out the PR, reviewed, merged"*:
+a **branch**, a **prepared workspace**, a **verified result**, and a **pull request** — plus the
+declared base ref that makes one task stack on another's branch. Everything below is verified by
+`pnpm verify:stage4b` against a fixture repo and, for push, a real `git init --bare` remote in a
+temp dir; the model is never called.
+
+| Behaviour | Expected outcome | Verify | Since |
+|---|---|---|---|
+| Puts every session's work on a branch | `git branch --list 'agentos/*'` names it, and it survives teardown | **AC-1** | Stage 4b |
+| Leaves no branch for a session that wrote nothing | A run with zero commits deletes its own ref | AC-2 | Stage 4b |
+| Branches from a declared base, not the owner's checkout | A task naming `origin/develop` (or any ref) branches there, whatever branch the owner's own checkout sits on | **AC-3** | Stage 4b |
+| Lets one task stack on another's branch | A second task's `baseRef` names the first task's branch and its worktree contains that branch's commit | AC-4 | Stage 4b |
+| Prepares the workspace before spending anything | `prepare:` runs in the worktree, before the model is ever called | **AC-5** | Stage 4b |
+| Refuses the run when preparation fails | Non-zero exit → `started: false` naming the command and its exit code; no `Session` row, no stale worktree, and the branch D37 created is deleted too | **AC-6** | Stage 4b |
+| Runs the project's own verification after the agent, and never lets the agent report it | Exit code and the last 40 lines of output are recorded on the session by the runner's own child process — a session that announces success while `verify:` exits non-zero is still recorded as failing it | **AC-7** | Stage 4b |
+| Tells the session what it needs to know | The prompt is preceded by a composed block naming the branch, the resolved base sha, the worktree path, and the duty to commit before stopping | AC-8 | Stage 4b |
+| Pushes and opens a PR on one click | `git push -u origin <branch>` then `gh pr create --base <integrationBranch> --head <branch>` with a generated title and an evidence body, then `pushedAtISO`/`prUrl` stored on the session | **AC-9** | Stage 4b |
+| Puts the evidence in the PR body | Session id, cost, `driftAtSpawn` (all five fields), every commit sha, and the verify exit code | AC-10 | Stage 4b |
+| Refuses to push a session that failed verification | Refused naming the failing exit code, unless a human confirms in the same click — and the remote and the session row are both left untouched by the refusal | AC-9 | Stage 4b |
+| Never merges | `gh pr merge` and `git merge` appear in no shipped file under `lib/` or `app/` — a source-level guard, deliberately crude | **AC-11** | Stage 4b |
+| Says a push is a push | The control reads *"Push `agentos/…` & open PR → develop"*, never "Ship" | AC-12 | Stage 4b |
+| A resume attaches to the session's own branch, never a new one | The paused turn's commit is still reachable from the resumed worktree; `resumeSession` never passes the create flag | **AC-14** | Stage 4b |
+
+**One correction, T4's own finding, review of this ticket:** `command.ts`'s `CommandResult.exitCode`
+is `null` for two different reasons — no `verify:` key at all, *or* a configured `verify:` that
+never produced a clean exit (its own timeout fired, or the executable could not be spawned).
+`dispatch.ts` used to write that `null` straight through, which collided with the column's other
+meaning and would have let a `verify:` that hung sail through the push gate exactly like a project
+with none configured. Fixed at the source: a configured `verify:` that does not exit cleanly is
+recorded as `dispatch.ts`'s `VERIFY_DID_NOT_COMPLETE` sentinel (`-1`, never a real process exit
+code), so `null` means "unconfigured" and only that.
+
+**Two facts, not one, on the push side.** `pushedAtISO` and `prUrl` are recorded separately: a
+`gh pr create` that fails after a successful push (a crash, a rate limit) leaves the branch pushed
+and the PR still open to retry — the retry skips `git push` (already done) and attempts only
+`gh pr create` again, rather than refusing forever as "already pushed."
+
+**Where the control lives:** the session card of a **settled** session (not running, not
+waiting-inbox) that has a branch and at least one commit — `/p/<slug>/sessions/<id>`. A session
+with an open PR already shows the link instead of the button; a session with none of the three
+preconditions shows nothing, the same "say nothing when there is nothing to say" rule the rest of
+this page already follows.
+
+**Reused unchanged:** the `Runner` fixture, `resolveOwnedTask`'s hostile-ownership pattern, and
+`InstantiateForm.tsx`'s "server action arrives as a prop, `import type` only" shape for the new
+client control (`components/tasks/PushControl.tsx`) — required here because `verify:stage3c`'s
+AC-1 walks every `"use client"` file's value-import graph and does not special-case
+`"use server"`.
+
+**The owner gate this stage lands with, and does not close: AC-17.** *One real branch, pushed, with
+a real PR opened, reviewed by a human, and merged by the owner.* Every check above runs against a
+bare repo in a temp dir. `docs/HANDOFF.md`'s *Verified state* block carries whether that has
+happened yet — it joins Stage 2's *one real drift corrected* and Stage 3b's *no human has run the
+cycle by hand* as an owner gate no fixture can close.
 
 ### The Overview
 
