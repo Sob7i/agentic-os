@@ -100,3 +100,30 @@ export function lastLines(text: string, n: number): string {
   const lines = trimmed.split("\n");
   return lines.slice(-n).join("\n");
 }
+
+/**
+ * How a command failed, in words a human can act on — one function, every caller.
+ *
+ * `runCommand` reports three distinct failures and only one carries an exit code: a non-zero exit,
+ * a timeout, and a spawn failure (most often the executable is simply not there). Interpolating
+ * `exitCode` unconditionally renders the latter two as the literal **"exited null"** — the least
+ * actionable sentence available, for the likeliest misconfiguration there is.
+ *
+ * This lived as a private helper in `dispatch.ts` until review of #43 found `push.ts`'s `gh`
+ * invoker had grown its own copy of the same bug — a `gh` that cannot spawn reported
+ * `exited null` too. Two renderings of one fact that must agree are a second source of truth
+ * wearing a justification (D36), so the fix is this function, here, next to the type it explains.
+ */
+export function describeCommandFailure(argv: string[], result: CommandResult, timeoutMs?: number): string {
+  const cmd = argv.join(" ");
+  if (result.timedOut) {
+    return `command '${cmd}' timed out${timeoutMs === undefined ? "" : ` after ${timeoutMs}ms`}`;
+  }
+  if (result.exitCode === null) {
+    // stderr carries Node's own spawn error — `runCommand` puts it there precisely because a
+    // process that never started produced no output of its own.
+    const detail = result.stderr.trim().split("\n")[0] || "no error output";
+    return `command '${cmd}' could not be run: ${detail}`;
+  }
+  return `command '${cmd}' exited ${result.exitCode}`;
+}

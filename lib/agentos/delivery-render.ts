@@ -80,6 +80,66 @@ export function composePreamble(input: PreambleInput): string {
 }
 
 // ---------------------------------------------------------------------------
+// §3.6 — what a session's verification result says to a human
+// ---------------------------------------------------------------------------
+
+/**
+ * `Session.verifyExitCode` when a **configured** `verify:` did not produce an exit code at all —
+ * it timed out, or could not be spawned. Never a real process exit code (those are 0–255), so it
+ * stays distinguishable both from every genuine code and from `null`, which means only "no
+ * `verify:` key was configured" (D40).
+ *
+ * **It lives here, in the leaf, and not in `dispatch.ts` where T4 first put it** — raised in
+ * review of #43. The value is written by `dispatch.ts` and read by `push.ts`, the PR body and the
+ * push control, and the last of those is a client component that cannot reach `dispatch.ts`
+ * without dragging `node:*` and `lib/agentos/db` into the browser bundle (`verify:stage3c` AC-1).
+ * A sentinel whose meaning only its writer knows is how it reached three human-facing surfaces as
+ * the bare string "exited -1".
+ */
+export const VERIFY_DID_NOT_COMPLETE = -1;
+
+/**
+ * The branch a PR may actually be opened against, or `null` when there isn't one.
+ *
+ * Two values mean "nobody has configured a base here" and **both must suppress the control**,
+ * which is wider than the finding that prompted this. Raised in review of #43, which named the
+ * `null` case; writing the check found the second and worse one:
+ *
+ * - `null` — a `Project` row from before this stage's migration, or one written outside
+ *   `createProject`.
+ * - **`'HEAD'`** — the compatibility default `createProject` stores when a caller supplies
+ *   nothing (see its own doc comment). `gh pr create --base HEAD` is not a base; it is the string
+ *   "HEAD" sent to GitHub as a branch name.
+ *
+ * The original defaulted a null base to the literal `"develop"`, so the button promised a PR
+ * against a branch nobody had chosen — and the `'HEAD'` case sailed past that check entirely and
+ * promised one against `HEAD`. A control that states an outcome the server will decline is the
+ * product asserting what it has not checked (invariant 2), on the single surface that publishes
+ * outside the machine.
+ */
+export function prBaseOrNull(integrationBranch: string | null): string | null {
+  if (integrationBranch === null) return null;
+  const trimmed = integrationBranch.trim();
+  if (trimmed === "" || trimmed === "HEAD") return null;
+  return trimmed;
+}
+
+/**
+ * The one rendering of a session's verify result, for every audience — D36's rule, which this
+ * stage has now had to apply three times.
+ *
+ * Three states, three different sentences, and the distinction is the whole point: **`null` is not
+ * `0` and neither is the sentinel.** "No check was configured" must never read as a pass, and "the
+ * check never finished" must never read as an exit code the reader could look up.
+ */
+export function verifyStatusText(verifyExitCode: number | null): string {
+  if (verifyExitCode === null) return "not configured";
+  if (verifyExitCode === VERIFY_DID_NOT_COMPLETE) return "did not complete (timed out, or could not be run)";
+  if (verifyExitCode === 0) return "passed (exited 0)";
+  return `failed (exited ${verifyExitCode})`;
+}
+
+// ---------------------------------------------------------------------------
 // §3.8 — the PR body and the push control's label
 // ---------------------------------------------------------------------------
 
@@ -111,7 +171,7 @@ export interface PrBodyInput {
  */
 export function composePrBody(input: PrBodyInput): string {
   const cost = input.costUsd === null ? "cost unknown" : `$${input.costUsd.toFixed(2)}`;
-  const verify = input.verifyExitCode === null ? "not configured" : `exited ${input.verifyExitCode}`;
+  const verify = verifyStatusText(input.verifyExitCode);
   const shas =
     input.commitShas.length > 0
       ? input.commitShas.map((sha) => `- \`${sha}\``).join("\n")

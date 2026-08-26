@@ -65,7 +65,15 @@ import {
 import { dispatch, resolveBaseRef, resumeSession } from "../lib/agentos/dispatch";
 import { slugify, sessionBranchName } from "../lib/agentos/slug";
 import { parseAgentosYml } from "../lib/agentos/config";
-import { composePreamble, composePrBody, pushControlLabel } from "../lib/agentos/delivery-render";
+import {
+  composePreamble,
+  composePrBody,
+  pushControlLabel,
+  verifyStatusText,
+  VERIFY_DID_NOT_COMPLETE,
+} from "../lib/agentos/delivery-render";
+import { describeCommandFailure } from "../lib/agentos/command";
+import { sessionViewModel } from "../lib/tasks/session-model";
 import { pushAndOpenPr, type GhInvoker } from "../lib/agentos/push";
 import { initializeProject } from "../app/p/[slug]/[tab]/actions";
 import { createInboxAskTool } from "../lib/agentos/mcp/inbox-server";
@@ -2005,6 +2013,129 @@ async function runChecks() {
         }
       }
     }
+    db.close();
+  }
+
+  // ── AC-10b · no sentinel and no null ever reaches a human as a number ──────────────────────
+  // Ticket-level, added in review of #43, which found the SAME defect on three surfaces: the PR
+  // body, the push control's confirm copy, and (by the same route) anything else that read the
+  // column. `VERIFY_DID_NOT_COMPLETE` is -1 so no real exit code can collide with it — and -1 is
+  // meaningless to the person reading it, who sees "exited -1" and cannot look it up anywhere.
+  // One renderer now owns the mapping (`verifyStatusText`, D36); this asserts every state through
+  // it AND through the two surfaces, so a future caller that re-derives the mapping fails here.
+  {
+    const bad: string[] = [];
+
+    // The three states must be three different sentences, and none may read as a number.
+    if (/(^|\s)-1(\s|$)/.test(verifyStatusText(VERIFY_DID_NOT_COMPLETE))) {
+      bad.push(`the sentinel renders its own numeric value: ${verifyStatusText(VERIFY_DID_NOT_COMPLETE)}`);
+    }
+    if (/exited/.test(verifyStatusText(null))) {
+      bad.push('an unconfigured verify says "exited": ' + verifyStatusText(null));
+    }
+    if (verifyStatusText(null) === verifyStatusText(0)) {
+      bad.push("'not configured' and 'passed' render identically — a missing check would read as green");
+    }
+    if (verifyStatusText(VERIFY_DID_NOT_COMPLETE) === verifyStatusText(1)) {
+      bad.push("'did not complete' and a real failure render identically");
+    }
+
+    // And through the PR body, the surface where the evidence leaves the machine.
+    const body = composePrBody({
+      sessionId: "s-1",
+      costUsd: 1,
+      driftAtSpawn: AC9_DRIFT,
+      commitShas: ["a".repeat(40)],
+      verifyExitCode: VERIFY_DID_NOT_COMPLETE,
+    });
+    if (/exited -1/.test(body)) bad.push(`the PR body renders the sentinel as "exited -1"`);
+    if (!body.includes(verifyStatusText(VERIFY_DID_NOT_COMPLETE))) {
+      bad.push("the PR body does not use verifyStatusText's rendering");
+    }
+
+    bad.length === 0
+      ? pass(
+          "AC-10b",
+          `verify results render as words on every surface — null="${verifyStatusText(null)}", sentinel="${verifyStatusText(VERIFY_DID_NOT_COMPLETE)}", 0="${verifyStatusText(0)}", 1="${verifyStatusText(1)}" — and the PR body carries the sentinel's sentence, never "exited -1"`,
+        )
+      : fail("AC-10b", bad.join("; "));
+  }
+
+  // ── AC-12b · a command that never ran never reports an exit code it does not have ───────────
+  // Ticket-level, review of #43: `push.ts`'s own `gh` invoker had grown a second copy of the
+  // "exited null" defect T2 fixed in `dispatch.ts` — and a missing `gh` is far likelier than a
+  // `gh` that runs and fails. One shared describer now serves both.
+  {
+    const bad: string[] = [];
+    const spawnFail = { exitCode: null, stdout: "", stderr: "spawn gh ENOENT", timedOut: false, durationMs: 3 };
+    const timedOut = { exitCode: null, stdout: "", stderr: "", timedOut: true, durationMs: 900 };
+
+    const a = describeCommandFailure(["gh", "pr", "create"], spawnFail);
+    const b = describeCommandFailure(["pnpm", "install"], timedOut, 600000);
+    if (/null/.test(a)) bad.push(`a spawn failure still says "null": ${a}`);
+    if (!/could not be run/.test(a) || !/ENOENT/.test(a)) bad.push(`a spawn failure does not name the cause: ${a}`);
+    if (/null/.test(b)) bad.push(`a timeout still says "null": ${b}`);
+    if (!/timed out after 600000ms/.test(b)) bad.push(`a timeout does not name its limit: ${b}`);
+
+    bad.length === 0
+      ? pass("AC-12b", `a command that could not be spawned and one that timed out each say which happened, and neither renders "null" — "${a}" / "${b}"`)
+      : fail("AC-12b", bad.join("; "));
+  }
+
+  // ── AC-12c · no push control is offered when the PR base is unknown ────────────────────────
+  // Ticket-level, review of #43. The label defaulted its base to "develop" when
+  // Project.integrationBranch was null, so the button promised "→ develop" while pushAndOpenPr
+  // refused the same click with `no-integration-branch`. A control that states an outcome the
+  // server will decline is the product asserting what it has not checked.
+  {
+    const { dir } = makeFixtureRepo();
+    const db = openDb(tempDbPath("ac12c"));
+    const agent = makeAgent(db, makeProject(db, dir, { integrationBranch: "develop" }));
+
+    const withBase = makeProject(db, dir, { integrationBranch: "develop" });
+    const noBase = makeProject(db, dir, { integrationBranch: null });
+    const bad: string[] = [];
+
+    const headBase = makeProject(db, dir, {});  // supplies nothing → createProject stores 'HEAD'
+
+    for (const [label, project] of [
+      ["configured", withBase],
+      ["unconfigured", noBase],
+      ["head-shim", headBase],
+    ] as const) {
+      const task = makeTask(db, project, agent, { name: `label ${label}` });
+      const session = makeSettledSession(db, task, agent, {
+        branchName: "agentos/label-check-11223344",
+        baseRefSha: execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim(),
+        commitShas: ["b".repeat(40)],
+        verifyExitCode: 0,
+      });
+      const model = sessionViewModel({ session, task, agent, project, toolCalls: [], commitShas: ["b".repeat(40)] });
+      if (label === "configured" && (!model.canPush || !model.pushLabel?.includes("develop"))) {
+        bad.push(`a configured project offers no usable control: canPush=${model.canPush} label=${model.pushLabel}`);
+      }
+      if (label !== "configured" && (model.canPush || model.pushLabel !== null)) {
+        bad.push(`a ${label} project still offers a control: canPush=${model.canPush} label=${model.pushLabel}`);
+      }
+      // And the server must refuse what the UI declines to offer — the same predicate on both
+      // sides, so a hand-crafted POST cannot reach `gh pr create --base HEAD`.
+      if (label !== "configured") {
+        const refused = await pushAndOpenPr({
+          db,
+          sessionId: session.id,
+          confirmDespiteVerifyFailure: false,
+          gh: async () => {
+            bad.push(`a ${label} project reached 'gh pr create' — the server did not refuse`);
+            return "";
+          },
+        });
+        if (refused.ok) bad.push(`a ${label} project pushed successfully instead of refusing`);
+      }
+    }
+
+    bad.length === 0
+      ? pass("AC-12c", "a project with no integrationBranch offers no push control and no label; a configured one offers both")
+      : fail("AC-12c", bad.join("; "));
     db.close();
   }
 

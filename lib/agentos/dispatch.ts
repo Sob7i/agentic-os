@@ -41,8 +41,13 @@ import {
 } from "./worktree";
 import { sessionBranchName } from "./slug";
 import { parseAgentosYml, type CommandSpec, type ParsedConfig } from "./config";
-import { runCommand, lastLines, type CommandResult } from "./command";
-import { composePreamble } from "./delivery-render";
+import { runCommand, lastLines, describeCommandFailure } from "./command";
+import { composePreamble, VERIFY_DID_NOT_COMPLETE } from "./delivery-render";
+
+/** Re-exported from the leaf that owns it (`delivery-render.ts`) so existing importers of
+ *  this symbol from `dispatch` keep working; the definition moved in review of #43 so the
+ *  push control could read it without pulling `node:*` into the client bundle. */
+export { VERIFY_DID_NOT_COMPLETE };
 import { LocalRunner, composeOptions } from "./runner/local";
 import type { Runner } from "./runner/runner";
 import { createAgentosServer } from "./mcp/agentos-server";
@@ -239,46 +244,7 @@ async function runDeclaredCommand(spec: CommandSpec, cwd: string) {
   return { result, tail };
 }
 
-/**
- * How a declared command failed, in words a human can act on — raised in review of #41.
- *
- * `runCommand` reports three distinct failures and only one of them has an exit code: a non-zero
- * exit, a timeout this module's own clock fired, and a spawn failure (most often the executable
- * simply is not there — a `prepare:` naming `pnpm` on a machine without it). The first version
- * interpolated `result.exitCode` unconditionally, so both of the latter two rendered as the
- * literal **"exited null"** — the least actionable possible sentence for by far the most likely
- * misconfiguration, and one that names neither the cause nor the fix.
- */
-function commandFailureReason(spec: CommandSpec, result: CommandResult): string {
-  const argv = spec.command.join(" ");
-  if (result.timedOut) return `command '${argv}' timed out after ${spec.timeoutMs}ms`;
-  if (result.exitCode === null) {
-    // stderr carries Node's own spawn error here — `runCommand` puts it there precisely because a
-    // process that never started produced no output of its own.
-    const detail = result.stderr.trim().split("\n")[0] || "no error output";
-    return `command '${argv}' could not be run: ${detail}`;
-  }
-  return `command '${argv}' exited ${result.exitCode}`;
-}
 
-/**
- * **T4 finding 2** (docs/specs/stage-4b-tickets.md). `command.ts`'s `CommandResult.exitCode` is
- * documented as `null` for two DIFFERENT reasons: the process never produced one — this module's
- * own timeout fired, or the executable could not be spawned at all. Writing that `null` straight
- * onto `Session.verifyExitCode` collides with that column's OTHER, pre-existing meaning of `null`
- * — "no `verify:` key was configured" (`SessionRow.verifyExitCode`'s own doc comment, D40) — so a
- * `verify:` that was declared and then timed out or failed to spawn read identically to a project
- * with no `verify:` at all. `lib/agentos/push.ts`'s push gate refuses only on a non-zero,
- * non-null `verifyExitCode`; under the old behaviour a timed-out check would have sailed through
- * it exactly like "nothing configured" — a delivery path publishing unverified work, silently.
- *
- * Never a real process exit code (those are always 0–255, and `runCommand` never invents one), so
- * this is distinguishable from every genuine exit code as well as from `null`. Applies to
- * `verify:` only — `prepare:`'s own `exitCode` already refuses the dispatch outright on anything
- * but a clean `0` (§3.5), timeout and spawn-failure included, so there is no adjacent column for
- * `prepare:` to collide with.
- */
-export const VERIFY_DID_NOT_COMPLETE = -1;
 
 async function computeDriftAtSpawn(project: ProjectRow): Promise<DriftAtSpawn> {
   const board = await boardOnce();
@@ -462,7 +428,7 @@ export async function dispatch(
       await deleteBranch(wt, branchName);
       return refuse(
         "prepare",
-        `prepare ${commandFailureReason(config.prepare, result)} in the worktree — ` +
+        `prepare ${describeCommandFailure(config.prepare.command, result, config.prepare.timeoutMs)} in the worktree — ` +
           `refusing the dispatch before any cost is spent (D39)`,
       );
     }
@@ -855,7 +821,7 @@ export async function resumeSession(
         worktreePath: null,
         endedAtISO: new Date().toISOString(),
         failureReason:
-          `prepare ${commandFailureReason(config.prepare, result)} on resume — refused before ` +
+          `prepare ${describeCommandFailure(config.prepare.command, result, config.prepare.timeoutMs)} on resume — refused before ` +
           `the model was reached (D39); the branch and its earlier commit are untouched`,
         prepareExitCode: result.exitCode,
         prepareMs: result.durationMs,

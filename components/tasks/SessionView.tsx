@@ -81,7 +81,7 @@ export function SessionView({
             sessionId={model.id}
             label={model.pushLabel}
             verifyFailed={model.verifyExitCode !== null && model.verifyExitCode !== 0}
-            verifyExitCode={model.verifyExitCode}
+            verifyNote={model.verifyNote}
             action={pushAction}
           />
         )

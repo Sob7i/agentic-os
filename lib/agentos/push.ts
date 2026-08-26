@@ -17,9 +17,9 @@
 import type { DatabaseSync } from "node:sqlite";
 import { getProject, getSession, getTask, listCommitShas, parseJsonColumn, updateSession } from "./db";
 import type { DriftAtSpawn } from "./types";
-import { composePrBody } from "./delivery-render";
+import { prBaseOrNull, composePrBody } from "./delivery-render";
 import { run } from "../collectors/exec";
-import { runCommand } from "./command";
+import { runCommand, describeCommandFailure } from "./command";
 
 // ---------------------------------------------------------------------------
 // The `gh` seam
@@ -45,10 +45,17 @@ export type GhInvoker = (argv: string[], cwd: string) => Promise<string>;
 async function defaultGhInvoker(argv: string[], cwd: string): Promise<string> {
   const result = await runCommand(["gh", ...argv], cwd);
   if (result.exitCode !== 0) {
+    /**
+     * `describeCommandFailure`, not a local rendering — raised in review of #43. This threw
+     * `exited null` when `gh` could not be spawned, which is the same defect T2's prepare refusal
+     * had and the likeliest one here: `gh` missing from PATH, or not installed, is a far more
+     * common failure than `gh` running and returning non-zero. The shared helper names which of
+     * the three shapes happened; the detail below adds what the process itself said, when it ran
+     * far enough to say anything.
+     */
     const detail = (result.stderr || result.stdout).trim();
     throw new Error(
-      `gh ${argv.join(" ")} ${result.timedOut ? "timed out" : `exited ${result.exitCode ?? "null"}`}` +
-        (detail ? `: ${detail}` : ""),
+      describeCommandFailure(["gh", ...argv], result) + (detail ? `: ${detail}` : ""),
     );
   }
   return result.stdout;
@@ -188,14 +195,21 @@ export async function pushAndOpenPr(input: PushAndOpenPrInput): Promise<PushAndO
     );
   }
 
-  if (!project.integrationBranch) {
+  /**
+   * `prBaseOrNull`, not a truthiness test — the same widening review of #43 forced on the UI, made
+   * here too so the server refuses what the control declines to offer. `'HEAD'` is truthy and is
+   * what `createProject` stores for a project nobody configured, so the bare check below let it
+   * through and would have run `gh pr create --base HEAD`.
+   */
+  const prBase = prBaseOrNull(project.integrationBranch);
+  if (!prBase) {
     // Not reachable through `initializeProject` (T2 always writes a real value) or through
     // migration 4's backfill (which sets 'develop' rather than leaving this NULL) — only a
     // `Project` row inserted by a caller that bypassed both. Refused rather than guessed, same
     // reasoning as `dispatch.ts`'s own precondition 5.
     return refuse(
       "no-integration-branch",
-      `project '${project.slug}' declares no integrationBranch — there is no PR base to open against`,
+      `project '${project.slug}' declares no usable integrationBranch (got ${JSON.stringify(project.integrationBranch)}) — there is no PR base to open against`,
     );
   }
 
@@ -233,7 +247,7 @@ export async function pushAndOpenPr(input: PushAndOpenPrInput): Promise<PushAndO
         "pr",
         "create",
         "--base",
-        project.integrationBranch,
+        prBase,
         "--head",
         session.branchName,
         "--title",

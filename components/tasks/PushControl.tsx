@@ -25,16 +25,19 @@ export function PushControl({
   sessionId,
   label,
   verifyFailed,
-  verifyExitCode,
+  verifyNote,
   action,
 }: {
   slug: string;
   sessionId: string;
   label: string;
+  /** `verifyStatusText`'s rendering of this session's verify result, composed server-side so this
+   *  component never maps an exit code to words itself (D36). The sentinel for "did not complete"
+   *  reached this checkbox as the bare string "exited -1" before review of #43. */
+  verifyNote: string;
   /** True when this session's `verifyExitCode` is non-null and non-zero — real failure or
    *  `dispatch.ts`'s `VERIFY_DID_NOT_COMPLETE` sentinel alike. Renders the confirm checkbox. */
   verifyFailed: boolean;
-  verifyExitCode: number | null;
   action: (prevState: PushResult, formData: FormData) => Promise<PushResult>;
 }) {
   const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
@@ -64,7 +67,7 @@ export function PushControl({
             checked={confirmed}
             onChange={(e) => setConfirmed(e.target.checked)}
           />
-          {`Push anyway — verify: exited ${verifyExitCode}`}
+          {`Push anyway — verify: ${verifyNote}`}
         </label>
       )}
 
